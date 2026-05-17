@@ -142,6 +142,14 @@ public final class Launcher extends Application {
                 UpdateChecker.init();
 
                 primaryStage.show();
+                // Windows-only: tag the HWND with WS_EX_APPWINDOW so the
+                // taskbar treats this transparent stage as a real top-level
+                // window (icon visible, click-to-focus, pin-to-taskbar all
+                // work). No-op on macOS/Linux. Must run after show() — the
+                // HWND doesn't exist before that.
+                if (OperatingSystem.CURRENT_OS == OperatingSystem.WINDOWS) {
+                    determination.xenon.ui.WindowsNativeUtils.ensureTaskbarVisible(primaryStage);
+                }
             });
         } catch (Throwable e) {
             CRASH_REPORTER.uncaughtException(Thread.currentThread(), e);
@@ -303,6 +311,16 @@ public final class Launcher extends Application {
 
         Thread.setDefaultUncaughtExceptionHandler(CRASH_REPORTER);
         AsyncTaskExecutor.setUncaughtExceptionHandler(new CrashReporter(false));
+
+        // Tag the process with a stable AppUserModelID before any window is
+        // created — Windows latches the value when the first taskbar proxy
+        // is built. Lets Windows group all running Xenon windows under one
+        // taskbar entry (and one pinnable shortcut), instead of merging
+        // them with generic "Java(TM) Platform" windows.
+        if (OperatingSystem.CURRENT_OS == OperatingSystem.WINDOWS) {
+            determination.xenon.ui.WindowsNativeUtils.setAppUserModelID(
+                    "DeterMination.Xenon.Launcher");
+        }
 
         try {
             LOG.info("*** " + Metadata.TITLE + " ***");

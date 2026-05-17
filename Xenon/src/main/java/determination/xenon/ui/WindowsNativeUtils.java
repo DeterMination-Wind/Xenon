@@ -17,6 +17,12 @@
  */
 package determination.xenon.ui;
 
+import com.sun.jna.Native;
+import com.sun.jna.Pointer;
+import com.sun.jna.WString;
+import com.sun.jna.win32.StdCallLibrary;
+import determination.xenon.util.platform.NativeUtils;
+import determination.xenon.util.platform.OperatingSystem;
 import javafx.stage.Stage;
 import javafx.stage.Window;
 
@@ -31,6 +37,27 @@ import static determination.xenon.util.logging.Logger.LOG;
 public final class WindowsNativeUtils {
 
     public static OptionalLong getWindowHandle(Stage stage) {
+        // Primary path: ask user32 directly by window title. Works on
+        // JavaFX 25 where the reflection-based path below trips
+        // "module javafx.graphics does not open javafx.stage". We need
+        // user32 anyway for ensureTaskbarVisible, so the extra binding
+        // is free.
+        if (OperatingSystem.CURRENT_OS == OperatingSystem.WINDOWS && NativeUtils.USE_JNA) {
+            String title = stage.getTitle();
+            if (title != null && !title.isEmpty()) {
+                try {
+                    Pointer hwnd = User32Min.INSTANCE.FindWindowW(null, new WString(title));
+                    if (hwnd != null && Pointer.nativeValue(hwnd) != 0L) {
+                        return OptionalLong.of(Pointer.nativeValue(hwnd));
+                    }
+                } catch (Throwable ex) {
+                    LOG.warning("FindWindowW lookup failed, falling back to reflection", ex);
+                }
+            }
+        }
+
+        // Fallback: JavaFX internals. Works on JavaFX <=24 and on builds
+        // that --add-opens javafx.graphics/com.sun.javafx.tk to ALL-UNNAMED.
         try {
             Class<?> windowStageClass = Class.forName("com.sun.javafx.tk.quantum.WindowStage");
             Class<?> glassWindowClass = Class.forName("com.sun.glass.ui.Window");
@@ -53,6 +80,86 @@ public final class WindowsNativeUtils {
             LOG.warning("Failed to get window handle", ex);
             return OptionalLong.empty();
         }
+    }
+
+    /**
+     * Force the given stage to show up as a regular, pinnable, focusable
+     * window on the Windows taskbar.
+     *
+     * <p>{@link javafx.stage.StageStyle#TRANSPARENT} stages don't get the
+     * {@code WS_EX_APPWINDOW} extended style by default, which is what tells
+     * the taskbar "this is a real top-level app window, give it an icon and
+     * a proxy entry." Without it, single-click-to-focus and pin-to-taskbar
+     * are unreliable. We OR it in (and clear {@code WS_EX_TOOLWINDOW} just
+     * in case JavaFX set it) once the HWND is real.
+     *
+     * <p>No-op on non-Windows or when JNA isn't on the classpath.
+     */
+    public static void ensureTaskbarVisible(Stage stage) {
+        if (OperatingSystem.CURRENT_OS != OperatingSystem.WINDOWS || !NativeUtils.USE_JNA) return;
+        OptionalLong handle = getWindowHandle(stage);
+        if (handle.isEmpty()) return;
+        try {
+            Pointer hwnd = new Pointer(handle.getAsLong());
+            int gwlExStyle = -20;
+            int wsExAppWindow = 0x00040000;
+            int wsExToolWindow = 0x00000080;
+            int swpFlags = 0x0001 /*NOSIZE*/ | 0x0002 /*NOMOVE*/ | 0x0004 /*NOZORDER*/
+                    | 0x0010 /*NOACTIVATE*/ | 0x0020 /*FRAMECHANGED*/;
+            User32Min u32 = User32Min.INSTANCE;
+            int style = u32.GetWindowLongW(hwnd, gwlExStyle);
+            int newStyle = (style | wsExAppWindow) & ~wsExToolWindow;
+            if (newStyle != style) {
+                u32.SetWindowLongW(hwnd, gwlExStyle, newStyle);
+                u32.SetWindowPos(hwnd, Pointer.NULL, 0, 0, 0, 0, swpFlags);
+                LOG.info("Applied WS_EX_APPWINDOW to taskbar stage (was=0x"
+                        + Integer.toHexString(style) + ", now=0x"
+                        + Integer.toHexString(newStyle) + ")");
+            }
+        } catch (Throwable ex) {
+            LOG.warning("Failed to set WS_EX_APPWINDOW on stage", ex);
+        }
+    }
+
+    /**
+     * Set the AppUserModelID for the current process. Windows uses this
+     * string to group taskbar entries: every running Xenon instance shares
+     * the same icon group, separate from generic "Java(TM) Platform"
+     * windows.
+     *
+     * <p>Must be called as early as possible — before any window is shown —
+     * because Windows latches the value when it creates the first taskbar
+     * proxy. No-op on non-Windows or without JNA.
+     */
+    public static void setAppUserModelID(String id) {
+        if (OperatingSystem.CURRENT_OS != OperatingSystem.WINDOWS || !NativeUtils.USE_JNA) return;
+        try {
+            Shell32Aumid.INSTANCE.SetCurrentProcessExplicitAppUserModelID(new WString(id));
+            LOG.info("AppUserModelID set to " + id);
+        } catch (Throwable ex) {
+            LOG.warning("Failed to set AppUserModelID", ex);
+        }
+    }
+
+    /**
+     * Minimal binding for the three {@code user32} entry points we need.
+     * jna-platform isn't on the classpath, so we declare just what's used.
+     */
+    private interface User32Min extends StdCallLibrary {
+        User32Min INSTANCE = Native.load("user32", User32Min.class);
+        Pointer FindWindowW(WString lpClassName, WString lpWindowName);
+        int GetWindowLongW(Pointer hWnd, int nIndex);
+        int SetWindowLongW(Pointer hWnd, int nIndex, int dwNewLong);
+        boolean SetWindowPos(Pointer hWnd, Pointer hWndInsertAfter,
+                             int X, int Y, int cx, int cy, int uFlags);
+    }
+
+    /**
+     * Minimal binding for {@code shell32!SetCurrentProcessExplicitAppUserModelID}.
+     */
+    private interface Shell32Aumid extends StdCallLibrary {
+        Shell32Aumid INSTANCE = Native.load("shell32", Shell32Aumid.class);
+        int SetCurrentProcessExplicitAppUserModelID(WString appID);
     }
 
     private WindowsNativeUtils() {
