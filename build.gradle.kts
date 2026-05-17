@@ -1,13 +1,13 @@
-import org.jackhuang.hmcl.gradle.ci.CheckUpdate
-import org.jackhuang.hmcl.gradle.docs.UpdateDocuments
-import org.jackhuang.hmcl.gradle.l10n.ParseLanguageSubtagRegistry
+import determination.xenon.gradle.ci.CheckUpdate
+import determination.xenon.gradle.docs.UpdateDocuments
+import determination.xenon.gradle.l10n.ParseLanguageSubtagRegistry
 
 plugins {
     id("checkstyle")
 }
 
-group = "org.jackhuang"
-version = "3.0"
+group = "determination"
+version = "0.1.0"
 
 subprojects {
     apply {
@@ -75,7 +75,7 @@ subprojects {
     }
 }
 
-org.jackhuang.hmcl.gradle.javafx.JavaFXUtils.register(rootProject)
+determination.xenon.gradle.javafx.JavaFXUtils.register(rootProject)
 
 defaultTasks("clean", "build")
 

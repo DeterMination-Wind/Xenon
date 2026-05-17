@@ -1,8 +1,8 @@
-rootProject.name = "HMCL3"
+rootProject.name = "Xenon"
 include(
-    "HMCL",
-    "HMCLCore",
-    "HMCLBoot"
+    "Xenon",
+    "XenonCore",
+    "XenonBoot"
 )
 
 val minecraftLibraries = listOf("HMCLTransformerDiscoveryService", "HMCLMultiMCBootstrap")

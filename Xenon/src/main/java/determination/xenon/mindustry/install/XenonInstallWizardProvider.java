@@ -1,0 +1,213 @@
+/*
+ * Xenon Launcher
+ * Copyright (C) 2026  Xenon contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+package determination.xenon.mindustry.install;
+
+import determination.xenon.Metadata;
+import determination.xenon.mindustry.DataDirectoryPolicy;
+import determination.xenon.mindustry.MindustryImportFlow;
+import determination.xenon.mindustry.MindustryVersion;
+import determination.xenon.mindustry.VersionVariant;
+import determination.xenon.mindustry.XenonGameRepository;
+import determination.xenon.mindustry.download.GitHubReleaseClient;
+import determination.xenon.mindustry.download.MindustryDownloadTask;
+import determination.xenon.mindustry.download.MindustryRemoteVersion;
+import determination.xenon.mindustry.mod.GitHubDirectInstaller;
+import determination.xenon.mindustry.mod.MindustryModManager;
+import determination.xenon.mindustry.mod.MindustryModsIndexRepository;
+import determination.xenon.mindustry.mod.MindustryRemoteMod;
+import determination.xenon.task.Schedulers;
+import determination.xenon.task.Task;
+import determination.xenon.ui.wizard.WizardController;
+import determination.xenon.ui.wizard.WizardProvider;
+import determination.xenon.util.SettingsMap;
+import javafx.scene.Node;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+
+import static determination.xenon.util.i18n.I18n.i18n;
+import static determination.xenon.util.logging.Logger.LOG;
+
+/**
+ * Drives the Xenon "install a new Mindustry version" flow:
+ * <ol>
+ *     <li>{@link VariantSelectionPage}</li>
+ *     <li>{@link XenonVersionsPage}</li>
+ *     <li>{@link IsolationPage}</li>
+ *     <li>{@link PreloadModsPage} (terminal — calls {@link #finish})</li>
+ * </ol>
+ *
+ * <p>The download itself runs as a {@link Task} so HMCL's existing
+ * {@link determination.xenon.ui.wizard.TaskExecutorDialogWizardDisplayer}
+ * can give us a progress bar + cancel button for free.</p>
+ */
+public final class XenonInstallWizardProvider implements WizardProvider {
+
+    /** Pluggable community mod source for {@link PreloadModsPage}. */
+    public interface ModIndexLoader {
+        List<MindustryRemoteMod> load() throws IOException;
+    }
+
+    private final GitHubReleaseClient client;
+    private final MindustryModsIndexRepository modIndex;
+    private VersionVariant preseededVariant;
+
+    public XenonInstallWizardProvider() {
+        this.client = new GitHubReleaseClient(Metadata.getCachesDirectory());
+        this.modIndex = new MindustryModsIndexRepository(Metadata.getCachesDirectory());
+    }
+
+    /**
+     * Tell the wizard to skip the variant-selection page and use
+     * {@code v} directly. Has to be called <em>after</em>
+     * {@link determination.xenon.ui.decorator.DecoratorController#startWizard}
+     * to take effect (the controller calls {@link #start} synchronously,
+     * after which the first {@link #createPage} runs).
+     */
+    public void preseedVariant(VersionVariant v) {
+        this.preseededVariant = v;
+    }
+
+    @Override
+    public void start(SettingsMap settings) {
+        if (preseededVariant != null) {
+            settings.put(WizardKeys.VARIANT, preseededVariant);
+        }
+    }
+
+    @Override
+    public Node createPage(WizardController controller, int step, SettingsMap settings) {
+        // When variant is pre-seeded, skip the picker page entirely:
+        // step 0 → versions, step 1 → isolation, step 2 → preload mods.
+        if (preseededVariant != null) {
+            switch (step) {
+                case 0: return new XenonVersionsPage(controller, client);
+                case 1: return new IsolationPage(controller);
+                case 2: return new PreloadModsPage(controller, modIndex::refresh);
+                default: throw new IllegalStateException("Unexpected step " + step);
+            }
+        }
+        switch (step) {
+            case 0:
+                return new VariantSelectionPage(controller);
+            case 1:
+                return new XenonVersionsPage(controller, client);
+            case 2:
+                return new IsolationPage(controller);
+            case 3:
+                return new PreloadModsPage(controller, modIndex::refresh);
+            default:
+                throw new IllegalStateException("Unexpected step " + step);
+        }
+    }
+
+    @Override
+    public Object finish(SettingsMap settings) {
+        VersionVariant variant = settings.get(WizardKeys.VARIANT);
+        MindustryRemoteVersion remote = settings.get(WizardKeys.REMOTE_VERSION);
+        String id = settings.get(WizardKeys.VERSION_ID);
+        DataDirectoryPolicy policy = settings.get(WizardKeys.DATA_DIR_POLICY);
+        String customDir = settings.get(WizardKeys.CUSTOM_DATA_DIR);
+        List<MindustryRemoteMod> preload = settings.get(PreloadModsPage.SELECTED_MODS);
+
+        if (variant == null || remote == null || id == null || policy == null) {
+            throw new IllegalStateException("Wizard finished with missing settings: "
+                    + "variant=" + variant + ", remote=" + remote + ", id=" + id + ", policy=" + policy);
+        }
+
+        XenonGameRepository repo = MindustryImportFlow.repository();
+        Path versionRoot = repo.getVersionRoot(id);
+        Path jar = versionRoot.resolve(id + ".jar");
+
+        // Stage 1: prepare the version directory (synchronous, fast).
+        Task<Void> prepareDir = Task.runAsync(Schedulers.io(), () -> {
+            Files.createDirectories(versionRoot);
+        }).setName(i18n("xenon.install.task.prepare"));
+
+        // Stage 2: download the jar via HMCL's Task pipeline so TaskListPane
+        // shows a real progress bar + the per-second speed indicator.
+        MindustryDownloadTask download = new MindustryDownloadTask(
+                remote.getDownloadUrl(), jar, remote.getSize(),
+                Metadata.getCachesDirectory());
+        download.setName(i18n("xenon.install.task.download", id));
+
+        // Stage 3: persist version.json.
+        Task<Void> save = Task.runAsync(Schedulers.io(), () -> {
+            MindustryVersion v = new MindustryVersion();
+            v.setId(id);
+            v.setName(id);
+            v.setVariant(variant);
+            v.setBuild(remote.getBuild());
+            v.setBuildType(remote.getBuildType());
+            v.setJarPath(id + ".jar");
+            v.setJavaReq(remote.getBuild() > 0 && remote.getBuild() < 140 ? 8 : 17);
+            v.setDataDirPolicy(policy);
+            if (policy == DataDirectoryPolicy.CUSTOM && customDir != null) {
+                v.setCustomDataDir(customDir);
+            }
+            repo.save(v);
+            LOG.info("Xenon installed " + variant + " build=" + remote.getBuild() + " as id=" + id);
+        }).setName(i18n("xenon.install.task.save"));
+
+        // Stage 4 (optional): pre-install community mods, each as its own
+        // child task so TaskListPane lists them under the install dialog.
+        Task<Void> preloadStage = Task.runAsync(Schedulers.io(), () -> {
+            if (preload == null || preload.isEmpty()) return;
+            MindustryVersion v = repo.get(id).orElseThrow();
+            Path dataDir = v.resolveDataDir(versionRoot);
+            Path modsDir = dataDir.resolve("mods");
+            Files.createDirectories(modsDir);
+            MindustryModManager target = new MindustryModManager(modsDir);
+            GitHubDirectInstaller installer = new GitHubDirectInstaller(client, target);
+            for (MindustryRemoteMod mod : preload) {
+                if (mod.getRepo() == null || mod.getRepo().isBlank()) continue;
+                try {
+                    installer.installLatest(mod.getRepo(), null);
+                    LOG.info("Pre-installed mod " + mod.getRepo() + " into " + modsDir);
+                } catch (Throwable ex) {
+                    LOG.warning("Failed to pre-install " + mod.getRepo() + ": " + ex.getMessage());
+                }
+            }
+        }).setName(i18n("xenon.install.task.preload"));
+
+        return prepareDir
+                .thenComposeAsync(download)
+                .thenComposeAsync(save)
+                .thenComposeAsync(preloadStage)
+                .whenComplete(any -> {
+                    // Kick the HMCL versions listener so MainPage / sidebar
+                    // re-runs its merge of HMCL + XenonGameRepository and the
+                    // newly installed Mindustry instance shows up immediately
+                    // (without it the launch button stays in "no game" state
+                    // until the user navigates somewhere that refreshes).
+                    determination.xenon.setting.Profile p =
+                            determination.xenon.setting.Profiles.getSelectedProfile();
+                    if (p != null) {
+                        p.getRepository().refreshVersionsAsync().start();
+                    }
+                })
+                .setName(i18n("xenon.install.task.title"));
+    }
+
+    @Override
+    public boolean cancel() {
+        return true;
+    }
+}
