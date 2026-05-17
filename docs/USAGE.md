@@ -1,4 +1,4 @@
-# Xenon 用户手册
+﻿# Xenon 用户手册
 
 本文逐步演示 Xenon v0.1 的主要操作。每节末尾给出预期的状态校验，方便排错。
 
@@ -110,10 +110,10 @@
 
 ## 11. 自更新
 
-启动时 `UpdateChecker` 拉取 `Metadata.XENON_UPDATE_URL`（默认 `api.github.com/repos/TinyLake/Xenon/releases/latest`）。返回 GitHub Release JSON 时取 `tag_name` 和首个 `.jar` 资产。完整性校验在 GitHub 数据下被禁用（GitHub 不直接提供 SHA-1）。
+启动时 `UpdateChecker` 拉取 `Metadata.XENON_UPDATE_URL`（默认 `api.github.com/repos/DeterMination-Wind/Xenon/releases/latest`）。返回 GitHub Release JSON 时取 `tag_name` 和首个 `.jar` 资产。完整性校验在 GitHub 数据下被禁用（GitHub 不直接提供 SHA-1）。
 
 ## 反馈
 
 - B 站：<https://space.bilibili.com/1433776051>
 - QQ 群：`188709300`
-- GitHub Issues：<https://github.com/TinyLake/Xenon/issues>
+- GitHub Issues：<https://github.com/DeterMination-Wind/Xenon/issues>

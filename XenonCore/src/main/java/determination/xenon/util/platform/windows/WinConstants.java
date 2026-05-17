@@ -99,5 +99,12 @@ public interface WinConstants {
 
     // https://learn.microsoft.com/windows/win32/api/dwmapi/ne-dwmapi-dwmwindowattribute
     int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
+    int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
+
+    // https://learn.microsoft.com/windows/win32/api/dwmapi/ne-dwmapi-dwm_window_corner_preference
+    int DWMWCP_DEFAULT = 0;
+    int DWMWCP_DONOTROUND = 1;
+    int DWMWCP_ROUND = 2;
+    int DWMWCP_ROUNDSMALL = 3;
 
 }

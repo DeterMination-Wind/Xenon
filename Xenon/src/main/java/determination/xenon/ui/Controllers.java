@@ -366,7 +366,15 @@ public final class Controllers {
 
         FXUtils.setIcon(stage);
         stage.setTitle(Metadata.FULL_TITLE);
-        stage.initStyle(StageStyle.TRANSPARENT);
+        // Win11 24H2 won't paint a taskbar thumbnail for layered (TRANSPARENT)
+        // stages until they're minimized, so the icon disappears while the
+        // window is on screen — even with WS_EX_APPWINDOW applied. UNDECORATED
+        // gives us a non-layered top-level window that the shell tracks like a
+        // regular app, while still hiding the OS title bar so the in-scene
+        // decorator keeps its custom title + window controls. The rounded
+        // corners drawn inside the scene are unaffected; only the outer
+        // drop-shadow halo (which lived in the transparent margin) goes away.
+        stage.initStyle(StageStyle.UNDECORATED);
         stage.setScene(scene);
 
         if (AnimationUtils.playWindowAnimation()) {

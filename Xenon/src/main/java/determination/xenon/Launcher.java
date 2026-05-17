@@ -149,7 +149,11 @@ public final class Launcher extends Application {
                 // HWND doesn't exist before that.
                 if (OperatingSystem.CURRENT_OS == OperatingSystem.WINDOWS) {
                     determination.xenon.ui.WindowsNativeUtils.ensureTaskbarVisible(primaryStage);
+                    determination.xenon.ui.WindowsNativeUtils.applyDwmRoundedCorners(primaryStage);
                 }
+                // Tray icon — single-click brings the launcher back when
+                // the window is hidden / minimized / behind other apps.
+                determination.xenon.ui.TrayIconManager.install(primaryStage);
             });
         } catch (Throwable e) {
             CRASH_REPORTER.uncaughtException(Thread.currentThread(), e);
@@ -298,6 +302,7 @@ public final class Launcher extends Application {
 
     @Override
     public void stop() throws Exception {
+        determination.xenon.ui.TrayIconManager.uninstall();
         Controllers.onApplicationStop();
         FileSaver.shutdown();
         LOG.shutdown();
@@ -312,15 +317,17 @@ public final class Launcher extends Application {
         Thread.setDefaultUncaughtExceptionHandler(CRASH_REPORTER);
         AsyncTaskExecutor.setUncaughtExceptionHandler(new CrashReporter(false));
 
-        // Tag the process with a stable AppUserModelID before any window is
-        // created — Windows latches the value when the first taskbar proxy
-        // is built. Lets Windows group all running Xenon windows under one
-        // taskbar entry (and one pinnable shortcut), instead of merging
-        // them with generic "Java(TM) Platform" windows.
-        if (OperatingSystem.CURRENT_OS == OperatingSystem.WINDOWS) {
-            determination.xenon.ui.WindowsNativeUtils.setAppUserModelID(
-                    "DeterMination.Xenon.Launcher");
-        }
+        // AppUserModelID is only useful when there is a matching .lnk
+        // shortcut on disk for Windows shell to bind taskbar state to.
+        // The dev launch (gradle :Xenon:run -> java.exe) has no shortcut,
+        // and setting the ID anyway makes Win11 24H2 demote our window to
+        // "no taskbar icon while shown, only a thumbnail when minimized".
+        // We'll re-enable this from the jpackaged Xenon.exe build, where
+        // the installer registers the .lnk with the same id.
+        // if (OperatingSystem.CURRENT_OS == OperatingSystem.WINDOWS) {
+        //     determination.xenon.ui.WindowsNativeUtils.setAppUserModelID(
+        //             "DeterMination.Xenon.Launcher");
+        // }
 
         try {
             LOG.info("*** " + Metadata.TITLE + " ***");

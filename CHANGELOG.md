@@ -1,4 +1,4 @@
-# Changelog
+﻿# Changelog
 
 All notable changes to Xenon will be documented in this file.
 
@@ -69,4 +69,4 @@ The first public release. Forked from HMCL, Mindustry support layered on top.
 - HMCL launcher signing key (`META-INF/hmcl_signature`) → `META-INF/xenon_signature`.
 - Environment variables `HMCL_*` → `XENON_*`.
 
-[0.1.0]: https://github.com/TinyLake/Xenon/releases/tag/v0.1.0
+[0.1.0]: https://github.com/DeterMination-Wind/Xenon/releases/tag/v0.1.0

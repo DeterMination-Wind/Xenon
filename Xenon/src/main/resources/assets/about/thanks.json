@@ -77,18 +77,24 @@
     "externalLink" : "https://8mi.tech"
   },
   {
+    "image" : "/assets/img/wayzer.jpg",
+    "title" : "Wayzer",
+    "subtitleLocalized" : "about.thanks_to.wayzer.statement",
+    "externalLink" : "https://github.com/way-zer"
+  },
+  {
     "image" : {
       "light" : "/assets/img/github.png",
       "dark" : "/assets/img/github-white.png"
     },
     "titleLocalized" : "about.thanks_to.contributors",
     "subtitleLocalized" : "about.thanks_to.contributors.statement",
-    "externalLink" : "https://github.com/TinyLake/Xenon/graphs/contributors"
+    "externalLink" : "https://github.com/DeterMination-Wind/Xenon/graphs/contributors"
   },
   {
     "image" : "/assets/img/icon.png",
     "titleLocalized" : "about.thanks_to.users",
     "subtitleLocalized" : "about.thanks_to.users.statement",
-    "externalLink" : "https://github.com/TinyLake/Xenon"
+    "externalLink" : "https://github.com/DeterMination-Wind/Xenon"
   }
 ]

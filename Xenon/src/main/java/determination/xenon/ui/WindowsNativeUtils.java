@@ -20,9 +20,14 @@ package determination.xenon.ui;
 import com.sun.jna.Native;
 import com.sun.jna.Pointer;
 import com.sun.jna.WString;
+import com.sun.jna.ptr.IntByReference;
 import com.sun.jna.win32.StdCallLibrary;
 import determination.xenon.util.platform.NativeUtils;
+import determination.xenon.util.platform.OSVersion;
 import determination.xenon.util.platform.OperatingSystem;
+import determination.xenon.util.platform.windows.Dwmapi;
+import determination.xenon.util.platform.windows.WinConstants;
+import determination.xenon.util.platform.windows.WinTypes;
 import javafx.stage.Stage;
 import javafx.stage.Window;
 
@@ -112,6 +117,12 @@ public final class WindowsNativeUtils {
             if (newStyle != style) {
                 u32.SetWindowLongW(hwnd, gwlExStyle, newStyle);
                 u32.SetWindowPos(hwnd, Pointer.NULL, 0, 0, 0, 0, swpFlags);
+                // The shell only re-evaluates WS_EX_APPWINDOW on the
+                // hide→show transition. SetWindowPos+FRAMECHANGED isn't
+                // enough — without this flip Windows keeps the window
+                // off the taskbar even though the style bit is set.
+                u32.ShowWindow(hwnd, 0); // SW_HIDE
+                u32.ShowWindow(hwnd, 5); // SW_SHOW
                 LOG.info("Applied WS_EX_APPWINDOW to taskbar stage (was=0x"
                         + Integer.toHexString(style) + ", now=0x"
                         + Integer.toHexString(newStyle) + ")");
@@ -145,6 +156,42 @@ public final class WindowsNativeUtils {
      * Minimal binding for the three {@code user32} entry points we need.
      * jna-platform isn't on the classpath, so we declare just what's used.
      */
+    /**
+     * Ask the Win11 DWM to round the four corners of the given stage.
+     *
+     * <p>{@link javafx.stage.StageStyle#UNDECORATED} stages are normal
+     * opaque windows — anything inside the scene that isn't covered (the
+     * area outside our rounded-content panel) shows through as the JavaFX
+     * default white. Letting the OS clip the whole window rectangle into
+     * a rounded shape removes the corner crumbs cleanly without going
+     * back to a transparent layered window.</p>
+     *
+     * <p>No-op pre-Win11, on non-Windows, or when JNA isn't loaded.</p>
+     */
+    public static void applyDwmRoundedCorners(Stage stage) {
+        if (OperatingSystem.CURRENT_OS != OperatingSystem.WINDOWS) return;
+        if (!OperatingSystem.SYSTEM_VERSION.isAtLeast(OSVersion.WINDOWS_11)) return;
+        if (!NativeUtils.USE_JNA || Dwmapi.INSTANCE == null) return;
+
+        OptionalLong handle = getWindowHandle(stage);
+        if (handle.isEmpty() || handle.getAsLong() == WinTypes.HANDLE.INVALID_VALUE) return;
+        try {
+            int rc = Dwmapi.INSTANCE.DwmSetWindowAttribute(
+                    new WinTypes.HANDLE(Pointer.createConstant(handle.getAsLong())),
+                    WinConstants.DWMWA_WINDOW_CORNER_PREFERENCE,
+                    new IntByReference(WinConstants.DWMWCP_ROUND),
+                    4);
+            if (rc != 0) {
+                LOG.warning("DwmSetWindowAttribute(WINDOW_CORNER_PREFERENCE) returned 0x"
+                        + Integer.toHexString(rc));
+            } else {
+                LOG.info("Applied Win11 DWM rounded corners to launcher stage");
+            }
+        } catch (Throwable ex) {
+            LOG.warning("Failed to apply DWM rounded corners", ex);
+        }
+    }
+
     private interface User32Min extends StdCallLibrary {
         User32Min INSTANCE = Native.load("user32", User32Min.class);
         Pointer FindWindowW(WString lpClassName, WString lpWindowName);
@@ -152,6 +199,7 @@ public final class WindowsNativeUtils {
         int SetWindowLongW(Pointer hWnd, int nIndex, int dwNewLong);
         boolean SetWindowPos(Pointer hWnd, Pointer hWndInsertAfter,
                              int X, int Y, int cx, int cy, int uFlags);
+        boolean ShowWindow(Pointer hWnd, int nCmdShow);
     }
 
     /**

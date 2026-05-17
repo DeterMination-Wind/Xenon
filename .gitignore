@@ -36,23 +36,17 @@ language-subtag-registry
 # idea
 .idea
 /out/
-/Xenon/out/
-/XenonCore/out/
+/HMCL/out/
+/HMCLCore/out/
 /minecraft/libraries/HMCLTransformerDiscoveryService/out/
 /minecraft/libraries/HMCLMultiMCBootstrap/out/
 
 # eclipse
 /bin/
-/Xenon/bin/
-/XenonCore/bin/
+/HMCL/bin/
+/HMCLCore/bin/
 /minecraft/libraries/HMCLTransformerDiscoveryService/bin/
 /minecraft/libraries/HMCLMultiMCBootstrap/bin/
-
-# Xenon runtime
-/_xenon_*.log
-/_migration_logs/
-/.xenon/
-/.minecraft/
 .classpath
 .project
 .settings
@@ -78,4 +72,3 @@ language-subtag-registry
 !/.gemini/config.yaml
 .codex
 /.gradle-*/
-.idea/

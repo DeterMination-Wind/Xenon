@@ -1725,11 +1725,19 @@
 
 .jfx-decorator-title {
     -fx-font-size: 14;
+    /* Title text was inheriting -monet-on-primary-container, which goes
+       light-on-dark in dark mode and ends up nearly invisible against the
+       light decorator color. Force black so it's always readable. */
+    -fx-text-fill: black;
 }
 
 .window {
-    -fx-background-color: transparent;
-    -fx-padding: 8;
+    /* StageStyle.UNDECORATED stage is opaque; let the surface color fill
+       the entire window rect and the OS DWM round corners clip the four
+       corners on Win11. Padding kept at 0 so nothing white shows in the
+       gap that the old TRANSPARENT layout used for drop-shadow margin. */
+    -fx-background-color: -monet-surface;
+    -fx-padding: 0;
 }
 
 .debug-border {

@@ -1,4 +1,4 @@
-# Xenon — A Mindustry Launcher built on the HMCL UI
+﻿# Xenon — A Mindustry Launcher built on the HMCL UI
 
 [中文](#中文) | [English](#english)
 
@@ -103,7 +103,7 @@ Xenon 是基于 [HMCL](https://github.com/HMCL-dev/HMCL) Fork 的 Mindustry 启�
 
 - B 站：<https://space.bilibili.com/1433776051>
 - QQ 群：`188709300`
-- GitHub Issues：<https://github.com/TinyLake/Xenon/issues>
+- GitHub Issues：<https://github.com/DeterMination-Wind/Xenon/issues>
 
 ### 致谢
 
@@ -161,7 +161,7 @@ Requires JDK 17+ with JavaFX.
 
 - Bilibili: <https://space.bilibili.com/1433776051>
 - QQ Group: `188709300`
-- GitHub Issues: <https://github.com/TinyLake/Xenon/issues>
+- GitHub Issues: <https://github.com/DeterMination-Wind/Xenon/issues>
 
 ### License
 

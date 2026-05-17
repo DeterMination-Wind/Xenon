@@ -45,11 +45,11 @@ public final class Metadata {
     public static final int MINIMUM_SUPPORTED_JAVA_VERSION = 8;
     public static final int RECOMMENDED_JAVA_VERSION = 21;
 
-    public static final String PUBLISH_URL = "https://github.com/TinyLake/Xenon";
+    public static final String PUBLISH_URL = "https://github.com/DeterMination-Wind/Xenon";
     public static final String DOWNLOAD_URL = PUBLISH_URL + "/releases";
     public static final String XENON_UPDATE_URL = System.getProperty(
             "xenon.update_source.override",
-            "https://api.github.com/repos/TinyLake/Xenon/releases/latest");
+            "https://api.github.com/repos/DeterMination-Wind/Xenon/releases/latest");
     public static final String MANUAL_UPDATE_URL = PUBLISH_URL + "/releases";
 
     public static final String DOCS_URL = PUBLISH_URL + "/blob/main/docs";
