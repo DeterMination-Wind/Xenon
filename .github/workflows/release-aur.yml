@@ -123,7 +123,12 @@ jobs:
 
       - name: Generate SRCINFO
         working-directory: aur-repo
-        run: makepkg --printsrcinfo > .SRCINFO
+        run: |
+          sed -i "s/pkgver = .*/pkgver = ${{ needs.build.outputs.version }}/" .SRCINFO
+          sed -i "s/pkgrel = .*/pkgrel = 1/" .SRCINFO
+          sed -i "s|xenon-mdt-[0-9.]*\.jar::|xenon-mdt-${{ needs.build.outputs.version }}.jar::|g" .SRCINFO
+          sed -i "s|/v[0-9.]*/Xenon-|/v${{ needs.build.outputs.version }}/Xenon-|g" .SRCINFO
+          sed -i "s|Xenon-[0-9.]*\.jar|Xenon-${{ needs.build.outputs.version }}.jar|g" .SRCINFO
 
       - name: Commit and push to AUR
         working-directory: aur-repo
