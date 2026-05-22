@@ -105,14 +105,15 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
       - name: Install SSH key
+        env:
+          AUR_SSH_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.AUR_SSH_PRIVATE_KEY }}" > ~/.ssh/aur
+          printf '%s\n' "$AUR_SSH_KEY" > ~/.ssh/aur
           chmod 600 ~/.ssh/aur
-          echo "aur.archlinux.org ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIH/zG4nC5FA+jeqnT0rJ9g8cFgX6jMPGZcHOQvLvjVs3" >> ~/.ssh/known_hosts
 
       - name: Checkout AUR
-        run: GIT_SSH_COMMAND="ssh -i ~/.ssh/aur -o StrictHostKeyChecking=no" git clone ssh://aur@aur.archlinux.org/xenon-mdt.git aur-repo
+        run: GIT_SSH_COMMAND="ssh -i ~/.ssh/aur -o StrictHostKeyChecking=accept-new" git clone ssh://aur@aur.archlinux.org/xenon-mdt.git aur-repo
 
       - name: Update PKGBUILD
         working-directory: aur-repo
