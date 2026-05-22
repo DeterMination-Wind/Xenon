@@ -31,19 +31,25 @@ jobs:
       - name: Build with Gradle
         run: ./gradlew :Xenon:shadowJar :Xenon:packagePortable --no-daemon
 
+      - name: Collect release files
+        working-directory: Xenon/build
+        run: |
+          cp dist/Xenon-portable-*.zip . 2>/dev/null || true
+          cp libs/Xenon-*.jar . 2>/dev/null || true
+
       - name: Generate checksums
         working-directory: Xenon/build
         run: |
-          sha256sum dist/Xenon-portable-*.zip > Xenon-portable-${{ steps.get_version.outputs.version }}.zip.sha256
-          sha256sum libs/Xenon-*.jar > Xenon-${{ steps.get_version.outputs.version }}.jar.sha256
+          sha256sum Xenon-portable-*.zip > Xenon-portable-${{ steps.get_version.outputs.version }}.zip.sha256
+          sha256sum Xenon-*.jar > Xenon-${{ steps.get_version.outputs.version }}.jar.sha256
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: release-artifacts
           path: |
-            Xenon/build/dist/Xenon-portable-*.zip
-            Xenon/build/libs/Xenon-*.jar
+            Xenon/build/Xenon-portable-*.zip
+            Xenon/build/Xenon-*.jar
             Xenon/build/*.sha256
 
   release:
@@ -57,6 +63,12 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: release-artifacts
+          path: artifacts
+
+      - name: Flatten artifacts
+        run: |
+          find artifacts -type f -exec mv -t . {} +
+          ls -la
 
       - name: Generate release notes
         id: release_notes
