@@ -45,6 +45,7 @@ public record ThemeColor(@NotNull String name, @NotNull Color color) {
 
     public static final List<ThemeColor> STANDARD_COLORS = List.of(
             DEFAULT,
+            new ThemeColor("blue", Color.web("#5C6BC0")),
             new ThemeColor("darker_blue", Color.web("#283593")),
             new ThemeColor("green", Color.web("#43A047")),
             new ThemeColor("orange", Color.web("#E67E22")),
