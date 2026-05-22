@@ -36,6 +36,9 @@ jobs:
         run: |
           cp dist/Xenon-portable-*.zip . 2>/dev/null || true
           cp libs/Xenon-*.jar . 2>/dev/null || true
+          VERSION=${{ steps.get_version.outputs.version }}
+          for f in Xenon-portable-*.zip; do [ -f "$f" ] && mv "$f" "Xenon-portable-${VERSION}.zip"; done
+          for f in Xenon-*.jar; do [ -f "$f" ] && ! [[ "$f" == *".sha256" ]] && mv "$f" "Xenon-${VERSION}.jar"; done
 
       - name: Generate checksums
         working-directory: Xenon/build
