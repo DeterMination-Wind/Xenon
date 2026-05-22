@@ -106,10 +106,10 @@ jobs:
     steps:
       - name: Install SSH key
         env:
-          AUR_SSH_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          AUR_SSH_KEY_B64: ${{ secrets.AUR_SSH_PRIVATE_KEY_B64 }}
         run: |
           mkdir -p ~/.ssh
-          printf '%s\n' "$AUR_SSH_KEY" > ~/.ssh/aur
+          echo "$AUR_SSH_KEY_B64" | base64 -d > ~/.ssh/aur
           chmod 600 ~/.ssh/aur
 
       - name: Checkout AUR
