@@ -72,3 +72,8 @@ language-subtag-registry
 !/.gemini/config.yaml
 .codex
 /.gradle-*/
+
+# Build artifacts
+*.jar
+*.zip
+*.sha256
