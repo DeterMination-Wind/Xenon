@@ -57,7 +57,7 @@ public final class ServerConsoleSession {
     /** Log level constants used inside {@link StdoutLine#level()}. */
     public static final String LEVEL_INFO = "INFO";
     public static final String LEVEL_WARN = "WARN";
-    public static final String LEVEL_ERR  = "ERR";
+    public static final String LEVEL_ERR = "ERR";
 
     // ---------- ConsoleEvent algebra ----------
 

@@ -47,26 +47,34 @@ public final class ServerConfig {
     }
 
     public String getName() { return name; }
+
     public void setName(String name) { this.name = name; }
 
     public String getMotd() { return motd; }
+
     public void setMotd(String motd) { this.motd = motd; }
 
     public Integer getPort() { return port; }
+
     public void setPort(Integer port) { this.port = port; }
 
     public Boolean getIsPublic() { return isPublic; }
+
     public void setIsPublic(Boolean isPublic) { this.isPublic = isPublic; }
 
     public Boolean getAutoUpdate() { return autoUpdate; }
+
     public void setAutoUpdate(Boolean autoUpdate) { this.autoUpdate = autoUpdate; }
 
     public Integer getRoundLimit() { return roundLimit; }
+
     public void setRoundLimit(Integer roundLimit) { this.roundLimit = roundLimit; }
 
     public Boolean getWhitelist() { return whitelist; }
+
     public void setWhitelist(Boolean whitelist) { this.whitelist = whitelist; }
 
     public String getDescription() { return description; }
+
     public void setDescription(String description) { this.description = description; }
 }

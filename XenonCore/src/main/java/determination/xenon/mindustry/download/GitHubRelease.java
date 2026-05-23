@@ -52,10 +52,15 @@ public final class GitHubRelease {
     }
 
     public String getTagName() { return tagName; }
+
     public String getName() { return name == null || name.isEmpty() ? tagName : name; }
+
     public Instant getPublishedAt() { return publishedAt; }
+
     public boolean isPrerelease() { return prerelease; }
+
     public String getBody() { return body == null ? "" : body; }
+
     public List<GitHubAsset> getAssets() { return assets == null ? Collections.emptyList() : assets; }
 
     @Override

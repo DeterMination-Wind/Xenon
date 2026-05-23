@@ -613,6 +613,7 @@ public final class MindustryModBrowserPane extends BorderPane implements PageAwa
     private static final class AssetPick {
         final GitHubAsset asset;
         final Path staging;
+
         AssetPick(GitHubAsset asset, Path staging) {
             this.asset = asset;
             this.staging = staging;

@@ -156,6 +156,7 @@ public final class WindowsNativeUtils {
      * Minimal binding for the three {@code user32} entry points we need.
      * jna-platform isn't on the classpath, so we declare just what's used.
      */
+
     /**
      * Ask the Win11 DWM to round the four corners of the given stage.
      *

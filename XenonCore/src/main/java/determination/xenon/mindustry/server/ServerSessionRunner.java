@@ -20,7 +20,6 @@ package determination.xenon.mindustry.server;
 import determination.xenon.mindustry.server.ServerConsoleSession.ConsoleEvent;
 import determination.xenon.mindustry.server.ServerConsoleSession.Exited;
 import determination.xenon.mindustry.server.ServerConsoleSession.Restarted;
-import determination.xenon.mindustry.server.ServerConsoleSession.Started;
 import determination.xenon.util.logging.Logger;
 
 import java.io.IOException;
