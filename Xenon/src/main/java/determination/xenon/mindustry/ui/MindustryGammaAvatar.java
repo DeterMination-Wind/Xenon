@@ -51,7 +51,7 @@ public final class MindustryGammaAvatar {
 
         double cx = w / 2.0;
         double cy = h / 2.0;
-        double r  = Math.min(w, h) / 2.0 - 1;
+        double r = Math.min(w, h) / 2.0 - 1;
 
         g.setImageSmoothing(true);
 

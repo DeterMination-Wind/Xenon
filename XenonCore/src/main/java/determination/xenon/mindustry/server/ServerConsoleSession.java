@@ -217,7 +217,7 @@ public final class ServerConsoleSession {
             case "I": return LEVEL_INFO;
             case "W": return LEVEL_WARN;
             case "E": return LEVEL_ERR;
-            default:  return LEVEL_INFO;
+            default: return LEVEL_INFO;
         }
     }
 }

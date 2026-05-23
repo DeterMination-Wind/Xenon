@@ -44,7 +44,6 @@ import determination.xenon.Metadata;
 import determination.xenon.game.Version;
 import determination.xenon.setting.Profile;
 import determination.xenon.setting.Profiles;
-import determination.xenon.task.Schedulers;
 import determination.xenon.theme.Themes;
 import determination.xenon.ui.Controllers;
 import determination.xenon.ui.FXUtils;
@@ -64,16 +63,13 @@ import determination.xenon.util.*;
 import determination.xenon.util.i18n.I18n;
 import determination.xenon.util.javafx.BindingMapping;
 
-import java.io.IOException;
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.CancellationException;
 import java.util.function.Consumer;
 
 import static determination.xenon.setting.ConfigHolder.config;
 import static determination.xenon.ui.FXUtils.SINE;
 import static determination.xenon.util.i18n.I18n.i18n;
-import static determination.xenon.util.logging.Logger.LOG;
 
 public final class MainPage extends StackPane implements DecoratorPage {
     private static final String ANNOUNCEMENT = "announcement";

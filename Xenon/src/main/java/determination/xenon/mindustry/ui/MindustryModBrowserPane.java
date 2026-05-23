@@ -123,6 +123,7 @@ public final class MindustryModBrowserPane extends BorderPane implements PageAwa
             @Override public String toString(MindustryVersion v) {
                 return v == null ? "" : (v.getName() == null ? v.getId() : v.getName());
             }
+
             @Override public MindustryVersion fromString(String s) { return null; }
         });
 

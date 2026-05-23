@@ -195,11 +195,16 @@ public final class WindowsNativeUtils {
 
     private interface User32Min extends StdCallLibrary {
         User32Min INSTANCE = Native.load("user32", User32Min.class);
+
         Pointer FindWindowW(WString lpClassName, WString lpWindowName);
+
         int GetWindowLongW(Pointer hWnd, int nIndex);
+
         int SetWindowLongW(Pointer hWnd, int nIndex, int dwNewLong);
+
         boolean SetWindowPos(Pointer hWnd, Pointer hWndInsertAfter,
                              int X, int Y, int cx, int cy, int uFlags);
+
         boolean ShowWindow(Pointer hWnd, int nCmdShow);
     }
 
