@@ -4,6 +4,8 @@
 
 A launcher for Mindustry players who want one place to install clients, browse maps, manage mods, and run servers.
 
+Latest release: **v1.1.0**
+
 ---
 
 ## 中文
@@ -44,6 +46,12 @@ Xenon 是一个面向 Mindustry 玩家和服主的启动器。
 
 - **服务端工具**  
   适合管理本地或长期运行的 Mindustry 服务端。
+
+### v1.1.0 发布说明
+
+- 新增地图浏览与导入。
+- 地图可以直接导入到当前实例。
+- 改善了窗口缩放和退出体验。
 
 ### 快速开始
 
@@ -105,10 +113,16 @@ In short, it is a practical front-end for everyday Mindustry use.
 
 ### Quick Start
 
-1. Download a release package and extract it.
+1. Download `Xenon-portable-1.1.0.zip` and extract it.
 2. Launch Xenon.
 3. Use the **Download** page to install the Mindustry client you want.
 4. Import maps, install mods, or create a server instance as needed.
+
+### v1.1.0 Release Notes
+
+- Added a community map browser and import flow.
+- Maps can be imported into the selected instance directly.
+- Improved window resizing and exit behavior.
 
 ### Support
 
