@@ -21,11 +21,13 @@ import com.jfoenix.controls.*;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.beans.property.StringProperty;
 import javafx.event.ActionEvent;
+import javafx.event.Event;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Cursor;
 import javafx.scene.control.ListCell;
 import javafx.scene.input.MouseButton;
+import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Region;
@@ -74,6 +76,7 @@ public final class GameListCell extends ListCell<GameListItem> {
                     }
                 }
             };
+            chkSelected.addEventHandler(MouseEvent.MOUSE_CLICKED, Event::consume);
             root.setLeft(chkSelected);
             BorderPane.setAlignment(chkSelected, Pos.CENTER);
         }

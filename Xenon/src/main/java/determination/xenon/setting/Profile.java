@@ -31,6 +31,7 @@ import determination.xenon.event.RefreshedVersionsEvent;
 import determination.xenon.game.HMCLCacheRepository;
 import determination.xenon.game.HMCLGameRepository;
 import determination.xenon.game.Version;
+import determination.xenon.mindustry.ui.MindustryRoutes;
 import determination.xenon.ui.WeakListenerHolder;
 import determination.xenon.util.ToStringBuilder;
 import determination.xenon.util.javafx.ObservableHelper;
@@ -148,6 +149,7 @@ public final class Profile implements Observable {
         runInFX(() -> {
             if (!repository.isLoaded()) return;
             String newValue = selectedVersion.get();
+            if (MindustryRoutes.isMindustry(newValue)) return;
             if (!repository.hasVersion(newValue)) {
                 Optional<String> version = repository.getVersions().stream().findFirst().map(Version::getId);
                 if (version.isPresent())

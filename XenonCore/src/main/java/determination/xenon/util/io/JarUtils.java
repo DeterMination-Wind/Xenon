@@ -59,13 +59,19 @@ public final class JarUtils {
         }
 
         if (entryPointClass != null) {
-            InputStream input = entryPointClass.getResourceAsStream("/assets/hmcl.properties");
-            if (input != null) {
-                try (var reader = new InputStreamReader(input, StandardCharsets.UTF_8)) {
-                    properties.load(reader);
-                } catch (IOException ignored) {
-                }
-            }
+            loadProperties(entryPointClass, "/assets/hmcl.properties");
+            loadProperties(entryPointClass, "/assets/xenon.properties");
+        }
+    }
+
+    private static void loadProperties(Class<?> entryPointClass, String name) {
+        InputStream input = entryPointClass.getResourceAsStream(name);
+        if (input == null) {
+            return;
+        }
+        try (var reader = new InputStreamReader(input, StandardCharsets.UTF_8)) {
+            properties.load(reader);
+        } catch (IOException ignored) {
         }
     }
 

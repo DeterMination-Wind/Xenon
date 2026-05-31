@@ -200,8 +200,6 @@ public final class MindustryCrashListPane extends BorderPane {
         actions.setAlignment(Pos.CENTER_RIGHT);
         actions.setMinWidth(Region.USE_PREF_SIZE);
         actions.setMaxWidth(Region.USE_PREF_SIZE);
-        JFXButton askAi = FXUtils.newRaisedButton(i18n("xenon.mindustry.crash.ask_ai"));
-        askAi.setOnAction(e -> MindustryCrashAiAssistant.ask(r, variant));
         JFXButton view = FXUtils.newRaisedButton(i18n("xenon.mindustry.crash.view"));
         view.setOnAction(e -> showFullText(r));
         JFXButton copy = FXUtils.newRaisedButton(i18n("xenon.mindustry.crash.copy"));
@@ -220,7 +218,7 @@ public final class MindustryCrashListPane extends BorderPane {
                 FXUtils.openLink(url);
             }
         });
-        actions.getChildren().setAll(askAi, view, copy, report);
+        actions.getChildren().setAll(view, copy, report);
         BorderPane.setAlignment(actions, Pos.CENTER_RIGHT);
         BorderPane.setMargin(actions, new Insets(0, 0, 0, 12));
         row.setRight(actions);

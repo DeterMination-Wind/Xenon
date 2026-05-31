@@ -248,7 +248,7 @@ public final class SelfDependencyPatcher {
                 .map(DependencyDescriptor::localPath)
                 .toArray(Path[]::new);
 
-        String addOpens = JarUtils.getAttribute("hmcl.add-opens", null);
+        String addOpens = JarUtils.getAttribute("xenon.add-opens", JarUtils.getAttribute("hmcl.add-opens", null));
         JavaFXPatcher.patch(modules, jars, addOpens != null ? addOpens.split(" ") : new String[0]);
     }
 
