@@ -138,7 +138,7 @@ public final class ServerSessionRunner {
             try {
                 session.start(event -> {
                     if (event instanceof Exited e) {
-                        watcher.complete(e.code());
+                        watcher.complete(e.code(), e.expected());
                         // Don't re-emit Exited here yet; the supervisor decides
                         // whether the user should see Exited or Restarted.
                         return;
@@ -147,18 +147,19 @@ public final class ServerSessionRunner {
                 });
             } catch (RuntimeException ex) {
                 Logger.LOG.warning("failed to start server " + inst.getId() + ": " + ex);
-                ui.accept(new Exited(-1));
+                ui.accept(new Exited(-1, false));
                 return;
             }
 
-            int code = watcher.await();
+            ExitResult exit = watcher.await();
+            int code = exit.code;
 
-            if (stopRequested) {
-                ui.accept(new Exited(code));
+            if (stopRequested || exit.expected) {
+                ui.accept(new Exited(code, true));
                 return;
             }
             if (!policy.shouldRestart(code, attempt)) {
-                ui.accept(new Exited(code));
+                ui.accept(new Exited(code, code == 0));
                 return;
             }
 
@@ -168,12 +169,12 @@ public final class ServerSessionRunner {
                     TimeUnit.SECONDS.sleep(delay);
                 } catch (InterruptedException ex) {
                     Thread.currentThread().interrupt();
-                    ui.accept(new Exited(code));
+                    ui.accept(new Exited(code, false));
                     return;
                 }
             }
             if (stopRequested) {
-                ui.accept(new Exited(code));
+                ui.accept(new Exited(code, true));
                 return;
             }
             attempt++;
@@ -191,28 +192,40 @@ public final class ServerSessionRunner {
         private final Object lock = new Object();
         private boolean done = false;
         private int code = -1;
+        private boolean expected = false;
 
-        void complete(int c) {
+        void complete(int c, boolean exp) {
             synchronized (lock) {
                 if (done) return;
                 done = true;
                 code = c;
+                expected = exp;
                 lock.notifyAll();
             }
         }
 
-        int await() {
+        ExitResult await() {
             synchronized (lock) {
                 while (!done) {
                     try {
                         lock.wait();
                     } catch (InterruptedException ex) {
                         Thread.currentThread().interrupt();
-                        return -1;
+                        return new ExitResult(-1, false);
                     }
                 }
-                return code;
+                return new ExitResult(code, expected);
             }
+        }
+    }
+
+    private static final class ExitResult {
+        final int code;
+        final boolean expected;
+
+        ExitResult(int code, boolean expected) {
+            this.code = code;
+            this.expected = expected;
         }
     }
 

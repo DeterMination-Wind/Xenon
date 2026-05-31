@@ -18,6 +18,8 @@
 package determination.xenon.mindustry.server;
 
 import com.google.gson.annotations.SerializedName;
+import org.jetbrains.annotations.NotNullByDefault;
+import org.jetbrains.annotations.Nullable;
 
 /**
  * POJO mirror of the Mindustry dedicated-server {@code config.json} that
@@ -29,52 +31,45 @@ import com.google.gson.annotations.SerializedName;
  * deserialising; callers should treat {@code null} as "use Mindustry's
  * built-in default".</p>
  *
- * <p>The {@code public} key collides with a Java keyword, so it is
- * mapped to {@link #isPublic} via {@link SerializedName}.</p>
+ * <p>Only keys backed by Mindustry's {@code Administration.Config} are
+ * exposed here. Legacy Xenon-written keys are accepted through
+ * {@link SerializedName#alternate()} but are normalized when saved.</p>
  */
+@NotNullByDefault
 public final class ServerConfig {
-    private String name;
-    private String motd;
-    private Integer port;
-    @SerializedName("public")
-    private Boolean isPublic;
-    private Boolean autoUpdate;
-    private Integer roundLimit;
-    private Boolean whitelist;
-    private String description;
+    @SerializedName(value = "servername", alternate = {"serverName", "name"})
+    private @Nullable String serverName;
+    private @Nullable String motd;
+    private @Nullable Integer port;
+    private @Nullable Boolean autoUpdate;
+    private @Nullable Boolean whitelist;
+    @SerializedName(value = "desc", alternate = "description")
+    private @Nullable String description;
 
     public ServerConfig() {
     }
 
-    public String getName() { return name; }
+    public @Nullable String getServerName() { return serverName; }
 
-    public void setName(String name) { this.name = name; }
+    public void setServerName(@Nullable String serverName) { this.serverName = serverName; }
 
-    public String getMotd() { return motd; }
+    public @Nullable String getMotd() { return motd; }
 
-    public void setMotd(String motd) { this.motd = motd; }
+    public void setMotd(@Nullable String motd) { this.motd = motd; }
 
-    public Integer getPort() { return port; }
+    public @Nullable Integer getPort() { return port; }
 
-    public void setPort(Integer port) { this.port = port; }
+    public void setPort(@Nullable Integer port) { this.port = port; }
 
-    public Boolean getIsPublic() { return isPublic; }
+    public @Nullable Boolean getAutoUpdate() { return autoUpdate; }
 
-    public void setIsPublic(Boolean isPublic) { this.isPublic = isPublic; }
+    public void setAutoUpdate(@Nullable Boolean autoUpdate) { this.autoUpdate = autoUpdate; }
 
-    public Boolean getAutoUpdate() { return autoUpdate; }
+    public @Nullable Boolean getWhitelist() { return whitelist; }
 
-    public void setAutoUpdate(Boolean autoUpdate) { this.autoUpdate = autoUpdate; }
+    public void setWhitelist(@Nullable Boolean whitelist) { this.whitelist = whitelist; }
 
-    public Integer getRoundLimit() { return roundLimit; }
+    public @Nullable String getDescription() { return description; }
 
-    public void setRoundLimit(Integer roundLimit) { this.roundLimit = roundLimit; }
-
-    public Boolean getWhitelist() { return whitelist; }
-
-    public void setWhitelist(Boolean whitelist) { this.whitelist = whitelist; }
-
-    public String getDescription() { return description; }
-
-    public void setDescription(String description) { this.description = description; }
+    public void setDescription(@Nullable String description) { this.description = description; }
 }

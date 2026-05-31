@@ -61,8 +61,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import static determination.xenon.ui.FXUtils.runInFX;
@@ -124,11 +126,16 @@ public class RootPage extends DecoratorAnimatedPage implements DecoratorPage {
 
             Profiles.registerVersionsListener(profile -> {
                 HMCLGameRepository repository = profile.getRepository();
+                Set<String> ids = new HashSet<>();
                 List<Version> children = repository.getVersions().parallelStream()
                         .filter(version -> !version.isHidden())
+                        .filter(version -> !determination.xenon.mindustry.ui.MindustryRoutes
+                                .isMindustry(version.getId()))
                         .sorted(Comparator
                                 .comparing((Version version) -> Lang.requireNonNullElse(version.getReleaseTime(), Instant.EPOCH))
                                 .thenComparing(version -> VersionNumber.asVersion(repository.getGameVersion(version).orElse(version.getId()))))
+                        .sequential()
+                        .filter(version -> ids.add(version.getId()))
                         .collect(Collectors.toCollection(java.util.ArrayList::new));
 
                 // Merge Mindustry instances from XenonGameRepository so the
@@ -142,8 +149,10 @@ public class RootPage extends DecoratorAnimatedPage implements DecoratorPage {
                             determination.xenon.mindustry.MindustryImportFlow.repository();
                     xrepo.refresh();
                     for (determination.xenon.mindustry.MindustryVersion v : xrepo.all()) {
-                        children.add(new Version(v.getId()));
-                        mindustryIds.add(v.getId());
+                        if (ids.add(v.getId())) {
+                            children.add(new Version(v.getId()));
+                            mindustryIds.add(v.getId());
+                        }
                     }
                 } catch (Throwable ex) {
                     LOG.warning("Failed to merge Mindustry versions for MainPage", ex);

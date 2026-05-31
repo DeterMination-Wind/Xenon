@@ -75,7 +75,11 @@ public final class ServerConsoleSession {
     public static record StderrLine(String text) implements ConsoleEvent {}
 
     /** Emitted once after the process has exited and pump threads drained. */
-    public static record Exited(int code) implements ConsoleEvent {}
+    public static record Exited(int code, boolean expected) implements ConsoleEvent {
+        public Exited(int code) {
+            this(code, code == 0);
+        }
+    }
 
     /**
      * Emitted by {@link ServerSessionRunner} (not by {@link ServerConsoleSession}
@@ -92,6 +96,7 @@ public final class ServerConsoleSession {
 
     private volatile ServerProcess proc;
     private volatile Consumer<ConsoleEvent> ui;
+    private volatile boolean stopRequested;
 
     public ServerConsoleSession(ServerInstance inst, ServerInstanceManager mgr) {
         this.inst = Objects.requireNonNull(inst, "inst");
@@ -121,7 +126,7 @@ public final class ServerConsoleSession {
             if (err != null) {
                 Logger.LOG.warning("server " + inst.getId() + " exit observation failed: " + err);
             }
-            emit(new Exited(c));
+            emit(new Exited(c, stopRequested || c == 0));
         });
     }
 
@@ -136,6 +141,9 @@ public final class ServerConsoleSession {
         if (p == null || !p.isAlive()) {
             throw new UncheckedIOException(new IOException(
                     "server " + inst.getId() + " is not running"));
+        }
+        if ("stop".equalsIgnoreCase(cmd.trim()) || "exit".equalsIgnoreCase(cmd.trim())) {
+            stopRequested = true;
         }
         try {
             p.sendCommand(cmd);
@@ -157,6 +165,7 @@ public final class ServerConsoleSession {
      * 3-second grace period see {@link ServerSessionRunner#stop()}.
      */
     public void stop() {
+        stopRequested = true;
         ServerProcess p = proc;
         if (p == null) return;
         p.destroy();

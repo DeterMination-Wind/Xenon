@@ -6,6 +6,7 @@ import determination.xenon.gradle.l10n.CreateLocaleNamesResourceBundle
 import determination.xenon.gradle.l10n.UpsideDownTranslate
 import determination.xenon.gradle.utils.PropertiesUtils
 import java.security.MessageDigest
+import java.util.zip.ZipFile
 
 plugins {
     alias(libs.plugins.shadow)
@@ -57,6 +58,26 @@ fun createChecksum(file: File) {
         )
     }
 }
+
+fun verifyJarContains(file: File, entries: List<String>) {
+    ZipFile(file).use { zip ->
+        val missing = entries.filter { zip.getEntry(it) == null }
+        if (missing.isNotEmpty()) {
+            throw GradleException("shadowJar is missing runtime classes:\n" +
+                    missing.joinToString(separator = "\n") { " - $it" })
+        }
+    }
+}
+
+val runtimeCriticalClasses = listOf(
+    "determination/xenon/mindustry/uuid/MindustryPlayerLaunchHook.class",
+    "determination/xenon/mindustry/uuid/MindustrySettingsBin.class",
+    "determination/xenon/mindustry/uuid/UuidGenerator.class",
+    "determination/xenon/mindustry/uuid/UuidProfile.class",
+    "determination/xenon/mindustry/uuid/UuidProfileManager.class",
+    "determination/xenon/ui/account/AccountListItem.class",
+    "determination/xenon/ui/account/AccountListPage.class",
+)
 
 tasks.withType<JavaCompile> {
     sourceCompatibility = "17"
@@ -113,10 +134,9 @@ val createPropertiesFile by tasks.registering {
 
 tasks.jar {
     enabled = false
-    dependsOn(tasks["shadowJar"])
 }
 
-val jarPath = tasks.jar.get().archiveFile.get().asFile
+val shadowJarFile = tasks.shadowJar.flatMap { it.archiveFile }
 
 tasks.shadowJar {
     dependsOn(createPropertiesFile)
@@ -137,6 +157,7 @@ tasks.shadowJar {
         exclude(dependency("com.google.code.gson:.*:.*"))
         exclude(dependency("net.java.dev.jna:jna:.*"))
         exclude(dependency("libs:JFoenix:.*"))
+        exclude(project(":XenonCore"))
         exclude(project(":XenonBoot"))
     }
 
@@ -151,6 +172,8 @@ tasks.shadowJar {
     )
 
     doLast {
+        val jarPath = archiveFile.get().asFile
+        verifyJarContains(jarPath, runtimeCriticalClasses)
         createChecksum(jarPath)
     }
 }
@@ -208,9 +231,9 @@ tasks.withType<JavaExec> {
 }
 
 tasks.register<JavaExec>("run") {
-    dependsOn(tasks.jar)
+    dependsOn(tasks.shadowJar)
     group = "application"
-    classpath = files(jarPath)
+    classpath = files(shadowJarFile)
     workingDir = rootProject.rootDir
 
     val vmOptions = parseToolOptions(System.getenv("XENON_JAVA_OPTS") ?: "-Xmx1g")
@@ -268,7 +291,7 @@ val jpackageInputDir = layout.buildDirectory.dir("jpackage-input")
 
 val collectJpackageInput by tasks.registering(Copy::class) {
     dependsOn(tasks.shadowJar)
-    from(jarPath)
+    from(shadowJarFile)
     into(jpackageInputDir)
 }
 
@@ -306,7 +329,7 @@ val packageWindows by tasks.registering(JPackageTask::class) {
         if (!System.getProperty("os.name").lowercase().contains("win"))
             throw GradleException("packageWindows requires running on Windows")
         dest.mkdirs()
-        val args = commonJPackageArgs(jarPath.name, dest)
+        val args = commonJPackageArgs(shadowJarFile.get().asFile.name, dest)
         args.addAll(listOf("--type", "msi",
             "--win-shortcut", "--win-menu", "--win-menu-group", "Xenon",
             "--win-dir-chooser"))
@@ -323,7 +346,7 @@ val packageMac by tasks.registering(JPackageTask::class) {
         if (!System.getProperty("os.name").lowercase().contains("mac"))
             throw GradleException("packageMac requires running on macOS")
         dest.mkdirs()
-        val args = commonJPackageArgs(jarPath.name, dest)
+        val args = commonJPackageArgs(shadowJarFile.get().asFile.name, dest)
         args.addAll(listOf("--type", "dmg",
             "--mac-package-identifier", "com.tinylake.xenon",
             "--java-options", "-XstartOnFirstThread"))
@@ -341,7 +364,7 @@ val packageLinuxDeb by tasks.registering(JPackageTask::class) {
             System.getProperty("os.name").lowercase().contains("mac"))
             throw GradleException("packageLinuxDeb requires running on Linux")
         dest.mkdirs()
-        val args = commonJPackageArgs(jarPath.name, dest)
+        val args = commonJPackageArgs(shadowJarFile.get().asFile.name, dest)
         args.addAll(listOf("--type", "deb", "--linux-shortcut",
             "--linux-menu-group", "Game"))
         commandLine(listOf(executable!!) + args)
@@ -358,7 +381,7 @@ val packageLinuxAppImage by tasks.registering(JPackageTask::class) {
             System.getProperty("os.name").lowercase().contains("mac"))
             throw GradleException("packageLinuxAppImage requires running on Linux")
         dest.mkdirs()
-        val args = commonJPackageArgs(jarPath.name, dest)
+        val args = commonJPackageArgs(shadowJarFile.get().asFile.name, dest)
         args.addAll(listOf("--type", "app-image"))
         commandLine(listOf(executable!!) + args)
     }
@@ -387,7 +410,7 @@ val packagePortable by tasks.registering(Zip::class) {
     archiveBaseName.set("Xenon-portable")
     archiveVersion.set(project.version.toString())
     destinationDirectory.set(jpackageOutDir)
-    from(jarPath) { rename { "Xenon.jar" } }
+    from(shadowJarFile) { rename { "Xenon.jar" } }
     from(genPortableLaunchers.map { it.outputs.files })
 }
 

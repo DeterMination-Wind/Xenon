@@ -47,6 +47,14 @@ public final class Profiles {
     private Profiles() {
     }
 
+    public static Path defaultGameDirectory() {
+        return Metadata.XENON_GLOBAL_DIRECTORY.resolve("instances").toAbsolutePath().normalize();
+    }
+
+    private static Path homeGameDirectory() {
+        return Metadata.XENON_GLOBAL_DIRECTORY.resolve("home").toAbsolutePath().normalize();
+    }
+
     public static String getProfileDisplayName(Profile profile) {
         return switch (profile.getName()) {
             case Profiles.DEFAULT_PROFILE -> i18n("profile.default");
@@ -101,10 +109,36 @@ public final class Profiles {
 
     private static void checkProfiles() {
         if (profiles.isEmpty()) {
-            Profile current = new Profile(Profiles.DEFAULT_PROFILE, Path.of(".minecraft"), new VersionSetting(), null, true);
-            Profile home = new Profile(Profiles.HOME_PROFILE, Metadata.XENON_GLOBAL_DIRECTORY);
+            Profile current = new Profile(Profiles.DEFAULT_PROFILE, defaultGameDirectory(), new VersionSetting(), null, false);
+            Profile home = new Profile(Profiles.HOME_PROFILE, homeGameDirectory());
             Platform.runLater(() -> profiles.addAll(current, home));
+        } else {
+            profiles.forEach(Profiles::migrateBuiltInProfileDirectory);
         }
+    }
+
+    private static void migrateBuiltInProfileDirectory(Profile profile) {
+        Path dir = profile.getGameDir();
+        if (dir == null) {
+            return;
+        }
+        if (DEFAULT_PROFILE.equals(profile.getName()) && isLegacyDefaultDirectory(dir)) {
+            profile.setGameDir(defaultGameDirectory());
+            profile.setUseRelativePath(false);
+        } else if (HOME_PROFILE.equals(profile.getName()) && isLegacyHomeDirectory(dir)) {
+            profile.setGameDir(homeGameDirectory());
+            profile.setUseRelativePath(false);
+        }
+    }
+
+    private static boolean isLegacyDefaultDirectory(Path dir) {
+        Path fileName = dir.getFileName();
+        return dir.equals(Path.of(".minecraft"))
+                || (fileName != null && ".minecraft".equals(fileName.toString()));
+    }
+
+    private static boolean isLegacyHomeDirectory(Path dir) {
+        return dir.toAbsolutePath().normalize().equals(Metadata.XENON_GLOBAL_DIRECTORY);
     }
 
     /**

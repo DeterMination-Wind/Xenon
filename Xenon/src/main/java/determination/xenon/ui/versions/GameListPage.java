@@ -54,6 +54,8 @@ import determination.xenon.util.javafx.MappedObservableList;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
@@ -154,8 +156,12 @@ public class GameListPage extends DecoratorAnimatedPage implements DecoratorPage
             setLoading(true);
             setFailedReason(null);
 
+            Set<String> ids = new LinkedHashSet<>();
             List<GameListItem> versionItems = new java.util.ArrayList<>(
                     profile.getRepository().getDisplayVersions()
+                            .filter(instance -> !determination.xenon.mindustry.ui.MindustryRoutes
+                                    .isMindustry(instance.getId()))
+                            .filter(instance -> ids.add(instance.getId()))
                             .map(instance -> new GameListItem(profile, instance.getId()))
                             .toList());
 
@@ -166,7 +172,9 @@ public class GameListPage extends DecoratorAnimatedPage implements DecoratorPage
                         determination.xenon.mindustry.MindustryImportFlow.repository();
                 xrepo.refresh();
                 for (determination.xenon.mindustry.MindustryVersion v : xrepo.all()) {
-                    versionItems.add(new GameListItem(profile, v.getId()));
+                    if (ids.add(v.getId())) {
+                        versionItems.add(new GameListItem(profile, v.getId()));
+                    }
                 }
             } catch (Throwable ex) {
                 determination.xenon.util.logging.Logger.LOG

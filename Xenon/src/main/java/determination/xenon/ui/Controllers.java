@@ -366,6 +366,7 @@ public final class Controllers {
 
         FXUtils.setIcon(stage);
         stage.setTitle(Metadata.FULL_TITLE);
+        stage.setResizable(true);
         // Win11 24H2 won't paint a taskbar thumbnail for layered (TRANSPARENT)
         // stages until they're minimized, so the icon disappears while the
         // window is on screen — even with WS_EX_APPWINDOW applied. UNDECORATED

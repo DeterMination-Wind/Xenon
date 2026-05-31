@@ -118,7 +118,7 @@ public final class Profile implements Observable {
     }
 
     public Profile(String name) {
-        this(name, Path.of(".minecraft"));
+        this(name, Profiles.defaultGameDirectory());
     }
 
     public Profile(String name, Path initialGameDir) {
@@ -148,6 +148,9 @@ public final class Profile implements Observable {
         runInFX(() -> {
             if (!repository.isLoaded()) return;
             String newValue = selectedVersion.get();
+            if (determination.xenon.mindustry.ui.MindustryRoutes.isMindustry(newValue)) {
+                return;
+            }
             if (!repository.hasVersion(newValue)) {
                 Optional<String> version = repository.getVersions().stream().findFirst().map(Version::getId);
                 if (version.isPresent())
@@ -247,7 +250,7 @@ public final class Profile implements Observable {
             String gameDir = Optional.ofNullable(obj.get("gameDir")).map(JsonElement::getAsString).orElse("");
 
             return new Profile("Default",
-                    Path.of(gameDir),
+                    gameDir.isBlank() ? Profiles.defaultGameDirectory() : Path.of(gameDir),
                     context.deserialize(obj.get("global"), VersionSetting.class),
                     Optional.ofNullable(obj.get("selectedMinecraftVersion")).map(JsonElement::getAsString).orElse(""),
                     Optional.ofNullable(obj.get("useRelativePath")).map(JsonElement::getAsBoolean).orElse(false));

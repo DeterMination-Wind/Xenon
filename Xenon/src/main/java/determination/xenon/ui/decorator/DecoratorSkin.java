@@ -55,6 +55,8 @@ import determination.xenon.ui.wizard.Navigation;
 import determination.xenon.util.platform.OperatingSystem;
 
 public class DecoratorSkin extends SkinBase<Decorator> {
+    private static final double RESIZE_EDGE_SIZE = 6;
+
     private final StackPane root, parent;
     private final StackPane titleContainer;
     private final Stage primaryStage;
@@ -361,19 +363,23 @@ public class DecoratorSkin extends SkinBase<Decorator> {
     }
 
     private boolean isRightEdge(double x, double y, Bounds boundsInParent) {
-        return x < root.getWidth() && x >= root.getWidth() - root.snappedLeftInset();
+        double edge = Math.max(root.snappedLeftInset(), RESIZE_EDGE_SIZE);
+        return x < root.getWidth() && x >= root.getWidth() - edge;
     }
 
     private boolean isTopEdge(double x, double y, Bounds boundsInParent) {
-        return y >= 0 && y <= root.snappedTopInset();
+        double edge = Math.max(root.snappedTopInset(), RESIZE_EDGE_SIZE);
+        return y >= 0 && y <= edge;
     }
 
     private boolean isBottomEdge(double x, double y, Bounds boundsInParent) {
-        return y < root.getHeight() && y >= root.getHeight() - root.snappedLeftInset();
+        double edge = Math.max(root.snappedBottomInset(), RESIZE_EDGE_SIZE);
+        return y < root.getHeight() && y >= root.getHeight() - edge;
     }
 
     private boolean isLeftEdge(double x, double y, Bounds boundsInParent) {
-        return x >= 0 && x <= root.snappedLeftInset();
+        double edge = Math.max(root.snappedLeftInset(), RESIZE_EDGE_SIZE);
+        return x >= 0 && x <= edge;
     }
 
     private void resizeStage(double newWidth, double newHeight) {
@@ -400,7 +406,7 @@ public class DecoratorSkin extends SkinBase<Decorator> {
         if (!primaryStage.isFullScreen() && primaryStage.isResizable()) {
             double x = mouseEvent.getX(), y = mouseEvent.getY();
             Bounds boundsInParent = root.getBoundsInParent();
-            double diagonalSize = root.snappedLeftInset() + 10;
+            double diagonalSize = Math.max(root.snappedLeftInset(), RESIZE_EDGE_SIZE) + 10;
             if (this.isRightEdge(x, y, boundsInParent)) {
                 if (y < diagonalSize) {
                     root.setCursor(Cursor.NE_RESIZE);
