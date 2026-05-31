@@ -25,6 +25,7 @@ import determination.xenon.mindustry.MindustryVersion;
 import determination.xenon.mindustry.XenonGameRepository;
 import determination.xenon.mindustry.XenonLauncher;
 import determination.xenon.mindustry.modpack.XenonModpackPacker;
+import determination.xenon.task.FetchTask;
 import determination.xenon.task.Schedulers;
 import determination.xenon.task.Task;
 import determination.xenon.ui.Controllers;
@@ -38,6 +39,7 @@ import javafx.stage.FileChooser;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Optional;
+import java.util.concurrent.CancellationException;
 
 import static determination.xenon.util.i18n.I18n.i18n;
 import static determination.xenon.util.logging.Logger.LOG;
@@ -103,12 +105,37 @@ public final class MindustryRoutes {
                 ? selected
                 : selected.resolveSibling(selected.getFileName().toString() + ".xenon");
 
-        Task<?> export = Task.supplyAsync(Schedulers.io(), () -> {
-            XenonModpackPacker.pack(MindustryImportFlow.repository(), version, output);
-            return output;
-        }).whenComplete(Schedulers.javafx(), (written, exception) -> {
+        Task<Path> exportTask = new Task<Path>() {
+            @Override
+            public void execute() throws Exception {
+                XenonModpackPacker.pack(MindustryImportFlow.repository(), version, output,
+                        new XenonModpackPacker.ExportMonitor() {
+                            private long lastWritten;
+
+                            @Override
+                            public void update(long writtenBytes, long totalBytes) {
+                                updateProgress(writtenBytes, totalBytes);
+                                FetchTask.recordDownloadedBytes(writtenBytes - lastWritten);
+                                lastWritten = writtenBytes;
+                            }
+
+                            @Override
+                            public boolean isCancelled() {
+                                return thisTaskIsCancelled();
+                            }
+                        });
+                setResult(output);
+            }
+
+            private boolean thisTaskIsCancelled() {
+                return isCancelled();
+            }
+        }.setName(i18n("modpack.export"));
+        Task<?> export = exportTask.whenComplete(Schedulers.javafx(), (written, exception) -> {
             if (exception == null) {
                 Controllers.showToast(i18n("message.success") + ": " + written);
+            } else if (exception instanceof CancellationException) {
+                Controllers.showToast(i18n("message.cancelled"));
             } else {
                 LOG.warning("Failed to export Xenon modpack " + output, exception);
                 Controllers.dialog(exception.getMessage(),

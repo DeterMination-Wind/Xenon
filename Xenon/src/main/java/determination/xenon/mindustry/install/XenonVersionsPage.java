@@ -20,6 +20,7 @@ package determination.xenon.mindustry.install;
 import com.jfoenix.controls.JFXButton;
 import com.jfoenix.controls.JFXListView;
 import determination.xenon.mindustry.MindustryImportFlow;
+import determination.xenon.mindustry.MindustryVersionDisplay;
 import determination.xenon.mindustry.VersionVariant;
 import determination.xenon.mindustry.download.GitHubReleaseClient;
 import determination.xenon.mindustry.download.MindustryRemoteVersion;
@@ -221,9 +222,12 @@ public final class XenonVersionsPage extends VBox implements WizardPage, Refresh
             }
             setGraphic(pane);
 
-            // Title = the actual asset file, the most actionable label.
+            // MindustryX tags carry a short user-facing version (X##/B##);
+            // other variants keep the asset file as the actionable label.
             String fileName = item.getFileName();
-            twoLine.setTitle(fileName.isEmpty() ? item.getDisplayVersion() : fileName);
+            twoLine.setTitle(item.getVariant() == VersionVariant.MINDUSTRY_X
+                    ? item.getDisplayVersion()
+                    : fileName.isEmpty() ? item.getDisplayVersion() : fileName);
 
             // Subtitle = "tag · size · published".
             StringBuilder sub = new StringBuilder();
@@ -239,8 +243,10 @@ public final class XenonVersionsPage extends VBox implements WizardPage, Refresh
             twoLine.setSubtitle(sub.length() == 0 ? null : sub.toString());
 
             twoLine.getTags().clear();
-            if (item.getBuild() > 0) {
-                twoLine.addTag("build " + item.getBuild());
+            String buildLabel = MindustryVersionDisplay.buildLabel(item.getVariant(),
+                    item.getBuild(), item.getBuildType(), item.getTagName(), item.getFileName());
+            if (!buildLabel.isEmpty()) {
+                twoLine.addTag(buildLabel);
             }
             if (!item.getBuildType().isEmpty()) {
                 twoLine.addTag(localizeChannel(item.getBuildType()));

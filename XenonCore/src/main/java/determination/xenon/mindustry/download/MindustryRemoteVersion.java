@@ -17,6 +17,7 @@
  */
 package determination.xenon.mindustry.download;
 
+import determination.xenon.mindustry.MindustryVersionDisplay;
 import determination.xenon.mindustry.VersionVariant;
 
 import java.time.Instant;
@@ -89,6 +90,10 @@ public final class MindustryRemoteVersion {
 
     /** Best-effort human-readable identifier: tag if present, else "build N". */
     public String getDisplayVersion() {
+        if (variant == VersionVariant.MINDUSTRY_X) {
+            String mindustryX = MindustryVersionDisplay.buildLabel(variant, build, buildType, tagName, fileName);
+            if (!mindustryX.isEmpty()) return mindustryX;
+        }
         if (tagName != null && !tagName.isEmpty()) return tagName;
         if (build > 0) return "build " + build;
         return fileName != null && !fileName.isEmpty() ? fileName : "(unknown)";

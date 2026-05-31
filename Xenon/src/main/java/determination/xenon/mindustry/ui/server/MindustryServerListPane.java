@@ -18,6 +18,7 @@
 package determination.xenon.mindustry.ui.server;
 
 import com.jfoenix.controls.JFXButton;
+import determination.xenon.mindustry.MindustryVersionDisplay;
 import determination.xenon.mindustry.VersionVariant;
 import determination.xenon.mindustry.download.MindustryRemoteVersion;
 import determination.xenon.mindustry.server.ServerInstance;
@@ -152,8 +153,10 @@ public final class MindustryServerListPane extends BorderPane {
         StringBuilder subtitle = new StringBuilder();
         subtitle.append(inst.getVariant().getDisplayName()).append("  ·  ");
         subtitle.append(i18n("xenon.mindustry.server.subtitle.port", inst.getPort()));
-        if (inst.getBuild() > 0) {
-            subtitle.append("  ·  ").append("build ").append(inst.getBuild());
+        String buildLabel = MindustryVersionDisplay.buildLabel(inst.getVariant(),
+                inst.getBuild(), inst.getBuildType(), inst.getUpstreamTag(), inst.getJarPath(), inst.getId());
+        if (!buildLabel.isEmpty()) {
+            subtitle.append("  ·  ").append(buildLabel);
         } else if (!inst.getUpstreamTag().isBlank()) {
             subtitle.append("  ·  ").append(inst.getUpstreamTag());
         }

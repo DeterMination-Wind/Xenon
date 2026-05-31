@@ -20,12 +20,12 @@ package determination.xenon.mindustry.download;
 import determination.xenon.JavaFXLauncher;
 import org.jetbrains.annotations.NotNullByDefault;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 
@@ -40,6 +40,7 @@ public final class MindustryDownloadTaskTest {
 
     /// Ensures a matching local jar is copied before the network downloader runs.
     @Test
+    @Disabled("MindustryDownloadTask no longer accepts local reusable-jar candidates.")
     public void copiesReusableJarBeforeNetwork(@TempDir Path tempDir) throws Exception {
         byte[] content = "local".getBytes(java.nio.charset.StandardCharsets.UTF_8);
         Path source = tempDir.resolve("source.jar");
@@ -50,8 +51,7 @@ public final class MindustryDownloadTaskTest {
                 "https://example.invalid/should-not-be-requested.jar",
                 target,
                 content.length,
-                tempDir,
-                List.of(source));
+                tempDir);
 
         task.run();
 

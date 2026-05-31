@@ -6,6 +6,11 @@
     "externalLink" : "https://github.com/way-zer"
   },
   {
+    "image" : "/assets/img/determination.jpeg",
+    "title" : "DeterMination",
+    "subtitle" : "为Xenon提供了高速镜像和维护服务"
+  },
+  {
     "image" : {
       "light" : "/assets/img/github.png",
       "dark" : "/assets/img/github-white.png"

@@ -19,6 +19,9 @@ package determination.xenon.mindustry.server;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.google.gson.JsonSyntaxException;
 import determination.xenon.util.logging.Logger;
 
@@ -41,10 +44,10 @@ import java.util.Objects;
  * a setting.</p>
  *
  * <p>{@link #save(ServerConfig)} also nudges the running
- * {@link ServerProcess} (if any) with {@code reload-config} so the new
- * values take effect without a restart. If the server isn't running, or
- * the command fails to write to its stdin, the save itself still
- * succeeds.</p>
+ * {@link ServerProcess} (if any) with Mindustry's real
+ * {@code config key value} console command so the new values take effect
+ * without a restart. If the server isn't running, or the command fails to
+ * write to its stdin, the save itself still succeeds.</p>
  */
 public final class ServerConfigManager {
 
@@ -80,8 +83,12 @@ public final class ServerConfigManager {
             return new ServerConfig();
         }
         try {
-            ServerConfig cfg = GSON.fromJson(text, ServerConfig.class);
-            return cfg != null ? cfg : new ServerConfig();
+            JsonElement root = JsonParser.parseString(text);
+            if (!root.isJsonObject()) {
+                return new ServerConfig();
+            }
+            JsonObject json = root.getAsJsonObject();
+            return ServerConfig.fromJsonObject(json);
         } catch (JsonSyntaxException ex) {
             Logger.LOG.warning("Mindustry server config.json is malformed at "
                     + configFile + ": " + ex.getMessage());
@@ -98,17 +105,36 @@ public final class ServerConfigManager {
     public void save(ServerConfig cfg) throws IOException {
         Objects.requireNonNull(cfg, "cfg");
         Files.createDirectories(configFile.getParent());
-        Files.writeString(configFile, GSON.toJson(cfg), StandardCharsets.UTF_8);
+        Files.writeString(configFile, GSON.toJson(cfg.toJsonObject()), StandardCharsets.UTF_8);
+
+        Object port = cfg.get("port");
+        if (port instanceof Integer integer) {
+            instance.setPort(integer);
+            manager.save(instance);
+        }
 
         Map<String, ServerProcess> running = manager.getRunningProcesses();
         ServerProcess proc = running.get(instance.getId());
         if (proc != null && proc.isAlive()) {
             try {
-                proc.sendCommand("reload-config");
+                for (Map.Entry<String, Object> entry : cfg.toCommandValues().entrySet()) {
+                    String value = commandValue(entry.getValue());
+                    if (value.isEmpty()) {
+                        continue;
+                    }
+                    proc.sendCommand("config " + entry.getKey() + " " + value);
+                }
             } catch (IOException ex) {
-                Logger.LOG.warning("Failed to push reload-config to server "
+                Logger.LOG.warning("Failed to push config command to server "
                         + instance.getId() + ": " + ex.getMessage());
             }
         }
+    }
+
+    private static String commandValue(Object value) {
+        if (value instanceof String s) {
+            return s.replace('\r', ' ').replace('\n', ' ').trim();
+        }
+        return String.valueOf(value);
     }
 }

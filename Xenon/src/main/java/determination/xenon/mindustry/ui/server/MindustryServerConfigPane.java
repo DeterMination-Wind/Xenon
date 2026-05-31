@@ -40,44 +40,29 @@ import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
+import org.jetbrains.annotations.NotNullByDefault;
+import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 import static determination.xenon.util.i18n.I18n.i18n;
 import static determination.xenon.util.logging.Logger.LOG;
 
-/**
- * Form view for the Mindustry server's {@code config/config.json}. Reads
- * with {@link ServerConfigManager}, lets the user edit the common knobs
- * (name / motd / port / public / round limit / whitelist / description),
- * writes back on Save.
- *
- * <p>Every field maps to a {@link Boolean}/{@link Integer}/{@link String}
- * on {@link ServerConfig}. We treat the empty text-field as "leave at
- * Mindustry default" by writing {@code null} into the corresponding
- * setter — the manager's serialiser then drops it from the JSON, which
- * matches Mindustry's "only persist explicitly-set keys" behaviour.</p>
- */
+/// Form view for the Mindustry server's supported `config` command values.
+@NotNullByDefault
 public final class MindustryServerConfigPane extends BorderPane {
 
     private final ServerInstance inst;
-    private final ServerInstanceManager manager;
     private final ServerConfigManager configManager;
-
-    private final JFXTextField nameField = new JFXTextField();
-    private final JFXTextField motdField = new JFXTextField();
-    private final JFXTextField portField = new JFXTextField();
-    private final JFXCheckBox publicBox = new JFXCheckBox();
-    private final JFXCheckBox autoUpdateBox = new JFXCheckBox();
-    private final JFXTextField roundLimitField = new JFXTextField();
-    private final JFXCheckBox whitelistBox = new JFXCheckBox();
-    private final JFXTextField descriptionField = new JFXTextField();
-
+    private final Map<String, JFXTextField> textFields = new LinkedHashMap<>();
+    private final Map<String, JFXCheckBox> checkBoxes = new LinkedHashMap<>();
     private final Label status = new Label();
 
+    /// Creates a config editor bound to one managed server instance.
     public MindustryServerConfigPane(ServerInstance inst, ServerInstanceManager manager) {
         this.inst = inst;
-        this.manager = manager;
         this.configManager = new ServerConfigManager(inst, manager);
 
         setPadding(new Insets(12));
@@ -103,37 +88,32 @@ public final class MindustryServerConfigPane extends BorderPane {
         form.setVgap(8);
         form.setPadding(new Insets(8));
         ColumnConstraints labelColumn = new ColumnConstraints();
-        labelColumn.setMinWidth(96);
-        labelColumn.setPrefWidth(132);
+        labelColumn.setMinWidth(140);
+        labelColumn.setPrefWidth(190);
         labelColumn.setHalignment(HPos.RIGHT);
         ColumnConstraints valueColumn = new ColumnConstraints();
         valueColumn.setHgrow(Priority.ALWAYS);
         valueColumn.setFillWidth(true);
         form.getColumnConstraints().setAll(labelColumn, valueColumn);
 
-        nameField.setMaxWidth(Double.MAX_VALUE);
-        motdField.setMaxWidth(Double.MAX_VALUE);
-        portField.setMaxWidth(Double.MAX_VALUE);
-        roundLimitField.setMaxWidth(Double.MAX_VALUE);
-        descriptionField.setMaxWidth(Double.MAX_VALUE);
-
         int row = 0;
-        form.add(new Label(i18n("xenon.mindustry.server.config.name")), 0, row);
-        form.add(nameField, 1, row++);
-        form.add(new Label(i18n("xenon.mindustry.server.config.motd")), 0, row);
-        form.add(motdField, 1, row++);
-        form.add(new Label(i18n("xenon.mindustry.server.config.port")), 0, row);
-        form.add(portField, 1, row++);
-        form.add(new Label(i18n("xenon.mindustry.server.config.public")), 0, row);
-        form.add(publicBox, 1, row++);
-        form.add(new Label(i18n("xenon.mindustry.server.config.auto_update")), 0, row);
-        form.add(autoUpdateBox, 1, row++);
-        form.add(new Label(i18n("xenon.mindustry.server.config.round_limit")), 0, row);
-        form.add(roundLimitField, 1, row++);
-        form.add(new Label(i18n("xenon.mindustry.server.config.whitelist")), 0, row);
-        form.add(whitelistBox, 1, row++);
-        form.add(new Label(i18n("xenon.mindustry.server.config.description")), 0, row);
-        form.add(descriptionField, 1, row++);
+        for (ServerConfig.Entry entry : ServerConfig.schema()) {
+            form.add(new Label(i18n(labelKey(entry))), 0, row);
+            switch (entry.type()) {
+                case STRING, INTEGER -> {
+                    JFXTextField field = new JFXTextField();
+                    field.setMaxWidth(Double.MAX_VALUE);
+                    field.setPromptText(String.valueOf(entry.defaultValue()));
+                    textFields.put(entry.key(), field);
+                    form.add(field, 1, row++);
+                }
+                case BOOLEAN -> {
+                    JFXCheckBox checkBox = new JFXCheckBox();
+                    checkBoxes.put(entry.key(), checkBox);
+                    form.add(checkBox, 1, row++);
+                }
+            }
+        }
 
         ScrollPane scroll = new ScrollPane(form);
         scroll.setFitToWidth(true);
@@ -161,26 +141,30 @@ public final class MindustryServerConfigPane extends BorderPane {
     }
 
     private void populate(ServerConfig cfg) {
-        nameField.setText(nullToEmpty(cfg.getName()));
-        motdField.setText(nullToEmpty(cfg.getMotd()));
-        portField.setText(cfg.getPort() == null ? "" : String.valueOf(cfg.getPort()));
-        publicBox.setSelected(Boolean.TRUE.equals(cfg.getIsPublic()));
-        autoUpdateBox.setSelected(Boolean.TRUE.equals(cfg.getAutoUpdate()));
-        roundLimitField.setText(cfg.getRoundLimit() == null ? "" : String.valueOf(cfg.getRoundLimit()));
-        whitelistBox.setSelected(Boolean.TRUE.equals(cfg.getWhitelist()));
-        descriptionField.setText(nullToEmpty(cfg.getDescription()));
+        for (ServerConfig.Entry entry : ServerConfig.schema()) {
+            Object value = cfg.getOrDefault(entry);
+            switch (entry.type()) {
+                case STRING, INTEGER -> {
+                    JFXTextField field = textFields.get(entry.key());
+                    if (field != null) {
+                        field.setText(String.valueOf(value));
+                    }
+                }
+                case BOOLEAN -> {
+                    JFXCheckBox checkBox = checkBoxes.get(entry.key());
+                    if (checkBox != null) {
+                        checkBox.setSelected(Boolean.TRUE.equals(value));
+                    }
+                }
+            }
+        }
     }
 
     private void save() {
-        ServerConfig cfg = new ServerConfig();
-        cfg.setName(emptyToNull(nameField.getText()));
-        cfg.setMotd(emptyToNull(motdField.getText()));
-        cfg.setPort(parseIntOrNull(portField.getText()));
-        cfg.setIsPublic(publicBox.isSelected() ? Boolean.TRUE : null);
-        cfg.setAutoUpdate(autoUpdateBox.isSelected() ? Boolean.TRUE : null);
-        cfg.setRoundLimit(parseIntOrNull(roundLimitField.getText()));
-        cfg.setWhitelist(whitelistBox.isSelected() ? Boolean.TRUE : null);
-        cfg.setDescription(emptyToNull(descriptionField.getText()));
+        ServerConfig cfg = buildConfigFromForm();
+        if (cfg == null) {
+            return;
+        }
 
         status.setText(i18n("xenon.mindustry.server.config.saving"));
         Schedulers.io().execute(() -> {
@@ -198,20 +182,55 @@ public final class MindustryServerConfigPane extends BorderPane {
         });
     }
 
-    private static String nullToEmpty(String s) {
-        return s == null ? "" : s;
+    private @Nullable ServerConfig buildConfigFromForm() {
+        ServerConfig cfg = new ServerConfig();
+        for (ServerConfig.Entry entry : ServerConfig.schema()) {
+            switch (entry.type()) {
+                case STRING -> {
+                    JFXTextField field = textFields.get(entry.key());
+                    String text = field == null || field.getText() == null ? "" : field.getText().trim();
+                    cfg.set(entry.key(), text);
+                }
+                case INTEGER -> {
+                    Integer value = parseInteger(entry);
+                    if (value == null) {
+                        return null;
+                    }
+                    cfg.set(entry.key(), value);
+                }
+                case BOOLEAN -> {
+                    JFXCheckBox checkBox = checkBoxes.get(entry.key());
+                    cfg.set(entry.key(), checkBox != null && checkBox.isSelected());
+                }
+            }
+        }
+        return cfg;
     }
 
-    private static String emptyToNull(String s) {
-        return s == null || s.isBlank() ? null : s.trim();
-    }
-
-    private static Integer parseIntOrNull(String s) {
-        if (s == null || s.isBlank()) return null;
+    private @Nullable Integer parseInteger(ServerConfig.Entry entry) {
+        JFXTextField field = textFields.get(entry.key());
+        String text = field == null || field.getText() == null ? "" : field.getText().trim();
+        if (text.isEmpty()) {
+            return (Integer) entry.defaultValue();
+        }
         try {
-            return Integer.parseInt(s.trim());
+            int value = Integer.parseInt(text);
+            if ((entry.key().equals("port") || entry.key().equals("socketInputPort"))
+                    && (value < 1 || value > 65535)) {
+                throw new NumberFormatException();
+            }
+            if (value < 0) {
+                throw new NumberFormatException();
+            }
+            return value;
         } catch (NumberFormatException ex) {
+            Controllers.dialog(i18n("xenon.mindustry.server.config.invalid_integer", i18n(labelKey(entry))),
+                    i18n("message.warning"), MessageDialogPane.MessageType.WARNING);
             return null;
         }
+    }
+
+    private static String labelKey(ServerConfig.Entry entry) {
+        return "xenon.mindustry.server.config." + entry.key();
     }
 }

@@ -70,7 +70,7 @@ public final class AboutPage extends SpinnerPane {
             bilibili.setTitle("Xenon Launcher");
             bilibili.setSubtitle(i18n("xenon.about.bilibili"));
 
-            var qq = new LineButton();
+            var qq = LineButton.createExternalLinkButton(Metadata.QQ_GROUP_URL);
             qq.setLargeTitle(true);
             qq.setTitle(i18n("xenon.about.qq_group"));
             qq.setSubtitle(Metadata.QQ_GROUP);

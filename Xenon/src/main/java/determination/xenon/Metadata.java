@@ -57,6 +57,7 @@ public final class Metadata {
     public static final String CHANGELOG_URL = PUBLISH_URL + "/blob/main/CHANGELOG.md";
     public static final String EULA_URL = PUBLISH_URL + "/blob/main/LICENSE";
     public static final String GROUPS_URL = "https://space.bilibili.com/1433776051";
+    public static final String QQ_GROUP_URL = "https://qm.qq.com/q/uZZTzBAI7g";
     public static final String QQ_GROUP = "188709300";
 
     /** Mindustry's officially supported public sources. */

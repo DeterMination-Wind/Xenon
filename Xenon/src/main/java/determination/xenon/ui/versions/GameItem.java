@@ -21,6 +21,7 @@ import javafx.beans.property.*;
 import javafx.scene.image.Image;
 import determination.xenon.download.LibraryAnalyzer;
 import determination.xenon.mindustry.MindustryVersion;
+import determination.xenon.mindustry.MindustryVersionDisplay;
 import determination.xenon.mindustry.ui.MindustryRoutes;
 import determination.xenon.mod.ModpackConfiguration;
 import determination.xenon.setting.Profile;
@@ -83,7 +84,9 @@ public class GameItem {
             if (v != null) {
                 StringBuilder sub = new StringBuilder();
                 sub.append(v.getVariant().getDisplayName());
-                if (v.getBuild() > 0) sub.append("  ·  build ").append(v.getBuild());
+                String buildLabel = MindustryVersionDisplay.buildLabel(
+                        v.getVariant(), v.getBuild(), v.getBuildType(), v.getId(), v.getJarPath());
+                if (!buildLabel.isEmpty()) sub.append("  ·  ").append(buildLabel);
                 subtitle.set(sub.toString());
                 tag.set("Mindustry");
             }

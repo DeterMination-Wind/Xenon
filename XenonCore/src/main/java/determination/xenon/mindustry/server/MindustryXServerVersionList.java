@@ -17,6 +17,7 @@
  */
 package determination.xenon.mindustry.server;
 
+import determination.xenon.mindustry.MindustryVersionDisplay;
 import determination.xenon.mindustry.VersionVariant;
 import determination.xenon.mindustry.download.GitHubAsset;
 import determination.xenon.mindustry.download.GitHubRelease;
@@ -59,14 +60,23 @@ public final class MindustryXServerVersionList extends ServerVersionList {
                 Logger.LOG.debug("MindustryX release " + r.getTagName() + " has no server jar, skipping");
                 continue;
             }
-            int build = extractBuild(r.getTagName());
+            int build = MindustryVersionDisplay.extractMindustryXBuild(r.getTagName(), asset.getName());
+            if (build <= 0) {
+                build = extractBuild(r.getTagName());
+            }
+            String channel = MindustryVersionDisplay.detectMindustryXChannel(null, r.getTagName(), asset.getName());
+            if (channel == null) {
+                channel = r.isPrerelease() ? "B" : "X";
+            }
             out.add(new MindustryRemoteVersion(
                     build,
-                    "mindustryx",
+                    channel,
                     variant,
                     asset.getDownloadUrl(),
                     r.getPublishedAt(),
-                    asset.getSize()));
+                    asset.getSize(),
+                    r.getTagName(),
+                    asset.getName()));
         }
         return out;
     }
