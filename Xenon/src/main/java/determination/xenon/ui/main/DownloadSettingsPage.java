@@ -26,14 +26,12 @@ import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.ToggleGroup;
 import javafx.scene.layout.*;
-import determination.xenon.setting.DownloadProviders;
 import determination.xenon.setting.EnumCommonDirectory;
 import determination.xenon.setting.Settings;
 import determination.xenon.task.FetchTask;
 import determination.xenon.ui.FXUtils;
 import determination.xenon.ui.WeakListenerHolder;
 import determination.xenon.ui.construct.*;
-import determination.xenon.util.i18n.I18n;
 import determination.xenon.util.io.FileUtils;
 import determination.xenon.util.javafx.SafeStringConverter;
 
@@ -42,7 +40,6 @@ import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.function.Function;
 
 import static determination.xenon.setting.ConfigHolder.config;
 import static determination.xenon.util.i18n.I18n.i18n;
@@ -59,49 +56,6 @@ public class DownloadSettingsPage extends StackPane {
         FXUtils.smoothScrolling(scrollPane);
         scrollPane.setFitToWidth(true);
         getChildren().setAll(scrollPane);
-
-        {
-            var downloadSource = new ComponentList();
-            downloadSource.getStyleClass().add("card-non-transparent");
-            {
-
-                var autoChooseDownloadSource = new LineToggleButton();
-                autoChooseDownloadSource.setTitle(i18n("settings.launcher.download_source.auto"));
-                autoChooseDownloadSource.selectedProperty().bindBidirectional(config().autoChooseDownloadTypeProperty());
-
-                Function<String, String> converter = key -> i18n("download.provider." + key);
-                Function<String, String> descriptionConverter = key -> {
-                    String bundleKey = "download.provider." + key + ".desc";
-                    return I18n.hasKey(bundleKey) ? i18n(bundleKey) : null;
-                };
-
-                var versionListSourcePane = new LineSelectButton<String>();
-                versionListSourcePane.disableProperty().bind(autoChooseDownloadSource.selectedProperty().not());
-                versionListSourcePane.setTitle(i18n("settings.launcher.version_list_source"));
-                versionListSourcePane.setNullSafeConverter(converter);
-                versionListSourcePane.setDescriptionConverter(descriptionConverter);
-                versionListSourcePane.setItems(DownloadProviders.AUTO_PROVIDERS.keySet());
-                versionListSourcePane.valueProperty().bindBidirectional(config().versionListSourceProperty());
-
-                var downloadSourcePane = new LineSelectButton<String>();
-                downloadSourcePane.disableProperty().bind(autoChooseDownloadSource.selectedProperty());
-                downloadSourcePane.setTitle(i18n("settings.launcher.download_source"));
-                downloadSourcePane.setNullSafeConverter(converter);
-                downloadSourcePane.setDescriptionConverter(descriptionConverter);
-                downloadSourcePane.setItems(DownloadProviders.DIRECT_PROVIDERS.keySet());
-                downloadSourcePane.valueProperty().bindBidirectional(config().downloadTypeProperty());
-
-                var defaultAddonSourcePane = new LineSelectButton<String>();
-                defaultAddonSourcePane.setTitle(i18n("settings.launcher.default_addon_source"));
-                defaultAddonSourcePane.setNullSafeConverter(key -> I18n.i18n("mods." + key));
-                defaultAddonSourcePane.setItems("modrinth", "curseforge");
-                defaultAddonSourcePane.valueProperty().bindBidirectional(config().defaultAddonSourceProperty());
-
-                downloadSource.getContent().setAll(autoChooseDownloadSource, versionListSourcePane, downloadSourcePane, defaultAddonSourcePane);
-            }
-
-            content.getChildren().addAll(ComponentList.createComponentListTitle(i18n("settings.launcher.download_source")), downloadSource);
-        }
 
         {
             var downloadList = new ComponentList();

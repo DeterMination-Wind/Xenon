@@ -68,7 +68,7 @@ public final class MindustryXVersionList extends MindustryVersionList {
 
     @Override
     public List<MindustryRemoteVersion> refresh() throws IOException {
-        // Priority 1: alist mirror at 47.238.248.194:5244 — empirically
+        // Priority 1: alist mirror at alist.mindustry.ltd — empirically
         // fastest source for users in mainland China, updates within
         // minutes of a TinyLake release. We try this first and only fall
         // back to GitHub when it's unreachable.

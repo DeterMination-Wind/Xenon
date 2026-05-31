@@ -19,7 +19,7 @@ package determination.xenon.mindustry.install;
 
 import com.jfoenix.controls.JFXButton;
 import com.jfoenix.controls.JFXListView;
-import determination.xenon.Metadata;
+import determination.xenon.mindustry.MindustryImportFlow;
 import determination.xenon.mindustry.VersionVariant;
 import determination.xenon.mindustry.download.GitHubReleaseClient;
 import determination.xenon.mindustry.download.MindustryRemoteVersion;
@@ -40,6 +40,7 @@ import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
+import javafx.scene.control.ScrollPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.StackPane;
@@ -135,7 +136,7 @@ public final class XenonVersionsPage extends VBox implements WizardPage, Refresh
         // Cache-first: prime the picker with whatever we last fetched so
         // the UI never shows a blank list, then kick off the async
         // network refresh that overwrites both the list and the cache.
-        List<MindustryRemoteVersion> cached = VersionCache.load(target, Metadata.getCachesDirectory());
+        List<MindustryRemoteVersion> cached = VersionCache.load(target, MindustryImportFlow.cachesDirectory());
         if (!cached.isEmpty()) {
             list.getItems().setAll(cached);
             status.setText(i18n("xenon.install.versions.count", cached.size())
@@ -151,7 +152,7 @@ public final class XenonVersionsPage extends VBox implements WizardPage, Refresh
                 List<MindustryRemoteVersion> versions = vl.refresh();
                 // Persist before publishing to UI so a subsequent UI
                 // navigation always reads a self-consistent cache.
-                VersionCache.save(target, Metadata.getCachesDirectory(), versions);
+                VersionCache.save(target, MindustryImportFlow.cachesDirectory(), versions);
                 Platform.runLater(() -> {
                     if (variant != target) return; // user navigated away
                     list.getItems().setAll(versions);

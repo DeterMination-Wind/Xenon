@@ -117,50 +117,38 @@ public final class MindustryVersion {
     // ---------- getters / setters ----------
 
     public String getId() { return id; }
-
     public void setId(String id) { this.id = id; }
 
     public String getName() { return name == null || name.isEmpty() ? id : name; }
-
     public void setName(String name) { this.name = name; }
 
     public VersionVariant getVariant() { return variant == null ? VersionVariant.CUSTOM : variant; }
-
     public void setVariant(VersionVariant variant) { this.variant = variant; }
 
     public int getBuild() { return build; }
-
     public void setBuild(int build) { this.build = build; }
 
     public String getBuildType() { return buildType; }
-
     public void setBuildType(String buildType) { this.buildType = buildType; }
 
     public String getJarPath() { return jarPath; }
-
     public void setJarPath(String jarPath) { this.jarPath = jarPath; }
 
     public int getJavaReq() { return javaReq; }
-
     public void setJavaReq(int javaReq) { this.javaReq = javaReq; }
 
     public String getJavaHome() { return javaHome; }
-
     public void setJavaHome(String javaHome) { this.javaHome = javaHome; }
 
     public DataDirectoryPolicy getDataDirPolicy() { return dataDirPolicy == null ? DataDirectoryPolicy.ISOLATED : dataDirPolicy; }
-
     public void setDataDirPolicy(DataDirectoryPolicy dataDirPolicy) { this.dataDirPolicy = dataDirPolicy; }
 
     public String getCustomDataDir() { return customDataDir; }
-
     public void setCustomDataDir(String customDataDir) { this.customDataDir = customDataDir; }
 
     public String getJvmArgs() { return jvmArgs == null ? "" : jvmArgs; }
-
     public void setJvmArgs(String jvmArgs) { this.jvmArgs = jvmArgs; }
 
     public String getGameArgs() { return gameArgs == null ? "" : gameArgs; }
-
     public void setGameArgs(String gameArgs) { this.gameArgs = gameArgs; }
 }

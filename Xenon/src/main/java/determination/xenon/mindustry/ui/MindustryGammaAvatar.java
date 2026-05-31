@@ -35,11 +35,11 @@ import javafx.scene.paint.Color;
 public final class MindustryGammaAvatar {
 
     /** Mindustry's accent palette — keeps the avatar readable on dark + light themes. */
-    private static final Color BODY_FILL = Color.web("#f5b73d");
-    private static final Color BODY_STROKE = Color.web("#a17a1a");
-    private static final Color VISOR = Color.web("#5fd1ff");
+    private static final Color BODY_FILL    = Color.web("#f5b73d");
+    private static final Color BODY_STROKE  = Color.web("#a17a1a");
+    private static final Color VISOR        = Color.web("#5fd1ff");
     private static final Color VISOR_STROKE = Color.web("#1d4a66");
-    private static final Color SHOULDER = Color.web("#e08c2a");
+    private static final Color SHOULDER     = Color.web("#e08c2a");
 
     private MindustryGammaAvatar() {}
 
@@ -51,7 +51,7 @@ public final class MindustryGammaAvatar {
 
         double cx = w / 2.0;
         double cy = h / 2.0;
-        double r = Math.min(w, h) / 2.0 - 1;
+        double r  = Math.min(w, h) / 2.0 - 1;
 
         g.setImageSmoothing(true);
 

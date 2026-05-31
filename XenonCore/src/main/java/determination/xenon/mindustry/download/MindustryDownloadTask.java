@@ -18,14 +18,8 @@
 package determination.xenon.mindustry.download;
 
 import determination.xenon.task.Task;
-import determination.xenon.util.logging.Logger;
 
-import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
-import java.util.Collection;
-import java.util.List;
 
 /**
  * HMCL-{@link Task} adapter around {@link MirrorDownloader}.
@@ -40,7 +34,6 @@ public final class MindustryDownloadTask extends Task<Void> {
     private final Path target;
     private final long expectedSize;
     private final Path cachesRoot;
-    private final List<Path> reusableSources;
 
     /**
      * @param sourceUrl    canonical {@code https://github.com/.../releases/download/...} URL
@@ -49,44 +42,15 @@ public final class MindustryDownloadTask extends Task<Void> {
      * @param cachesRoot   launcher caches dir (used for the preferred-mirror cache)
      */
     public MindustryDownloadTask(String sourceUrl, Path target, long expectedSize, Path cachesRoot) {
-        this(sourceUrl, target, expectedSize, cachesRoot, List.of());
-    }
-
-    /**
-     * @param sourceUrl       canonical {@code https://github.com/.../releases/download/...} URL
-     * @param target          destination file
-     * @param expectedSize    size hint for progress, or 0 if unknown
-     * @param cachesRoot      launcher caches dir (used for the preferred-mirror cache)
-     * @param reusableSources local jar candidates that represent the same remote build
-     */
-    public MindustryDownloadTask(String sourceUrl,
-                                 Path target,
-                                 long expectedSize,
-                                 Path cachesRoot,
-                                 Collection<Path> reusableSources) {
         this.sourceUrl = sourceUrl;
         this.target = target;
         this.expectedSize = expectedSize;
         this.cachesRoot = cachesRoot;
-        this.reusableSources = reusableSources == null ? List.of() : List.copyOf(reusableSources);
         setName(target.getFileName().toString());
     }
 
     @Override
     public void execute() throws Exception {
-        Path reusable = findReusableSource();
-        if (reusable != null) {
-            if (sameFile(reusable, target)) {
-                Logger.LOG.info("MindustryDownloadTask: reusing existing target " + target);
-            } else {
-                Path parent = target.getParent();
-                if (parent != null) Files.createDirectories(parent);
-                Files.copy(reusable, target, StandardCopyOption.REPLACE_EXISTING);
-                Logger.LOG.info("MindustryDownloadTask: copied local jar " + reusable + " -> " + target);
-            }
-            updateProgress(1.0);
-            return;
-        }
         new MirrorDownloader(cachesRoot).download(sourceUrl, target, expectedSize, (read, total) -> {
             // updateProgress requires read <= total > 0; bail if total is unknown.
             if (total > 0 && read >= 0) {
@@ -94,26 +58,5 @@ public final class MindustryDownloadTask extends Task<Void> {
                 updateProgress(capped, total);
             }
         });
-    }
-
-    private Path findReusableSource() throws IOException {
-        for (Path candidate : reusableSources) {
-            if (candidate == null || !Files.isRegularFile(candidate)) {
-                continue;
-            }
-            if (expectedSize > 0 && Files.size(candidate) != expectedSize) {
-                continue;
-            }
-            return candidate;
-        }
-        return null;
-    }
-
-    private static boolean sameFile(Path a, Path b) {
-        try {
-            return Files.exists(a) && Files.exists(b) && Files.isSameFile(a, b);
-        } catch (Exception ignored) {
-            return a.toAbsolutePath().normalize().equals(b.toAbsolutePath().normalize());
-        }
     }
 }

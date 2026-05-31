@@ -34,7 +34,6 @@ import java.awt.event.MouseEvent;
 import java.net.URL;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static determination.xenon.util.i18n.I18n.i18n;
 import static determination.xenon.util.logging.Logger.LOG;
 
 /**
@@ -100,9 +99,9 @@ public final class TrayIconManager {
         Image image = Toolkit.getDefaultToolkit().getImage(iconUrl);
 
         PopupMenu menu = new PopupMenu();
-        MenuItem show = new MenuItem(i18n("xenon.tray.show"));
+        MenuItem show = new MenuItem("Show Xenon");
         show.addActionListener(e -> showStage(stage));
-        MenuItem exit = new MenuItem(i18n("xenon.tray.exit"));
+        MenuItem exit = new MenuItem("Exit");
         exit.addActionListener(e -> Platform.runLater(Launcher::stopApplication));
         menu.add(show);
         menu.addSeparator();
@@ -130,6 +129,11 @@ public final class TrayIconManager {
         tray.add(icon);
         INSTALLED.set(icon);
         LOG.info("Tray icon installed");
+    }
+
+    /** Return true after the tray icon has been added successfully. */
+    public static boolean isInstalled() {
+        return INSTALLED.get() != null;
     }
 
     /**

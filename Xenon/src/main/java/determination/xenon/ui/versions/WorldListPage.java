@@ -140,7 +140,7 @@ public final class WorldListPage extends ListPageBase<World> implements VersionP
         FileChooser chooser = new FileChooser();
         chooser.setTitle(i18n("world.add.title"));
         chooser.getExtensionFilters().setAll(new FileChooser.ExtensionFilter(i18n("extension.world"), "*.zip"));
-        List<Path> res = FileUtils.toPaths(chooser.showOpenMultipleDialog(Controllers.getStage()));
+        List<Path> res = FileUtils.toPaths(FXUtils.showOpenMultipleDialog(chooser, Controllers.getStage()));
 
         if (res == null || res.isEmpty()) return;
         installWorld(res.get(0));

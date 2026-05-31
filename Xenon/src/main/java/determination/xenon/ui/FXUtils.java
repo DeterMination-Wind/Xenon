@@ -56,9 +56,11 @@ import javafx.scene.paint.Paint;
 import javafx.scene.shape.Rectangle;
 import javafx.scene.text.Text;
 import javafx.scene.text.TextFlow;
+import javafx.stage.DirectoryChooser;
 import javafx.stage.FileChooser;
 import javafx.stage.Screen;
 import javafx.stage.Stage;
+import javafx.stage.Window;
 import javafx.util.Callback;
 import javafx.util.Duration;
 import javafx.util.StringConverter;
@@ -241,6 +243,7 @@ public final class FXUtils {
     );
 
     private static final Map<String, Image> builtinImageCache = new ConcurrentHashMap<>();
+    private static @Nullable Path lastChooserDirectory;
 
     public static void shutdown() {
         builtinImageCache.clear();
@@ -505,6 +508,75 @@ public final class FXUtils {
             oldAnimation.stop();
         animation.play();
         node.getProperties().put(animationKey, animation);
+    }
+
+    private static boolean isUsableChooserDirectory(@Nullable File directory) {
+        return directory != null && directory.isDirectory();
+    }
+
+    private static void rememberChooserDirectory(@Nullable File file) {
+        if (file == null)
+            return;
+
+        File directory = file.isDirectory() ? file : file.getParentFile();
+        if (isUsableChooserDirectory(directory)) {
+            lastChooserDirectory = directory.toPath();
+        }
+    }
+
+    private static void rememberChooserDirectory(@Nullable List<File> files) {
+        if (files == null || files.isEmpty())
+            return;
+
+        rememberChooserDirectory(files.get(0));
+    }
+
+    public static void applyRememberedDirectory(FileChooser chooser) {
+        if (isUsableChooserDirectory(chooser.getInitialDirectory()))
+            return;
+
+        Path directory = lastChooserDirectory;
+        if (directory != null && Files.isDirectory(directory)) {
+            chooser.setInitialDirectory(directory.toFile());
+        }
+    }
+
+    public static void applyRememberedDirectory(DirectoryChooser chooser) {
+        if (isUsableChooserDirectory(chooser.getInitialDirectory()))
+            return;
+
+        Path directory = lastChooserDirectory;
+        if (directory != null && Files.isDirectory(directory)) {
+            chooser.setInitialDirectory(directory.toFile());
+        }
+    }
+
+    public static @Nullable File showOpenDialog(FileChooser chooser, Window owner) {
+        applyRememberedDirectory(chooser);
+        File file = chooser.showOpenDialog(owner);
+        rememberChooserDirectory(file);
+        return file;
+    }
+
+    public static @Nullable List<File> showOpenMultipleDialog(FileChooser chooser, Window owner) {
+        applyRememberedDirectory(chooser);
+        List<File> files = chooser.showOpenMultipleDialog(owner);
+        rememberChooserDirectory(files);
+        return files;
+    }
+
+    public static @Nullable File showSaveDialog(FileChooser chooser, Window owner) {
+        applyRememberedDirectory(chooser);
+        File file = chooser.showSaveDialog(owner);
+        rememberChooserDirectory(file);
+        return file;
+    }
+
+    public static @Nullable File showDirectoryDialog(DirectoryChooser chooser, Window owner) {
+        applyRememberedDirectory(chooser);
+        File directory = chooser.showDialog(owner);
+        rememberChooserDirectory(directory);
+        return directory;
     }
 
     public static void openFolder(Path file) {

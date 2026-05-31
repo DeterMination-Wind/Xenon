@@ -20,6 +20,7 @@ package determination.xenon.mindustry.server;
 import determination.xenon.mindustry.server.ServerConsoleSession.ConsoleEvent;
 import determination.xenon.mindustry.server.ServerConsoleSession.Exited;
 import determination.xenon.mindustry.server.ServerConsoleSession.Restarted;
+import determination.xenon.mindustry.server.ServerConsoleSession.Started;
 import determination.xenon.util.logging.Logger;
 
 import java.io.IOException;
@@ -138,7 +139,7 @@ public final class ServerSessionRunner {
             try {
                 session.start(event -> {
                     if (event instanceof Exited e) {
-                        watcher.complete(e.code(), e.expected());
+                        watcher.complete(e.code());
                         // Don't re-emit Exited here yet; the supervisor decides
                         // whether the user should see Exited or Restarted.
                         return;
@@ -147,19 +148,18 @@ public final class ServerSessionRunner {
                 });
             } catch (RuntimeException ex) {
                 Logger.LOG.warning("failed to start server " + inst.getId() + ": " + ex);
-                ui.accept(new Exited(-1, false));
+                ui.accept(new Exited(-1));
                 return;
             }
 
-            ExitResult exit = watcher.await();
-            int code = exit.code;
+            int code = watcher.await();
 
-            if (stopRequested || exit.expected) {
-                ui.accept(new Exited(code, true));
+            if (stopRequested) {
+                ui.accept(new Exited(code));
                 return;
             }
             if (!policy.shouldRestart(code, attempt)) {
-                ui.accept(new Exited(code, code == 0));
+                ui.accept(new Exited(code));
                 return;
             }
 
@@ -169,12 +169,12 @@ public final class ServerSessionRunner {
                     TimeUnit.SECONDS.sleep(delay);
                 } catch (InterruptedException ex) {
                     Thread.currentThread().interrupt();
-                    ui.accept(new Exited(code, false));
+                    ui.accept(new Exited(code));
                     return;
                 }
             }
             if (stopRequested) {
-                ui.accept(new Exited(code, true));
+                ui.accept(new Exited(code));
                 return;
             }
             attempt++;
@@ -192,40 +192,28 @@ public final class ServerSessionRunner {
         private final Object lock = new Object();
         private boolean done = false;
         private int code = -1;
-        private boolean expected = false;
 
-        void complete(int c, boolean exp) {
+        void complete(int c) {
             synchronized (lock) {
                 if (done) return;
                 done = true;
                 code = c;
-                expected = exp;
                 lock.notifyAll();
             }
         }
 
-        ExitResult await() {
+        int await() {
             synchronized (lock) {
                 while (!done) {
                     try {
                         lock.wait();
                     } catch (InterruptedException ex) {
                         Thread.currentThread().interrupt();
-                        return new ExitResult(-1, false);
+                        return -1;
                     }
                 }
-                return new ExitResult(code, expected);
+                return code;
             }
-        }
-    }
-
-    private static final class ExitResult {
-        final int code;
-        final boolean expected;
-
-        ExitResult(int code, boolean expected) {
-            this.code = code;
-            this.expected = expected;
         }
     }
 

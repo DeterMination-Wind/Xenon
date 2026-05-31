@@ -18,9 +18,16 @@
 package determination.xenon.mindustry;
 
 import determination.xenon.Metadata;
+import determination.xenon.mindustry.modpack.XenonModpackInstaller;
+import determination.xenon.setting.Profile;
+import determination.xenon.setting.Profiles;
+import determination.xenon.setting.Settings;
 import determination.xenon.task.Schedulers;
+import determination.xenon.task.Task;
 import determination.xenon.ui.Controllers;
+import determination.xenon.ui.FXUtils;
 import determination.xenon.ui.construct.MessageDialogPane;
+import determination.xenon.util.TaskCancellationAction;
 import determination.xenon.util.io.FileUtils;
 import javafx.stage.FileChooser;
 
@@ -64,13 +71,87 @@ public final class MindustryImportFlow {
         return repo;
     }
 
+    /** Resolve the cache root used by Mindustry release/mod downloads. */
+    public static Path cachesDirectory() {
+        try {
+            String commonDirectory = Settings.instance().getCommonDirectory();
+            if (commonDirectory != null && !commonDirectory.isBlank()) {
+                return Path.of(commonDirectory, "cache");
+            }
+        } catch (Throwable ignored) {
+            // Metadata is always available, while Settings can be early during bootstrap.
+        }
+        return Metadata.getCachesDirectory();
+    }
+
+    /** True iff the dropped file is a Xenon Mindustry modpack. */
+    public static boolean isXenonModpackFile(Path file) {
+        return file != null && "xenon".equalsIgnoreCase(FileUtils.getExtension(file));
+    }
+
+    /** Prompt for a target id, then install a .xenon modpack into the Mindustry repository. */
+    public static void showInstallModpackDialog(Path file) {
+        if (!isXenonModpackFile(file)) {
+            return;
+        }
+
+        String suggested = sanitizeId(file.getFileName().toString().replaceFirst("(?i)\\.xenon$", ""));
+        Controllers.prompt(i18n("xenon.mindustry.import.id.prompt"), (id, handler) -> {
+            String trimmed = id == null ? "" : id.trim();
+            if (trimmed.isEmpty() || !trimmed.matches("[A-Za-z0-9._-]+")) {
+                handler.reject(i18n("xenon.mindustry.import.id.invalid"));
+                return;
+            }
+
+            XenonGameRepository repo = repository();
+            repo.refresh();
+            if (repo.has(trimmed)) {
+                handler.reject(i18n("xenon.mindustry.import.id.duplicate"));
+                return;
+            }
+
+            handler.resolve();
+            Task<?> install = Task.supplyAsync(Schedulers.io(), () ->
+                            XenonModpackInstaller.install(repo, file, trimmed))
+                    .whenComplete(Schedulers.javafx(), (version, exception) -> {
+                        if (exception == null && version != null) {
+                            Profile profile = Profiles.getSelectedProfile();
+                            if (profile != null) {
+                                profile.setSelectedVersion(version.getId());
+                                profile.getRepository().refreshVersionsAsync().start();
+                            }
+                            Controllers.showToast(i18n("message.success"));
+                        } else if (exception != null) {
+                            LOG.warning("Failed to install Xenon modpack " + file, exception);
+                            Controllers.dialog(
+                                    i18n("modpack.task.install.error") + "\n\n" + exception.getMessage(),
+                                    i18n("message.error"),
+                                    MessageDialogPane.MessageType.ERROR);
+                        }
+                    }).setName(i18n("modpack.task.install"));
+            Controllers.taskDialog(install, i18n("modpack.installing"), TaskCancellationAction.NORMAL);
+        }, suggested);
+    }
+
+    /** Show a FileChooser for a local .xenon package. */
+    public static void showInstallModpackFileChooser() {
+        FileChooser chooser = new FileChooser();
+        chooser.setTitle(i18n("modpack.choose"));
+        chooser.getExtensionFilters().add(
+                new FileChooser.ExtensionFilter(i18n("modpack"), "*.xenon"));
+        Path file = FileUtils.toPath(FXUtils.showOpenDialog(chooser, Controllers.getStage()));
+        if (file != null) {
+            showInstallModpackDialog(file);
+        }
+    }
+
     /** Show a FileChooser, then run the import + launch chain. */
     public static void showImportAndLaunchDialog() {
         FileChooser chooser = new FileChooser();
         chooser.setTitle(i18n("xenon.mindustry.import.choose"));
         chooser.getExtensionFilters().add(
                 new FileChooser.ExtensionFilter("Mindustry jar", "*.jar"));
-        Path file = FileUtils.toPath(chooser.showOpenDialog(Controllers.getStage()));
+        Path file = FileUtils.toPath(FXUtils.showOpenDialog(chooser, Controllers.getStage()));
         if (file == null) return;
 
         // Default id = filename without extension, sanitised.

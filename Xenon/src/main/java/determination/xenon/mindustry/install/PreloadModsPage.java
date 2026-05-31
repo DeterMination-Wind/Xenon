@@ -21,7 +21,7 @@ import com.jfoenix.controls.JFXButton;
 import com.jfoenix.controls.JFXCheckBox;
 import com.jfoenix.controls.JFXListView;
 import com.jfoenix.controls.JFXTextField;
-import determination.xenon.Metadata;
+import determination.xenon.mindustry.MindustryImportFlow;
 import determination.xenon.mindustry.mod.MindustryModsIndexRepository;
 import determination.xenon.mindustry.mod.MindustryRemoteMod;
 import determination.xenon.task.Schedulers;
@@ -77,7 +77,7 @@ public final class PreloadModsPage extends VBox implements WizardPage {
     private final WizardController controller;
     private final XenonInstallWizardProvider.ModIndexLoader loader;
     private final MindustryModsIndexRepository repo =
-            new MindustryModsIndexRepository(Metadata.getCachesDirectory());
+            new MindustryModsIndexRepository(MindustryImportFlow.cachesDirectory());
 
     private final Label status = new Label();
     private final JFXTextField search = new JFXTextField();

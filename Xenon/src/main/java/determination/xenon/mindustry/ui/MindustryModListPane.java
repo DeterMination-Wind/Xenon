@@ -51,6 +51,7 @@ public final class MindustryModListPane extends BorderPane {
     private final MindustryModManager manager;
     private final Label status = new Label();
     private final VBox listBox = new VBox(2);
+    private final ScrollPane scroll = new ScrollPane(listBox);
 
     public MindustryModListPane(Path dataDir) {
         this.modsDir = dataDir.resolve("mods");
@@ -76,7 +77,6 @@ public final class MindustryModListPane extends BorderPane {
         header.setPadding(new Insets(0, 0, 8, 0));
         setTop(header);
 
-        ScrollPane scroll = new ScrollPane(listBox);
         scroll.setFitToWidth(true);
         scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
         scroll.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
@@ -87,11 +87,15 @@ public final class MindustryModListPane extends BorderPane {
     }
 
     private void reload() {
+        double keepV = scroll.getVvalue();
         status.setText(i18n("xenon.mindustry.modlist.loading"));
         listBox.getChildren().clear();
         Schedulers.io().execute(() -> {
             List<MindustryLocalMod> mods = manager.scan();
-            Platform.runLater(() -> populate(mods));
+            Platform.runLater(() -> {
+                populate(mods);
+                Platform.runLater(() -> scroll.setVvalue(keepV));
+            });
         });
     }
 
@@ -157,7 +161,7 @@ public final class MindustryModListPane extends BorderPane {
         chooser.setTitle(i18n("xenon.mindustry.modlist.install"));
         chooser.getExtensionFilters().add(
                 new FileChooser.ExtensionFilter("Mindustry mod (*.jar, *.zip)", "*.jar", "*.zip"));
-        java.io.File f = chooser.showOpenDialog(Controllers.getStage());
+        java.io.File f = FXUtils.showOpenDialog(chooser, Controllers.getStage());
         if (f == null) return;
         Schedulers.io().execute(() -> {
             try {

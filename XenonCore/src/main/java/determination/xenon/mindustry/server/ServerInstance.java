@@ -19,6 +19,8 @@ package determination.xenon.mindustry.server;
 
 import determination.xenon.mindustry.DataDirectoryPolicy;
 import determination.xenon.mindustry.MindustryVersion;
+import determination.xenon.mindustry.VersionVariant;
+import org.jetbrains.annotations.Nullable;
 
 import java.nio.file.Path;
 import java.util.Objects;
@@ -37,6 +39,14 @@ public final class ServerInstance {
     private String id;
     /** Display name (defaults to {@link #id} if absent). */
     private String name;
+    /** Upstream variant this instance belongs to. */
+    private VersionVariant variant = VersionVariant.CUSTOM;
+    /** Human-readable upstream tag or channel identifier. */
+    private String buildType;
+    /** Upstream release tag, if known. */
+    private String upstreamTag;
+    /** Parsed numeric build number, or 0 if unknown. */
+    private int build;
     /**
      * Server jar path, relative to the server root if it lives there,
      * otherwise an absolute path.
@@ -65,6 +75,12 @@ public final class ServerInstance {
     private DataDirectoryPolicy dataDirPolicy = DataDirectoryPolicy.ISOLATED;
     /** Used only when {@link #dataDirPolicy} is {@link DataDirectoryPolicy#CUSTOM}. */
     private String customDataDir;
+    /** Most recent launcher-observed lifecycle state for this instance. */
+    private LifecycleState lastLifecycleState = LifecycleState.STOPPED;
+    /** Most recent process exit code; null before first run or if unavailable. */
+    private @Nullable Integer lastExitCode;
+    /** Best-effort reason string surfaced in list/detail UI. */
+    private String lastStatusMessage;
 
     /** Resolve the actual server jar file given this instance's root directory. */
     public Path resolveJar(Path serverRoot) {
@@ -98,54 +114,73 @@ public final class ServerInstance {
     // ---------- getters / setters ----------
 
     public String getId() { return id; }
-
     public void setId(String id) { this.id = id; }
 
     public String getName() { return name == null || name.isEmpty() ? id : name; }
-
     public void setName(String name) { this.name = name; }
 
-    public String getJarPath() { return jarPath; }
+    public VersionVariant getVariant() { return variant == null ? VersionVariant.CUSTOM : variant; }
+    public void setVariant(VersionVariant variant) { this.variant = variant; }
 
+    public String getBuildType() { return buildType == null ? "" : buildType; }
+    public void setBuildType(String buildType) { this.buildType = buildType; }
+
+    public String getUpstreamTag() { return upstreamTag == null ? "" : upstreamTag; }
+    public void setUpstreamTag(String upstreamTag) { this.upstreamTag = upstreamTag; }
+
+    public int getBuild() { return build; }
+    public void setBuild(int build) { this.build = build; }
+
+    public String getJarPath() { return jarPath; }
     public void setJarPath(String jarPath) { this.jarPath = jarPath; }
 
     public int getJavaReq() { return javaReq; }
-
     public void setJavaReq(int javaReq) { this.javaReq = javaReq; }
 
     public String getJavaHome() { return javaHome; }
-
     public void setJavaHome(String javaHome) { this.javaHome = javaHome; }
 
     public boolean isScriptAgent() { return scriptAgent; }
-
     public void setScriptAgent(boolean scriptAgent) { this.scriptAgent = scriptAgent; }
 
     public boolean isAutoRestart() { return autoRestart; }
-
     public void setAutoRestart(boolean autoRestart) { this.autoRestart = autoRestart; }
 
     public int getAutoRestartMaxRetries() { return autoRestartMaxRetries; }
-
     public void setAutoRestartMaxRetries(int autoRestartMaxRetries) { this.autoRestartMaxRetries = autoRestartMaxRetries; }
 
     public int getAutoRestartDelaySec() { return autoRestartDelaySec; }
-
     public void setAutoRestartDelaySec(int autoRestartDelaySec) { this.autoRestartDelaySec = autoRestartDelaySec; }
 
     public String getJvmArgs() { return jvmArgs == null ? "" : jvmArgs; }
-
     public void setJvmArgs(String jvmArgs) { this.jvmArgs = jvmArgs; }
 
     public int getPort() { return port; }
-
     public void setPort(int port) { this.port = port; }
 
     public DataDirectoryPolicy getDataDirPolicy() { return dataDirPolicy == null ? DataDirectoryPolicy.ISOLATED : dataDirPolicy; }
-
     public void setDataDirPolicy(DataDirectoryPolicy dataDirPolicy) { this.dataDirPolicy = dataDirPolicy; }
 
     public String getCustomDataDir() { return customDataDir; }
-
     public void setCustomDataDir(String customDataDir) { this.customDataDir = customDataDir; }
+
+    public LifecycleState getLastLifecycleState() {
+        return lastLifecycleState == null ? LifecycleState.STOPPED : lastLifecycleState;
+    }
+    public void setLastLifecycleState(LifecycleState lastLifecycleState) { this.lastLifecycleState = lastLifecycleState; }
+
+    public @Nullable Integer getLastExitCode() { return lastExitCode; }
+    public void setLastExitCode(@Nullable Integer lastExitCode) { this.lastExitCode = lastExitCode; }
+
+    public String getLastStatusMessage() { return lastStatusMessage == null ? "" : lastStatusMessage; }
+    public void setLastStatusMessage(String lastStatusMessage) { this.lastStatusMessage = lastStatusMessage; }
+
+    /// Lifecycle state Xenon persists for list/detail presentation.
+    public enum LifecycleState {
+        STOPPED,
+        STARTING,
+        RUNNING,
+        RESTARTING,
+        CRASHED
+    }
 }

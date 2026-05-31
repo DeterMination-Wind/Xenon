@@ -93,6 +93,10 @@ public final class ServerJarInstaller {
         ServerInstance inst = new ServerInstance();
         inst.setId(id);
         inst.setName(id);
+        inst.setVariant(version.getVariant());
+        inst.setBuild(version.getBuild());
+        inst.setBuildType(version.getBuildType());
+        inst.setUpstreamTag(version.getTagName());
         inst.setJarPath(SERVER_JAR_NAME);
         inst.setPort(6567);
         inst.setJavaReq(version.getBuild() >= JAVA_17_MIN_BUILD ? 17 : 8);

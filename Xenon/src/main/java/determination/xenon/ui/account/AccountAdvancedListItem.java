@@ -50,7 +50,7 @@ public class AccountAdvancedListItem extends AdvancedListItem {
         @Override
         protected void invalidated() {
             Account account = get();
-            if (account == null) {
+            if (account == null || !(account instanceof OfflineAccount)) {
                 titleProperty().unbind();
                 subtitleProperty().unbind();
                 tooltip.textProperty().unbind();
@@ -63,7 +63,7 @@ public class AccountAdvancedListItem extends AdvancedListItem {
                 // procedurally instead of the HMCL Steve skin.
                 MindustryGammaAvatar.draw(canvas);
 
-            } else if (account instanceof OfflineAccount) {
+            } else {
                 // Xenon offline accounts represent a Mindustry UID + nickname,
                 // not a Minecraft player — show the Gamma sprite.
                 titleProperty().bind(BindingMapping.of(account, Account::getCharacter));
@@ -71,11 +71,6 @@ public class AccountAdvancedListItem extends AdvancedListItem {
                 tooltip.textProperty().bind(accountTooltip(account));
                 TexturesLoader.unbindAvatar(canvas);
                 MindustryGammaAvatar.draw(canvas);
-            } else {
-                titleProperty().bind(BindingMapping.of(account, Account::getCharacter));
-                subtitleProperty().bind(accountSubtitle(account));
-                tooltip.textProperty().bind(accountTooltip(account));
-                TexturesLoader.bindAvatar(canvas, account);
             }
         }
     };

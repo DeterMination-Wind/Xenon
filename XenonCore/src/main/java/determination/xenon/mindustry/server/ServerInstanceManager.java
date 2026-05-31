@@ -19,9 +19,12 @@ package determination.xenon.mindustry.server;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import determination.xenon.mindustry.VersionVariant;
 import determination.xenon.util.io.FileUtils;
 import determination.xenon.util.logging.Logger;
 import determination.xenon.util.platform.OperatingSystem;
+import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.UnmodifiableView;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -65,9 +68,11 @@ public final class ServerInstanceManager {
     private final Path serversRoot;
     private final Map<String, ServerInstance> instances = new LinkedHashMap<>();
     private final Map<String, ServerProcess> running = new ConcurrentHashMap<>();
+    private final ServerRuntimeRegistry runtimeRegistry;
 
     public ServerInstanceManager(Path serversRoot) {
         this.serversRoot = Objects.requireNonNull(serversRoot, "serversRoot");
+        this.runtimeRegistry = new ServerRuntimeRegistry(this);
     }
 
     public Path getServersRoot() {
@@ -133,6 +138,11 @@ public final class ServerInstanceManager {
         Files.writeString(json, GSON.toJson(inst), StandardCharsets.UTF_8);
         instances.put(inst.getId(), inst);
         return root;
+    }
+
+    /// Shared runtime/session registry for UI pages and other services.
+    public ServerRuntimeRegistry getRuntimeRegistry() {
+        return runtimeRegistry;
     }
 
     /** Remove a server entry on disk. Returns true if anything was deleted. */
@@ -212,6 +222,54 @@ public final class ServerInstanceManager {
     /** Live snapshot of currently running servers, keyed by instance id. */
     public Map<String, ServerProcess> getRunningProcesses() {
         return Collections.unmodifiableMap(new LinkedHashMap<>(running));
+    }
+
+    /// Return true when another configured server already uses `port`.
+    public synchronized boolean hasConfiguredPortConflict(int port, @Nullable String excludingId) {
+        if (port < 1 || port > 65535) {
+            return false;
+        }
+        for (ServerInstance instance : instances.values()) {
+            if (excludingId != null && excludingId.equals(instance.getId())) {
+                continue;
+            }
+            if (instance.getPort() == port) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// Snapshot of configured ports keyed by server id.
+    public synchronized @UnmodifiableView Map<String, Integer> configuredPorts() {
+        Map<String, Integer> out = new LinkedHashMap<>();
+        for (ServerInstance instance : instances.values()) {
+            out.put(instance.getId(), instance.getPort());
+        }
+        return Collections.unmodifiableMap(out);
+    }
+
+    /// Create a baseline instance record for a local/custom jar flow.
+    public ServerInstance createInstance(String id,
+                                         String name,
+                                         VersionVariant variant,
+                                         int build,
+                                         String buildType,
+                                         String upstreamTag,
+                                         String jarPath,
+                                         int javaReq,
+                                         int port) {
+        ServerInstance instance = new ServerInstance();
+        instance.setId(id);
+        instance.setName(name == null || name.isBlank() ? id : name.trim());
+        instance.setVariant(variant);
+        instance.setBuild(build);
+        instance.setBuildType(buildType);
+        instance.setUpstreamTag(upstreamTag);
+        instance.setJarPath(jarPath);
+        instance.setJavaReq(javaReq);
+        instance.setPort(port);
+        return instance;
     }
 
     /**

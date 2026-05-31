@@ -40,6 +40,7 @@ import determination.xenon.task.Schedulers;
 import determination.xenon.task.Task;
 import determination.xenon.ui.Controllers;
 import determination.xenon.ui.DialogController;
+import determination.xenon.ui.FXUtils;
 import determination.xenon.ui.construct.MessageDialogPane.MessageType;
 import determination.xenon.util.io.FileUtils;
 import determination.xenon.util.skin.InvalidSkinException;
@@ -148,7 +149,7 @@ public class AccountListItem extends RadioButton {
         FileChooser chooser = new FileChooser();
         chooser.setTitle(i18n("account.skin.upload"));
         chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter(i18n("account.skin.file"), "*.png"));
-        Path selectedFile = FileUtils.toPath(chooser.showOpenDialog(Controllers.getStage()));
+        Path selectedFile = FileUtils.toPath(FXUtils.showOpenDialog(chooser, Controllers.getStage()));
         if (selectedFile == null) {
             return null;
         }

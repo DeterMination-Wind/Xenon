@@ -26,7 +26,6 @@ import determination.xenon.mindustry.XenonGameRepository;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
@@ -35,6 +34,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -56,6 +56,7 @@ import static determination.xenon.util.logging.Logger.LOG;
 public final class XenonModpackPacker {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     public static final String MANIFEST = "xenon-modpack.json";
+    public static final String GAME_JAR = "game.jar";
 
     private XenonModpackPacker() {
     }
@@ -80,33 +81,26 @@ public final class XenonModpackPacker {
 
             // Manifest is written last with all collected files; for now
             // reserve space by skipping the entry at the start.
+            Path jar = version.resolveJar(versionRoot);
+            if (!Files.isRegularFile(jar)) {
+                throw new IOException("Mindustry client jar not found: " + jar);
+            }
+            addFile(zip, manifest, jar, GAME_JAR);
 
             for (String dir : List.of("mods", "saves", "schematics", "maps")) {
                 Path src = dataDir.resolve(dir);
                 if (!Files.isDirectory(src)) continue;
-                try (DirectoryStream<Path> ds = Files.newDirectoryStream(src)) {
-                    for (Path file : ds) {
-                        if (Files.isRegularFile(file)) {
-                            byte[] bytes = Files.readAllBytes(file);
-                            String entryName = dir + "/" + file.getFileName();
-                            zip.putNextEntry(new ZipEntry(entryName));
-                            zip.write(bytes);
-                            zip.closeEntry();
-                            manifest.files.add(new XenonModpackManifest.Entry(
-                                    entryName, bytes.length, sha1(bytes), "bundled"));
-                        }
+                try (Stream<Path> files = Files.walk(src)) {
+                    for (Path file : files.filter(Files::isRegularFile).toList()) {
+                        String relative = src.relativize(file).toString().replace('\\', '/');
+                        addFile(zip, manifest, file, dir + "/" + relative);
                     }
                 }
             }
 
             Path settings = dataDir.resolve("settings.bin");
             if (Files.isRegularFile(settings)) {
-                byte[] bytes = Files.readAllBytes(settings);
-                zip.putNextEntry(new ZipEntry("settings.bin"));
-                zip.write(bytes);
-                zip.closeEntry();
-                manifest.files.add(new XenonModpackManifest.Entry(
-                        "settings.bin", bytes.length, sha1(bytes), "bundled"));
+                addFile(zip, manifest, settings, "settings.bin");
             }
 
             zip.putNextEntry(new ZipEntry(MANIFEST));
@@ -116,6 +110,18 @@ public final class XenonModpackPacker {
 
         LOG.info("Xenon Modpack written: " + zipFile + " (" + manifest.files.size() + " entries)");
         return manifest;
+    }
+
+    private static void addFile(ZipOutputStream zip,
+                                XenonModpackManifest manifest,
+                                Path file,
+                                String entryName) throws IOException {
+        byte[] bytes = Files.readAllBytes(file);
+        zip.putNextEntry(new ZipEntry(entryName));
+        zip.write(bytes);
+        zip.closeEntry();
+        manifest.files.add(new XenonModpackManifest.Entry(
+                entryName, bytes.length, sha1(bytes), "bundled"));
     }
 
     private static String sha1(byte[] bytes) {

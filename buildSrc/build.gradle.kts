@@ -1,10 +1,12 @@
 repositories {
     System.getenv("MAVEN_CENTRAL_REPO").let { repo ->
-        if (repo.isNullOrBlank())
-            mavenCentral()
-        else
+        if (!repo.isNullOrBlank()) {
             maven(url = repo)
+        }
     }
+    maven(url = "https://maven.aliyun.com/repository/public")
+    maven(url = "https://repo.huaweicloud.com/repository/maven")
+    mavenCentral()
 }
 
 dependencies {

@@ -118,7 +118,7 @@ public final class ModpackInfoPage extends Control implements WizardPage {
             fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter(i18n("modpack"), "*.zip"));
             fileChooser.setInitialFileName(name.get() + ".zip");
         }
-        Path file = FileUtils.toPath(fileChooser.showSaveDialog(Controllers.getStage()));
+        Path file = FileUtils.toPath(FXUtils.showSaveDialog(fileChooser, Controllers.getStage()));
         if (file == null) {
             controller.onEnd();
             return;

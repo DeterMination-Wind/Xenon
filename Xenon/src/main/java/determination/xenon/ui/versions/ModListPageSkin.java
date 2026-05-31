@@ -44,6 +44,7 @@ import determination.xenon.mod.RemoteModRepository;
 import determination.xenon.mod.curse.CurseForgeRemoteModRepository;
 import determination.xenon.mod.modrinth.ModrinthRemoteModRepository;
 import determination.xenon.setting.DownloadProviders;
+import determination.xenon.setting.Profile;
 import determination.xenon.setting.VersionIconType;
 import determination.xenon.task.Schedulers;
 import determination.xenon.task.Task;

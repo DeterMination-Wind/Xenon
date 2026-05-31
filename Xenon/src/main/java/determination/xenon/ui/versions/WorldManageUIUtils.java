@@ -23,6 +23,7 @@ import determination.xenon.game.WorldLockedException;
 import determination.xenon.task.Schedulers;
 import determination.xenon.task.Task;
 import determination.xenon.ui.Controllers;
+import determination.xenon.ui.FXUtils;
 import determination.xenon.ui.construct.MessageDialogPane;
 import determination.xenon.ui.construct.RequiredValidator;
 import determination.xenon.ui.construct.Validator;
@@ -74,7 +75,7 @@ public final class WorldManageUIUtils {
         fileChooser.setTitle(i18n("world.export.title"));
         fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter(i18n("world"), "*.zip"));
         fileChooser.setInitialFileName(world.getWorldName() + ".zip");
-        Path file = FileUtils.toPath(fileChooser.showSaveDialog(Controllers.getStage()));
+        Path file = FileUtils.toPath(FXUtils.showSaveDialog(fileChooser, Controllers.getStage()));
         if (file == null) {
             return;
         }

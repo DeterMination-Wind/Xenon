@@ -54,8 +54,6 @@ import determination.xenon.util.javafx.MappedObservableList;
 
 import java.util.List;
 import java.util.Locale;
-import java.util.LinkedHashSet;
-import java.util.Set;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
@@ -102,9 +100,8 @@ public class GameListPage extends DecoratorAnimatedPage implements DecoratorPage
 
             AdvancedListBox bottomLeftCornerList = new AdvancedListBox()
                     .addNavigationDrawerItem(i18n("install.new_game"), SVG.ADD_CIRCLE, Versions::addNewGame)
-                    .addNavigationDrawerItem(i18n("install.modpack"), SVG.PACKAGE2, Versions::importModpack)
                     .addNavigationDrawerItem(i18n("settings.type.global.manage"), SVG.SETTINGS, this::modifyGlobalGameSettings);
-            FXUtils.setLimitHeight(bottomLeftCornerList, 40 * 3 + 12 * 2);
+            FXUtils.setLimitHeight(bottomLeftCornerList, 40 * 2 + 12 * 2);
             setLeft(pane, bottomLeftCornerList);
         }
 
@@ -156,23 +153,25 @@ public class GameListPage extends DecoratorAnimatedPage implements DecoratorPage
             setLoading(true);
             setFailedReason(null);
 
-            Set<String> ids = new LinkedHashSet<>();
-            List<GameListItem> versionItems = new java.util.ArrayList<>(
-                    profile.getRepository().getDisplayVersions()
-                            .filter(instance -> !determination.xenon.mindustry.ui.MindustryRoutes
-                                    .isMindustry(instance.getId()))
-                            .filter(instance -> ids.add(instance.getId()))
-                            .map(instance -> new GameListItem(profile, instance.getId()))
-                            .toList());
+            java.util.LinkedHashSet<String> seenIds = new java.util.LinkedHashSet<>();
+            List<GameListItem> versionItems = new java.util.ArrayList<>();
+            profile.getRepository().getDisplayVersions()
+                    .forEach(instance -> {
+                        if (seenIds.add(instance.getId())) {
+                            versionItems.add(new GameListItem(profile, instance.getId()));
+                        }
+                    });
 
-            // Pull in Mindustry instances registered with the Xenon repository
-            // so the same list shows MC + Mindustry side by side.
+            // Pull in Mindustry instances registered with the Xenon repository.
+            // Some installs are also visible through HMCL's repository scan
+            // because they live under the same versions directory, so dedupe
+            // by id before creating list cells.
             try {
                 determination.xenon.mindustry.XenonGameRepository xrepo =
                         determination.xenon.mindustry.MindustryImportFlow.repository();
                 xrepo.refresh();
                 for (determination.xenon.mindustry.MindustryVersion v : xrepo.all()) {
-                    if (ids.add(v.getId())) {
+                    if (seenIds.add(v.getId())) {
                         versionItems.add(new GameListItem(profile, v.getId()));
                     }
                 }

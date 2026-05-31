@@ -76,7 +76,7 @@ public class VersionIconDialog extends DialogPane {
     private void exploreIcon() {
         FileChooser chooser = new FileChooser();
         chooser.getExtensionFilters().add(FXUtils.getImageExtensionFilter());
-        Path selectedFile = FileUtils.toPath(chooser.showOpenDialog(Controllers.getStage()));
+        Path selectedFile = FileUtils.toPath(FXUtils.showOpenDialog(chooser, Controllers.getStage()));
         if (selectedFile != null) {
             try {
                 profile.getRepository().setVersionIconFile(versionId, selectedFile);

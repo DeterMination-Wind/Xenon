@@ -18,9 +18,14 @@
 package determination.xenon.ui.main;
 
 import com.google.gson.*;
+import javafx.scene.Group;
+import javafx.scene.Node;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.image.Image;
+import javafx.scene.layout.Pane;
 import javafx.scene.layout.VBox;
+import javafx.scene.paint.Paint;
+import javafx.scene.shape.SVGPath;
 import determination.xenon.Metadata;
 import determination.xenon.theme.Themes;
 import determination.xenon.ui.FXUtils;
@@ -38,6 +43,8 @@ import static determination.xenon.util.i18n.I18n.i18n;
 import static determination.xenon.util.logging.Logger.LOG;
 
 public final class AboutPage extends SpinnerPane {
+    private static final double ABOUT_ICON_SIZE = 40.0;
+    private static final double SVG_ICON_VIEWBOX_SIZE = 1024.0;
 
     private final WeakListenerHolder holder = new WeakListenerHolder();
 
@@ -123,6 +130,29 @@ public final class AboutPage extends SpinnerPane {
                 : new Image(url);
     }
 
+    private static Node createSvgIcon(JsonArray paths) {
+        Pane pane = new Pane();
+        FXUtils.setLimitWidth(pane, ABOUT_ICON_SIZE);
+        FXUtils.setLimitHeight(pane, ABOUT_ICON_SIZE);
+
+        Group group = new Group();
+        group.setManaged(false);
+        double scale = ABOUT_ICON_SIZE / SVG_ICON_VIEWBOX_SIZE;
+        group.setScaleX(scale);
+        group.setScaleY(scale);
+
+        for (JsonElement pathElement : paths) {
+            JsonObject pathObject = pathElement.getAsJsonObject();
+            SVGPath path = new SVGPath();
+            path.setContent(pathObject.get("path").getAsString());
+            path.setFill(Paint.valueOf(pathObject.get("fill").getAsString()));
+            group.getChildren().add(path);
+        }
+
+        pane.getChildren().setAll(group);
+        return pane;
+    }
+
     private ComponentList loadIconedTwoLineList(String path) {
         ComponentList componentList = new ComponentList();
 
@@ -148,15 +178,18 @@ public final class AboutPage extends SpinnerPane {
                     button.setOnAction(event -> FXUtils.openLink(link));
                 }
 
-                if (obj.has("image")) {
+                if (obj.has("svgIcon")) {
+                    button.setLeading(createSvgIcon(obj.getAsJsonArray("svgIcon")));
+                } else if (obj.has("image")) {
                     JsonElement image = obj.get("image");
                     if (image.isJsonPrimitive()) {
-                        button.setLeading(loadImage(image.getAsString()));
+                        button.setLeading(loadImage(image.getAsString()), ABOUT_ICON_SIZE);
                     } else if (image.isJsonObject()) {
                         holder.add(FXUtils.onWeakChangeAndOperate(Themes.darkModeProperty(), darkMode -> {
                             button.setLeading(darkMode
                                     ? loadImage(image.getAsJsonObject().get("dark").getAsString())
-                                    : loadImage(image.getAsJsonObject().get("light").getAsString())
+                                    : loadImage(image.getAsJsonObject().get("light").getAsString()),
+                                    ABOUT_ICON_SIZE
                             );
                         }));
                     }

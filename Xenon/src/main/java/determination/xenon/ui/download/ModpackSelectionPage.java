@@ -68,8 +68,7 @@ public final class ModpackSelectionPage extends VBox implements WizardPage {
         this.getChildren().setAll(
                 title,
                 createButton("local", this::onChooseLocalFile),
-                createButton("remote", this::onChooseRemoteFile),
-                createButton("repository", this::onChooseRepository)
+                createButton("remote", this::onChooseRemoteFile)
         );
 
         Path filePath = controller.getSettings().get(MODPACK_FILE);
@@ -112,7 +111,7 @@ public final class ModpackSelectionPage extends VBox implements WizardPage {
         FileChooser chooser = new FileChooser();
         chooser.setTitle(i18n("modpack.choose"));
         chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter(i18n("modpack"), "*.zip", "*.mrpack"));
-        Path selectedFile = FileUtils.toPath(chooser.showOpenDialog(Controllers.getStage()));
+        Path selectedFile = FileUtils.toPath(FXUtils.showOpenDialog(chooser, Controllers.getStage()));
         if (selectedFile == null) {
             Platform.runLater(controller::onEnd);
             return;
@@ -162,13 +161,6 @@ public final class ModpackSelectionPage extends VBox implements WizardPage {
                 handler.reject(e.getMessage());
             }
         }, "", new URLValidator());
-    }
-
-    public void onChooseRepository() {
-        String modPackName = controller.getSettings().get(MODPACK_NAME);
-        DownloadPage downloadPage = new DownloadPage(modPackName);
-        downloadPage.showModpackDownloads();
-        Controllers.navigate(downloadPage);
     }
 
     @Override

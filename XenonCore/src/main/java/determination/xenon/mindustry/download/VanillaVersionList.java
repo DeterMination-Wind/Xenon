@@ -24,7 +24,6 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -118,7 +117,7 @@ public final class VanillaVersionList extends MindustryVersionList {
             if (fallback != null) continue; // already have a fallback candidate
             if (!DESKTOP_JAR_PATTERN.matcher(name).matches()) continue;
 
-            String lower = name.toLowerCase(Locale.ROOT);
+            String lower = name.toLowerCase();
             if (lower.contains("server")) continue;
             if (lower.contains("-be-")) continue;
             if (lower.contains("linux")) continue;

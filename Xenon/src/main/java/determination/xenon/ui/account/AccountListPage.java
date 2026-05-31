@@ -29,6 +29,7 @@ import javafx.beans.value.ChangeListener;
 import javafx.beans.value.ObservableValue;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
+import javafx.collections.transformation.FilteredList;
 import javafx.geometry.Insets;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.Skin;
@@ -37,6 +38,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 import determination.xenon.auth.Account;
 import determination.xenon.auth.authlibinjector.AuthlibInjectorServer;
+import determination.xenon.auth.offline.OfflineAccount;
 import determination.xenon.setting.Accounts;
 import determination.xenon.ui.Controllers;
 import determination.xenon.ui.FXUtils;
@@ -86,7 +88,8 @@ public final class AccountListPage extends DecoratorAnimatedPage implements Deco
     private final ObjectProperty<Account> selectedAccount;
 
     public AccountListPage() {
-        items = MappedObservableList.create(accounts, AccountListItem::new);
+        items = MappedObservableList.create(new FilteredList<>(accounts,
+                account -> account instanceof OfflineAccount), AccountListItem::new);
         selectedAccount = createSelectedItemPropertyFor(items, Account.class);
     }
 
@@ -114,9 +117,6 @@ public final class AccountListPage extends DecoratorAnimatedPage implements Deco
 
     private static class AccountListPageSkin extends DecoratorAnimatedPageSkin<AccountListPage> {
 
-        private final ObservableList<AdvancedListItem> authServerItems;
-        private ChangeListener<Boolean> holder;
-
         public AccountListPageSkin(AccountListPage skinnable) {
             super(skinnable);
 
@@ -126,82 +126,19 @@ public final class AccountListPage extends DecoratorAnimatedPage implements Deco
                     boxMethods.getStyleClass().add("advanced-list-box-content");
                     FXUtils.setLimitWidth(boxMethods, 200);
 
-                    AdvancedListItem microsoftItem = new AdvancedListItem();
-                    microsoftItem.getStyleClass().add("navigation-drawer-item");
-                    microsoftItem.setTitle(i18n("account.methods.microsoft"));
-                    microsoftItem.setLeftIcon(SVG.MICROSOFT);
-                    microsoftItem.setOnAction(e -> Controllers.dialog(new MicrosoftAccountLoginPane()));
-
                     AdvancedListItem offlineItem = new AdvancedListItem();
                     offlineItem.getStyleClass().add("navigation-drawer-item");
                     offlineItem.setTitle(i18n("account.methods.offline"));
                     offlineItem.setLeftIcon(SVG.PERSON);
                     offlineItem.setOnAction(e -> Controllers.dialog(new CreateAccountPane(Accounts.FACTORY_OFFLINE)));
 
-                    VBox boxAuthServers = new VBox();
-                    authServerItems = MappedObservableList.create(skinnable.authServersProperty(), server -> {
-                        AdvancedListItem item = new AdvancedListItem();
-                        item.getStyleClass().add("navigation-drawer-item");
-                        item.setLeftIcon(SVG.DRESSER);
-                        item.setOnAction(e -> Controllers.dialog(new CreateAccountPane(server)));
-                        item.setRightAction(SVG.CLOSE, () -> Controllers.confirm(i18n("button.remove.confirm"), i18n("button.remove"), () -> {
-                            skinnable.authServersProperty().remove(server);
-                        }, null));
-
-                        ObservableValue<String> title = BindingMapping.of(server, AuthlibInjectorServer::getName);
-                        item.titleProperty().bind(title);
-                        String host = "";
-                        try {
-                            host = NetworkUtils.toURI(server.getUrl()).getHost();
-                        } catch (IllegalArgumentException e) {
-                            LOG.warning("Unparsable authlib-injector server url " + server.getUrl(), e);
-                        }
-                        item.subtitleProperty().set(host);
-                        Tooltip tooltip = new Tooltip();
-                        tooltip.textProperty().bind(Bindings.format("%s (%s)", title, server.getUrl()));
-                        FXUtils.installFastTooltip(item, tooltip);
-
-                        return item;
-                    });
-                    Bindings.bindContent(boxAuthServers.getChildren(), authServerItems);
-
                     ClassTitle title = new ClassTitle(i18n("account.create").toUpperCase(Locale.ROOT));
-                    if (RESTRICTED.get()) {
-                        VBox wrapper = new VBox(offlineItem, boxAuthServers);
-                        wrapper.setPadding(Insets.EMPTY);
-                        FXUtils.installFastTooltip(wrapper, i18n("account.login.restricted"));
-
-                        offlineItem.setDisable(true);
-                        boxAuthServers.setDisable(true);
-
-                        boxMethods.getChildren().setAll(title, microsoftItem, wrapper);
-
-                        holder = FXUtils.onWeakChange(RESTRICTED, value -> {
-                            if (!value) {
-                                holder = null;
-                                offlineItem.setDisable(false);
-                                boxAuthServers.setDisable(false);
-                                boxMethods.getChildren().setAll(title, microsoftItem, offlineItem, boxAuthServers);
-                            }
-                        });
-                    } else {
-                        boxMethods.getChildren().setAll(title, microsoftItem, offlineItem, boxAuthServers);
-                    }
-                }
-
-                AdvancedListItem addAuthServerItem = new AdvancedListItem();
-                {
-                    addAuthServerItem.getStyleClass().add("navigation-drawer-item");
-                    addAuthServerItem.setTitle(i18n("account.injector.add"));
-                    addAuthServerItem.setSubtitle(i18n("account.methods.authlib_injector"));
-                    addAuthServerItem.setLeftIcon(SVG.ADD_CIRCLE);
-                    addAuthServerItem.setOnAction(e -> Controllers.dialog(new AddAuthlibInjectorServerPane()));
-                    VBox.setMargin(addAuthServerItem, new Insets(0, 0, 12, 0));
+                    boxMethods.getChildren().setAll(title, offlineItem);
                 }
 
                 ScrollPane scrollPane = new ScrollPane(boxMethods);
                 VBox.setVgrow(scrollPane, Priority.ALWAYS);
-                setLeft(scrollPane, addAuthServerItem);
+                setLeft(scrollPane);
             }
 
             ScrollPane scrollPane = new ScrollPane();

@@ -58,6 +58,8 @@ public final class XenonModpackInstaller {
         Files.createDirectories(dataDir);
 
         XenonModpackPacker.XenonModpackManifest manifest = null;
+        boolean hasGameJar = false;
+        Path targetJar = versionRoot.resolve(targetId + ".jar");
 
         try (InputStream is = Files.newInputStream(zipFile);
              ZipInputStream zip = new ZipInputStream(is)) {
@@ -68,6 +70,11 @@ public final class XenonModpackInstaller {
                 if (name.equals(XenonModpackPacker.MANIFEST)) {
                     String json = new String(zip.readAllBytes(), StandardCharsets.UTF_8);
                     manifest = GSON.fromJson(json, XenonModpackPacker.XenonModpackManifest.class);
+                    continue;
+                }
+                if (name.equals(XenonModpackPacker.GAME_JAR)) {
+                    Files.copy(zip, targetJar, StandardCopyOption.REPLACE_EXISTING);
+                    hasGameJar = true;
                     continue;
                 }
                 Path dst = dataDir.resolve(name).normalize();
@@ -83,6 +90,9 @@ public final class XenonModpackInstaller {
         if (manifest == null) {
             throw new IOException("Modpack missing " + XenonModpackPacker.MANIFEST);
         }
+        if (!hasGameJar || !Files.isRegularFile(targetJar)) {
+            throw new IOException("Modpack missing bundled Mindustry client jar");
+        }
 
         MindustryVersion v = new MindustryVersion();
         v.setId(targetId);
@@ -90,7 +100,7 @@ public final class XenonModpackInstaller {
         v.setVariant(manifest.variant);
         v.setBuild(manifest.minBuild);
         v.setBuildType("custom");
-        v.setJarPath(targetId + ".jar"); // user must drop a jar in afterwards
+        v.setJarPath(targetId + ".jar");
         v.setJavaReq(manifest.minBuild > 0 && manifest.minBuild < 140 ? 8 : 17);
         repo.save(v);
         return v;

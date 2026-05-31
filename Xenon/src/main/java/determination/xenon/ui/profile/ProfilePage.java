@@ -65,8 +65,7 @@ public final class ProfilePage extends BorderPane implements DecoratorPage {
 
         state.set(State.fromTitle(profile == null ? i18n("profile.new") : i18n("profile") + " - " + profileDisplayName));
         location = new SimpleStringProperty(this, "location",
-                Optional.ofNullable(profile).map(Profile::getGameDir).map(FileUtils::getAbsolutePath)
-                        .orElse(Profiles.defaultGameDirectory().toString()));
+                Optional.ofNullable(profile).map(Profile::getGameDir).map(FileUtils::getAbsolutePath).orElse(".minecraft"));
 
         ScrollPane scroll = new ScrollPane();
         this.setCenter(scroll);

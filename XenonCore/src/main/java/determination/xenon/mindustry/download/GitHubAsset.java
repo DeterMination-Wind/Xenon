@@ -50,11 +50,8 @@ public final class GitHubAsset {
     }
 
     public String getName() { return name; }
-
     public long getSize() { return size; }
-
     public String getDownloadUrl() { return downloadUrl; }
-
     public String getContentType() { return contentType; }
 
     @Override

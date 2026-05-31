@@ -17,7 +17,6 @@
  */
 package determination.xenon.mindustry.install;
 
-import determination.xenon.Metadata;
 import determination.xenon.mindustry.DataDirectoryPolicy;
 import determination.xenon.mindustry.MindustryImportFlow;
 import determination.xenon.mindustry.MindustryVersion;
@@ -35,16 +34,14 @@ import determination.xenon.task.Task;
 import determination.xenon.ui.wizard.WizardController;
 import determination.xenon.ui.wizard.WizardProvider;
 import determination.xenon.util.SettingsMap;
+import determination.xenon.util.io.FileUtils;
 import javafx.scene.Node;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Set;
-import java.util.concurrent.Semaphore;
+import java.util.Objects;
 
 import static determination.xenon.util.i18n.I18n.i18n;
 import static determination.xenon.util.logging.Logger.LOG;
@@ -64,8 +61,6 @@ import static determination.xenon.util.logging.Logger.LOG;
  */
 public final class XenonInstallWizardProvider implements WizardProvider {
 
-    private static final int MAX_PARALLEL_PRELOAD_MODS = 4;
-
     /** Pluggable community mod source for {@link PreloadModsPage}. */
     public interface ModIndexLoader {
         List<MindustryRemoteMod> load() throws IOException;
@@ -76,8 +71,8 @@ public final class XenonInstallWizardProvider implements WizardProvider {
     private VersionVariant preseededVariant;
 
     public XenonInstallWizardProvider() {
-        this.client = new GitHubReleaseClient(Metadata.getCachesDirectory());
-        this.modIndex = new MindustryModsIndexRepository(Metadata.getCachesDirectory());
+        this.client = new GitHubReleaseClient(MindustryImportFlow.cachesDirectory());
+        this.modIndex = new MindustryModsIndexRepository(MindustryImportFlow.cachesDirectory());
     }
 
     /**
@@ -141,22 +136,35 @@ public final class XenonInstallWizardProvider implements WizardProvider {
         XenonGameRepository repo = MindustryImportFlow.repository();
         Path versionRoot = repo.getVersionRoot(id);
         Path jar = versionRoot.resolve(id + ".jar");
-        List<Path> reusableJars = findReusableJars(repo, remote, jar);
 
-        // Stage 1: prepare the version directory (synchronous, fast).
-        Task<Void> prepareDir = Task.runAsync(Schedulers.io(), () -> {
+        // Stage 1: prepare the version directory and look for a matching
+        // already-installed client jar before touching the network.
+        Task<Path> prepareDir = Task.supplyAsync(Schedulers.io(), () -> {
             Files.createDirectories(versionRoot);
+            return findReusableJar(repo, id, variant, remote);
         }).setName(i18n("xenon.install.task.prepare"));
 
         // Stage 2: download the jar via HMCL's Task pipeline so TaskListPane
         // shows a real progress bar + the per-second speed indicator.
         MindustryDownloadTask download = new MindustryDownloadTask(
                 remote.getDownloadUrl(), jar, remote.getSize(),
-                Metadata.getCachesDirectory(), reusableJars);
+                MindustryImportFlow.cachesDirectory());
         download.setName(i18n("xenon.install.task.download", id));
 
-        // Stage 3: persist version.json.
-        Task<Void> save = Task.runAsync(Schedulers.io(), () -> {
+        Task<Void> installJar = prepareDir.thenComposeAsync(Schedulers.io(), reusableJar -> {
+            if (reusableJar == null) {
+                return download;
+            }
+            return Task.runAsync(Schedulers.io(), () -> {
+                FileUtils.copyFile(reusableJar, jar);
+                LOG.info("Reused installed Mindustry client " + reusableJar
+                        + " for new instance " + id);
+            }).setName(i18n("xenon.install.task.prepare"));
+        });
+
+        // Stage 3: persist version.json — runs in parallel with installJar
+        // (only needs the directory from prepareDir, not the downloaded jar).
+        Task<Void> save = prepareDir.thenRunAsync(Schedulers.io(), () -> {
             MindustryVersion v = new MindustryVersion();
             v.setId(id);
             v.setName(id);
@@ -173,12 +181,32 @@ public final class XenonInstallWizardProvider implements WizardProvider {
             LOG.info("Xenon installed " + variant + " build=" + remote.getBuild() + " as id=" + id);
         }).setName(i18n("xenon.install.task.save"));
 
-        Task<List<Void>> preloadStage = createPreloadStage(repo, id, versionRoot, preload);
+        // Stage 4 (optional): pre-install community mods — runs after save
+        // (needs repo.get(id) to resolve the data directory), in parallel with
+        // installJar. Each mod is a separate child task so TaskListPane shows
+        // individual download progress.
+        Task<Void> preloadStage = save.thenRunAsync(Schedulers.io(), () -> {
+            if (preload == null || preload.isEmpty()) return;
+            MindustryVersion v = repo.get(id).orElseThrow();
+            Path dataDir = v.resolveDataDir(versionRoot);
+            Path modsDir = dataDir.resolve("mods");
+            Files.createDirectories(modsDir);
+            MindustryModManager target = new MindustryModManager(modsDir);
+            GitHubDirectInstaller installer = new GitHubDirectInstaller(client, target);
+            for (MindustryRemoteMod mod : preload) {
+                if (mod.getRepo() == null || mod.getRepo().isBlank()) continue;
+                try {
+                    installer.installLatest(mod.getRepo(), null);
+                    LOG.info("Pre-installed mod " + mod.getRepo() + " into " + modsDir);
+                } catch (Throwable ex) {
+                    LOG.warning("Failed to pre-install " + mod.getRepo() + ": " + ex.getMessage());
+                }
+            }
+        }).setName(i18n("xenon.install.task.preload"));
 
-        return prepareDir
-                .thenComposeAsync(download)
-                .thenComposeAsync(save)
-                .thenComposeAsync(preloadStage)
+        // installJar and preloadStage run in parallel off prepareDir;
+        // whenComplete fires after both branches finish.
+        return Task.allOf(installJar, preloadStage)
                 .whenComplete(any -> {
                     // Kick the HMCL versions listener so MainPage / sidebar
                     // re-runs its merge of HMCL + XenonGameRepository and the
@@ -194,92 +222,28 @@ public final class XenonInstallWizardProvider implements WizardProvider {
                 .setName(i18n("xenon.install.task.title"));
     }
 
-    private static List<Path> findReusableJars(XenonGameRepository repo,
-                                               MindustryRemoteVersion remote,
-                                               Path targetJar) {
-        List<Path> out = new ArrayList<>();
-        if (Files.isRegularFile(targetJar)) {
-            out.add(targetJar);
-        }
-        try {
-            repo.refresh();
-            for (MindustryVersion version : repo.all()) {
-                if (!sameRemoteBuild(version, remote)) {
-                    continue;
-                }
-                Path candidate = version.resolveJar(repo.getVersionRoot(version.getId()));
-                if (Files.isRegularFile(candidate)) {
-                    out.add(candidate);
-                }
-            }
-        } catch (RuntimeException ex) {
-            LOG.warning("Failed to inspect reusable Mindustry jars: " + ex.getMessage());
-        }
-        return out;
-    }
-
-    private static boolean sameRemoteBuild(MindustryVersion installed, MindustryRemoteVersion remote) {
-        if (installed.getVariant() != remote.getVariant()) {
-            return false;
-        }
-        if (remote.getBuild() <= 0 || installed.getBuild() != remote.getBuild()) {
-            return false;
-        }
-        String remoteType = remote.getBuildType();
-        String installedType = installed.getBuildType();
-        if (remoteType == null || remoteType.isBlank()
-                || installedType == null || installedType.isBlank()) {
-            return true;
-        }
-        return installedType.equalsIgnoreCase(remoteType);
-    }
-
-    private Task<List<Void>> createPreloadStage(XenonGameRepository repo,
-                                                String id,
-                                                Path versionRoot,
-                                                List<MindustryRemoteMod> preload) {
-        if (preload == null || preload.isEmpty()) {
-            return Task.<List<Void>>completed(List.of()).setName(i18n("xenon.install.task.preload"));
-        }
-
-        Semaphore gate = new Semaphore(MAX_PARALLEL_PRELOAD_MODS);
-        Set<String> repos = new LinkedHashSet<>();
-        List<Task<Void>> tasks = new ArrayList<>();
-        for (MindustryRemoteMod mod : preload) {
-            if (mod == null || mod.getRepo() == null || mod.getRepo().isBlank()) {
-                continue;
-            }
-            String ownerRepo = mod.getRepo().trim();
-            if (!repos.add(ownerRepo)) {
-                continue;
-            }
-            Task<Void> task = Task.runAsync(Schedulers.io(), () -> {
-                gate.acquire();
-                try {
-                    MindustryVersion v = repo.get(id).orElseThrow();
-                    Path dataDir = v.resolveDataDir(versionRoot);
-                    Path modsDir = dataDir.resolve("mods");
-                    Files.createDirectories(modsDir);
-                    MindustryModManager target = new MindustryModManager(modsDir);
-                    GitHubDirectInstaller installer = new GitHubDirectInstaller(client, target);
-                    try {
-                        installer.installLatest(ownerRepo, null);
-                        LOG.info("Pre-installed mod " + ownerRepo + " into " + modsDir);
-                    } catch (Throwable ex) {
-                        LOG.warning("Failed to pre-install " + ownerRepo + ": " + ex.getMessage());
-                    }
-                } finally {
-                    gate.release();
-                }
-            }).setName(i18n("xenon.install.task.preload") + ": " + mod.displayName());
-            tasks.add(task);
-        }
-
-        return Task.allOf(tasks).setName(i18n("xenon.install.task.preload"));
-    }
-
     @Override
     public boolean cancel() {
         return true;
+    }
+
+    /// Returns an existing local jar with the same variant/build/channel as the selected remote row.
+    private static Path findReusableJar(XenonGameRepository repo, String newId,
+                                        VersionVariant variant,
+                                        MindustryRemoteVersion remote) {
+        repo.refresh();
+        for (MindustryVersion candidate : repo.all()) {
+            if (Objects.equals(candidate.getId(), newId)) continue;
+            if (candidate.getVariant() != variant) continue;
+            if (candidate.getBuild() != remote.getBuild()) continue;
+            if (!Objects.equals(candidate.getBuildType(), remote.getBuildType())) continue;
+
+            Path root = repo.getVersionRoot(candidate.getId());
+            Path candidateJar = candidate.resolveJar(root);
+            if (Files.isRegularFile(candidateJar) && FileUtils.size(candidateJar) > 0) {
+                return candidateJar;
+            }
+        }
+        return null;
     }
 }

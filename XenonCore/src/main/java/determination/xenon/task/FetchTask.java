@@ -561,15 +561,22 @@ public abstract class FetchTask<T> extends Task<T> {
 
     private static final Timer timer = new Timer("DownloadSpeedRecorder", true);
     private static final AtomicLong downloadSpeed = new AtomicLong(0L);
+    private static final AtomicLong lastSpeedTickNanos = new AtomicLong(System.nanoTime());
     public static final EventManager<SpeedEvent> SPEED_EVENT = EventBus.EVENT_BUS.channel(SpeedEvent.class);
 
     static {
         timer.schedule(new TimerTask() {
             @Override
             public void run() {
-                SPEED_EVENT.fireEvent(new SpeedEvent(SPEED_EVENT, downloadSpeed.getAndSet(0)));
+                long now = System.nanoTime();
+                long elapsedNanos = Math.max(1L, now - lastSpeedTickNanos.getAndSet(now));
+                long bytes = downloadSpeed.getAndSet(0);
+                long bytesPerSecond = bytes <= 0
+                        ? 0L
+                        : Math.round((double) bytes * 1_000_000_000D / elapsedNanos);
+                SPEED_EVENT.fireEvent(new SpeedEvent(SPEED_EVENT, bytesPerSecond));
             }
-        }, 0, 1000);
+        }, 500, 500);
     }
 
     private static void updateDownloadSpeed(long speed) {

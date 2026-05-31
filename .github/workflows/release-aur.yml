@@ -31,28 +31,19 @@ jobs:
       - name: Build with Gradle
         run: ./gradlew :Xenon:shadowJar :Xenon:packagePortable --no-daemon
 
-      - name: Collect release files
-        working-directory: Xenon/build
-        run: |
-          cp dist/Xenon-portable-*.zip . 2>/dev/null || true
-          cp libs/Xenon-*.jar . 2>/dev/null || true
-          VERSION=${{ steps.get_version.outputs.version }}
-          for f in Xenon-portable-*.zip; do [ -f "$f" ] && mv "$f" "Xenon-portable-${VERSION}.zip"; done
-          for f in Xenon-*.jar; do [ -f "$f" ] && ! [[ "$f" == *".sha256" ]] && mv "$f" "Xenon-${VERSION}.jar"; done
-
       - name: Generate checksums
         working-directory: Xenon/build
         run: |
-          sha256sum Xenon-portable-*.zip > Xenon-portable-${{ steps.get_version.outputs.version }}.zip.sha256
-          sha256sum Xenon-*.jar > Xenon-${{ steps.get_version.outputs.version }}.jar.sha256
+          sha256sum dist/Xenon-portable-*.zip > Xenon-portable-${{ steps.get_version.outputs.version }}.zip.sha256
+          sha256sum libs/Xenon-*.jar > Xenon-${{ steps.get_version.outputs.version }}.jar.sha256
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: release-artifacts
           path: |
-            Xenon/build/Xenon-portable-*.zip
-            Xenon/build/Xenon-*.jar
+            Xenon/build/dist/Xenon-portable-*.zip
+            Xenon/build/libs/Xenon-*.jar
             Xenon/build/*.sha256
 
   release:
@@ -66,12 +57,6 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: release-artifacts
-          path: artifacts
-
-      - name: Flatten artifacts
-        run: |
-          find artifacts -type f -exec mv -t . {} +
-          ls -la
 
       - name: Generate release notes
         id: release_notes
@@ -119,37 +104,28 @@ jobs:
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
-      - name: Install SSH key
-        env:
-          AUR_SSH_KEY_B64: ${{ secrets.AUR_SSH_PRIVATE_KEY_B64 }}
-        run: |
-          mkdir -p ~/.ssh
-          echo "$AUR_SSH_KEY_B64" | base64 -d > ~/.ssh/aur
-          chmod 600 ~/.ssh/aur
-
       - name: Checkout AUR
-        run: GIT_SSH_COMMAND="ssh -i ~/.ssh/aur -o StrictHostKeyChecking=accept-new" git clone ssh://aur@aur.archlinux.org/xenon-mdt.git aur-repo
+        uses: actions/checkout@v4
+        with:
+          repository: aur.archlinux.org/xenon-mdt.git
+          ssh-known-hosts: aur.archlinux.org
+          ssh-private-key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
 
       - name: Update PKGBUILD
-        working-directory: aur-repo
         run: |
           sed -i "s/pkgver=.*/pkgver=${{ needs.build.outputs.version }}/" PKGBUILD
           sed -i "s/pkgrel=.*/pkgrel=1/" PKGBUILD
+          updpkgsums
 
       - name: Generate SRCINFO
-        working-directory: aur-repo
-        run: |
-          sed -i "s/pkgver = .*/pkgver = ${{ needs.build.outputs.version }}/" .SRCINFO
-          sed -i "s/pkgrel = .*/pkgrel = 1/" .SRCINFO
-          sed -i "s|xenon-mdt-[0-9.]*\.jar::|xenon-mdt-${{ needs.build.outputs.version }}.jar::|g" .SRCINFO
-          sed -i "s|/v[0-9.]*/Xenon-|/v${{ needs.build.outputs.version }}/Xenon-|g" .SRCINFO
-          sed -i "s|Xenon-[0-9.]*\.jar|Xenon-${{ needs.build.outputs.version }}.jar|g" .SRCINFO
+        run: makepkg --printsrcinfo > .SRCINFO
 
       - name: Commit and push to AUR
-        working-directory: aur-repo
         run: |
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
           git add PKGBUILD .SRCINFO
-          git diff --cached --quiet || git commit -m "Update to v${{ needs.build.outputs.version }}"
-          GIT_SSH_COMMAND="ssh -i ~/.ssh/aur -o StrictHostKeyChecking=no" git push origin master
+          git commit -m "Update to v${{ needs.build.outputs.version }}"
+          git push origin master
+        env:
+          GIT_SSH_COMMAND: "ssh -o StrictHostKeyChecking=no"

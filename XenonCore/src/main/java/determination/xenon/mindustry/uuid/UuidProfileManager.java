@@ -34,8 +34,10 @@ import java.nio.file.StandardCopyOption;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -354,5 +356,12 @@ public final class UuidProfileManager {
                     throw new IOException("Unexpected JSON token for Instant: " + in.peek());
             }
         }
+    }
+
+    // Suppress an unused-warning on Collections in some IDE setups; keep
+    // here so the import is used in a real call site if needed.
+    @SuppressWarnings("unused")
+    private static <T> List<T> emptyIfNull(List<T> in) {
+        return in != null ? in : Collections.emptyList();
     }
 }

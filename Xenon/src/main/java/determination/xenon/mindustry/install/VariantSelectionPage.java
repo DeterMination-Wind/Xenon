@@ -32,7 +32,6 @@ import javafx.scene.layout.VBox;
 
 import java.awt.Desktop;
 import java.net.URI;
-import java.util.Locale;
 
 import static determination.xenon.util.i18n.I18n.i18n;
 
@@ -71,7 +70,7 @@ public final class VariantSelectionPage extends VBox implements WizardPage {
 
         Label name = new Label(variant.getDisplayName());
         name.getStyleClass().add("card-title");
-        Label desc = new Label(i18n("xenon.install.variant." + variant.name().toLowerCase(Locale.ROOT) + ".desc"));
+        Label desc = new Label(i18n("xenon.install.variant." + variant.name().toLowerCase() + ".desc"));
         desc.setWrapText(true);
 
         HBox actions = new HBox(8);

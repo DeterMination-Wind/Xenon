@@ -128,10 +128,6 @@ public final class AccountListItemSkin extends SkinBase<AccountListItem> {
         JFXButton btnRefresh = FXUtils.newToggleButton4(SVG.REFRESH);
         SpinnerPane spinnerRefresh = new SpinnerPane();
         spinnerRefresh.getStyleClass().setAll("small-spinner-pane");
-        if (skinnable.getAccount() instanceof MicrosoftAccount && Accounts.OAUTH_CALLBACK.getClientId().isEmpty()) {
-            btnRefresh.setDisable(true);
-            FXUtils.installFastTooltip(spinnerRefresh, i18n("account.methods.microsoft.snapshot.tooltip"));
-        }
         btnRefresh.setOnAction(e -> {
             spinnerRefresh.showSpinner();
             skinnable.refreshAsync()
@@ -147,23 +143,6 @@ public final class AccountListItemSkin extends SkinBase<AccountListItem> {
         FXUtils.installFastTooltip(btnRefresh, i18n("button.refresh"));
         spinnerRefresh.setContent(btnRefresh);
         right.getChildren().add(spinnerRefresh);
-
-        JFXButton btnUpload = FXUtils.newToggleButton4(SVG.CHECKROOM);
-        SpinnerPane spinnerUpload = new SpinnerPane();
-        btnUpload.setOnAction(e -> {
-            Task<?> uploadTask = skinnable.uploadSkin();
-            if (uploadTask != null) {
-                spinnerUpload.showSpinner();
-                uploadTask
-                        .whenComplete(Schedulers.javafx(), ex -> spinnerUpload.hideSpinner())
-                        .start();
-            }
-        });
-        FXUtils.installFastTooltip(btnUpload, i18n("account.skin.upload"));
-        btnUpload.disableProperty().bind(Bindings.not(skinnable.canUploadSkin()));
-        spinnerUpload.setContent(btnUpload);
-        spinnerUpload.getStyleClass().add("small-spinner-pane");
-        right.getChildren().add(spinnerUpload);
 
         JFXButton btnCopyUUID = FXUtils.newToggleButton4(SVG.CONTENT_COPY);
         SpinnerPane spinnerCopyUUID = new SpinnerPane();

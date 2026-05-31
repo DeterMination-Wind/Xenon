@@ -18,11 +18,13 @@
 package determination.xenon.mindustry.download;
 
 import com.google.gson.Gson;
+import determination.xenon.task.FetchTask;
 import determination.xenon.util.logging.Logger;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.ProxySelector;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -121,6 +123,8 @@ public final class MirrorDownloader {
     private static final long PREFERRED_MIRROR_TTL_MS = 8L * 60 * 60 * 1000;
     /** Limit how many simultaneous downloads we race so we don't murder the user's NIC. */
     private static final int MAX_RACE_PARALLELISM = 6;
+    /** Maximum number of retry attempts after a failed download race. */
+    private static final int MAX_RETRIES = 3;
 
     private final HttpClient http;
     private final Path cacheFile;
@@ -129,6 +133,7 @@ public final class MirrorDownloader {
         this.http = HttpClient.newBuilder()
                 .followRedirects(HttpClient.Redirect.NORMAL)
                 .connectTimeout(Duration.ofSeconds(8))
+                .proxy(ProxySelector.getDefault())
                 .build();
         this.cacheFile = cachesRoot == null
                 ? null
@@ -161,7 +166,7 @@ public final class MirrorDownloader {
             Files.createDirectories(tmp.getParent());
             try {
                 downloadStream(githubUrl, tmp, expectedSize, progress);
-                Files.deleteIfExists(target);
+                deleteWithRetry(target);
                 Files.move(tmp, target);
                 Logger.LOG.info("MirrorDownloader: direct (non-GitHub) won "
                         + target.getFileName());
@@ -171,77 +176,107 @@ public final class MirrorDownloader {
             }
         }
 
-        // 1. Probe + filter.
-        List<Probe> survivors = probeAll(githubUrl);
-        // Add direct origin so unrestricted networks aren't forced through a mirror.
-        Probe direct = probeOnce("direct", githubUrl);
-        if (direct != null) survivors.add(direct);
-        survivors.sort(Comparator.comparingLong(p -> p.latencyMs));
-
-        // Promote the cached preferred mirror to the front, if still valid.
-        String preferred = readPreferredMirror();
-        if (preferred != null) {
-            for (int i = 0; i < survivors.size(); i++) {
-                if (survivors.get(i).label.equals("mirror:" + preferred)) {
-                    Probe p = survivors.remove(i);
-                    survivors.add(0, p);
-                    Logger.LOG.info("MirrorDownloader: cached preferred mirror "
-                            + preferred + " (latency=" + p.latencyMs + "ms) reused");
-                    break;
-                }
-            }
-        }
-
-        if (survivors.isEmpty()) {
-            throw new IOException("No reachable mirrors for " + githubUrl);
-        }
-        // Trim to the lowest-latency MAX_RACE_PARALLELISM and require <1500ms.
-        List<Probe> startup = new ArrayList<>();
-        for (Probe p : survivors) {
-            if (p.latencyMs < MAX_STARTUP_LATENCY_MS) startup.add(p);
-            if (startup.size() >= MAX_RACE_PARALLELISM) break;
-        }
-        if (startup.isEmpty()) {
-            // Fall back to the single fastest one even if it's slow — better
-            // than failing outright.
-            startup.add(survivors.get(0));
-        }
-        Logger.LOG.info("MirrorDownloader: racing " + startup.size()
-                + " mirrors for " + githubUrl + " — "
-                + summary(startup));
-
-        // 2. Race them.
-        Path tmpDir = target.getParent() == null
-                ? Path.of(System.getProperty("java.io.tmpdir", "."))
-                : target.getParent().resolve("_xenon_dl");
-        Files.createDirectories(tmpDir);
-
-        RaceResult race = doRace(startup, tmpDir, expectedSize, progress);
-        try {
-            if (!race.success) {
-                throw new IOException(race.error == null ? "All mirrors failed"
-                        : race.error.getMessage());
-            }
-            // Move the winning temp file to the final target.
-            Files.deleteIfExists(target);
-            Files.move(race.winnerTemp, target);
-            // 3. Remember the winner so the next call gets a head start.
-            if (race.winnerLabel.startsWith("mirror:")) {
-                writePreferredMirror(race.winnerLabel.substring("mirror:".length()));
-            }
-            Logger.LOG.info("MirrorDownloader: " + race.winnerLabel + " won "
-                    + target.getFileName());
-        } finally {
-            // Best-effort cleanup of leftover temp files.
-            for (RaceState s : race.allStates) {
+        // Retry loop: re-probe + re-race on failure, with exponential backoff.
+        IOException lastError = null;
+        for (int attempt = 0; attempt < MAX_RETRIES; attempt++) {
+            if (attempt > 0) {
+                long backoffMs = 1000L << (attempt - 1); // 1s, 2s
+                Logger.LOG.info("MirrorDownloader: retrying download (attempt "
+                        + (attempt + 1) + "/" + MAX_RETRIES
+                        + ") after " + backoffMs + "ms backoff");
                 try {
-                    if (race.winnerTemp == null || !s.temp.equals(race.winnerTemp)) {
-                        Files.deleteIfExists(s.temp);
-                    }
-                } catch (IOException ignored) {
+                    Thread.sleep(backoffMs);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException("Download interrupted during retry backoff", ie);
                 }
             }
+
+            try {
+                // 1. Probe + filter.
+                List<Probe> survivors = probeAll(githubUrl);
+                // Add direct origin so unrestricted networks aren't forced through a mirror.
+                Probe direct = probeOnce("direct", githubUrl);
+                if (direct != null) survivors.add(direct);
+                survivors.sort(Comparator.comparingLong(p -> p.latencyMs));
+
+                // Promote the cached preferred mirror to the front, if still valid.
+                String preferred = readPreferredMirror();
+                if (preferred != null) {
+                    for (int i = 0; i < survivors.size(); i++) {
+                        if (survivors.get(i).label.equals("mirror:" + preferred)) {
+                            Probe p = survivors.remove(i);
+                            survivors.add(0, p);
+                            Logger.LOG.info("MirrorDownloader: cached preferred mirror "
+                                    + preferred + " (latency=" + p.latencyMs + "ms) reused");
+                            break;
+                        }
+                    }
+                }
+
+                if (survivors.isEmpty()) {
+                    throw new IOException("No reachable mirrors for " + githubUrl);
+                }
+                // Trim to the configured download-thread budget and require <1500ms.
+                int raceParallelism = Math.max(1, Math.min(MAX_RACE_PARALLELISM,
+                        FetchTask.getDownloadExecutorConcurrency()));
+                List<Probe> startup = new ArrayList<>();
+                for (Probe p : survivors) {
+                    if (p.latencyMs < MAX_STARTUP_LATENCY_MS) startup.add(p);
+                    if (startup.size() >= raceParallelism) break;
+                }
+                if (startup.isEmpty()) {
+                    // Fall back to the single fastest one even if it's slow — better
+                    // than failing outright.
+                    startup.add(survivors.get(0));
+                }
+                Logger.LOG.info("MirrorDownloader: racing " + startup.size()
+                        + " mirrors for " + githubUrl + " — "
+                        + summary(startup));
+
+                // 2. Race them.
+                Path tmpDir = target.getParent() == null
+                        ? Path.of(System.getProperty("java.io.tmpdir", "."))
+                        : target.getParent().resolve("_xenon_dl");
+                Files.createDirectories(tmpDir);
+
+                RaceResult race = doRace(startup, tmpDir, expectedSize, progress);
+                try {
+                    if (!race.success) {
+                        throw new IOException(race.error == null ? "All mirrors failed"
+                                : race.error.getMessage());
+                    }
+                    // Move the winning temp file to the final target.
+                    // On Windows, file may be briefly locked by antivirus — retry.
+                    deleteWithRetry(target);
+                    Files.move(race.winnerTemp, target);
+                    // 3. Remember the winner so the next call gets a head start.
+                    if (race.winnerLabel.startsWith("mirror:")) {
+                        writePreferredMirror(race.winnerLabel.substring("mirror:".length()));
+                    }
+                    Logger.LOG.info("MirrorDownloader: " + race.winnerLabel + " won "
+                            + target.getFileName());
+                    return; // success — exit retry loop
+                } finally {
+                    // Best-effort cleanup of leftover temp files.
+                    for (RaceState s : race.allStates) {
+                        try {
+                            if (race.winnerTemp == null || !s.temp.equals(race.winnerTemp)) {
+                                Files.deleteIfExists(s.temp);
+                            }
+                        } catch (IOException ignored) {
+                        }
+                    }
+                }
+            } catch (IOException e) {
+                lastError = e;
+                Logger.LOG.warning("MirrorDownloader: download attempt "
+                        + (attempt + 1) + "/" + MAX_RETRIES
+                        + " failed: " + e.getMessage());
+            }
         }
+        // All retries exhausted — throw with a user-friendly message.
+        throw new IOException(friendlyMessage(lastError), lastError);
     }
 
     // ------------------------------------------------------------------
@@ -308,6 +343,7 @@ public final class MirrorDownloader {
                     + Long.toHexString(base ^ (i * 0x9E3779B97F4A7C15L)) + ".tmp");
             states.add(new RaceState(p, temp));
         }
+        ProgressTracker tracker = new ProgressTracker(expectedSize, progress);
 
         ConcurrentHashMap<RaceState, CompletableFuture<Void>> tasks = new ConcurrentHashMap<>();
         for (RaceState s : states) {
@@ -320,7 +356,7 @@ public final class MirrorDownloader {
             while (System.currentTimeMillis() - raceStart < SPEED_TEST_WINDOW_MS) {
                 if (states.stream().anyMatch(s -> s.done)) break;
                 if (states.stream().allMatch(s -> s.failed || s.aborted)) break;
-                publishProgress(states, expectedSize, progress);
+                tracker.publish(states);
                 Thread.sleep(200);
             }
         } catch (InterruptedException e) {
@@ -335,6 +371,7 @@ public final class MirrorDownloader {
         if (earlyWinner != null) {
             abortLosers(states, earlyWinner);
             waitAll(tasks);
+            tracker.finish(earlyWinner);
             return new RaceResult(true, earlyWinner.probe.label, earlyWinner.temp,
                     null, states);
         }
@@ -366,6 +403,7 @@ public final class MirrorDownloader {
                 if (winner != null) {
                     abortLosers(states, winner);
                     waitAll(tasks);
+                    tracker.finish(winner);
                     return new RaceResult(true, winner.probe.label, winner.temp,
                             null, states);
                 }
@@ -380,7 +418,7 @@ public final class MirrorDownloader {
                                     : new IOException(err.getMessage(), err),
                             states);
                 }
-                publishProgress(states, expectedSize, progress);
+                tracker.publish(states);
                 Thread.sleep(200);
             }
         } catch (InterruptedException e) {
@@ -416,12 +454,6 @@ public final class MirrorDownloader {
                     if (s.aborted) throw new IOException("aborted");
                     out.write(buf, 0, n);
                     s.bytes.addAndGet(n);
-                    // Feed the global download-speed counter so the top-left
-                    // download indicator shows the real throughput. Only the
-                    // winning stream's bytes count toward the user-visible
-                    // file, but every byte we pull off the wire is real
-                    // bandwidth, so we report all of them.
-                    determination.xenon.task.FetchTask.recordDownloadedBytes(n);
                 }
             }
             s.finishedAt = System.currentTimeMillis();
@@ -437,15 +469,13 @@ public final class MirrorDownloader {
         }
     }
 
-    private void publishProgress(List<RaceState> states, long expectedSize,
-                                 ProgressCallback progress) {
-        if (progress == null) return;
+    private static long maxBytes(List<RaceState> states) {
         long max = 0;
         for (RaceState s : states) {
             long b = s.bytes.get();
             if (b > max) max = b;
         }
-        progress.onProgress(max, expectedSize > 0 ? expectedSize : -1);
+        return max;
     }
 
     private long speedBps(RaceState s) {
@@ -521,6 +551,28 @@ public final class MirrorDownloader {
         }
     }
 
+    /**
+     * Delete a file with retry logic for Windows file-locking issues.
+     * Antivirus software may briefly lock newly downloaded files.
+     */
+    private static void deleteWithRetry(Path file) throws IOException {
+        for (int i = 0; i < 5; i++) {
+            try {
+                Files.deleteIfExists(file);
+                return;
+            } catch (java.nio.file.FileSystemException e) {
+                if (i < 4) {
+                    try { Thread.sleep(200 * (i + 1)); } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        throw new IOException("Interrupted during file delete retry", ie);
+                    }
+                } else {
+                    throw e;
+                }
+            }
+        }
+    }
+
     private static String summary(List<Probe> probes) {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < probes.size(); i++) {
@@ -528,6 +580,27 @@ public final class MirrorDownloader {
             sb.append(probes.get(i).label).append("=").append(probes.get(i).latencyMs).append("ms");
         }
         return sb.toString();
+    }
+
+    /**
+     * Translate a technical {@link IOException} into a user-friendly
+     * Chinese message suitable for display in the launcher UI.
+     */
+    private static String friendlyMessage(IOException e) {
+        if (e == null) {
+            return "所有镜像源不可用，请稍后重试";
+        }
+        if (e instanceof java.net.SocketTimeoutException) {
+            return "下载超时，请稍后重试";
+        }
+        if (e instanceof java.net.ConnectException) {
+            return "网络连接失败，请检查网络设置";
+        }
+        String msg = e.getMessage();
+        if (msg != null && msg.contains("No reachable mirrors")) {
+            return "所有镜像源不可用，请稍后重试";
+        }
+        return "下载失败: " + msg;
     }
 
     // ------------------------------------------------------------------
@@ -575,6 +648,37 @@ public final class MirrorDownloader {
             this.winnerTemp = winnerTemp;
             this.error = error;
             this.allStates = allStates;
+        }
+    }
+
+    private static final class ProgressTracker {
+        final long expectedSize;
+        final ProgressCallback progress;
+        long reportedBytes;
+
+        ProgressTracker(long expectedSize, ProgressCallback progress) {
+            this.expectedSize = expectedSize;
+            this.progress = progress;
+        }
+
+        void publish(List<RaceState> states) {
+            report(maxBytes(states));
+        }
+
+        void finish(RaceState winner) {
+            report(winner.bytes.get());
+        }
+
+        private void report(long bytes) {
+            long effective = expectedSize > 0 ? Math.min(bytes, expectedSize) : bytes;
+            long delta = effective - reportedBytes;
+            if (delta > 0) {
+                determination.xenon.task.FetchTask.recordDownloadedBytes(delta);
+                reportedBytes = effective;
+            }
+            if (progress != null) {
+                progress.onProgress(effective, expectedSize > 0 ? expectedSize : -1);
+            }
         }
     }
 

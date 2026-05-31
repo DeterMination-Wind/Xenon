@@ -263,26 +263,7 @@ public class Decorator extends Control {
     }
 
     public void close() {
-        if (AnimationUtils.playWindowAnimation()) {
-            Timeline timeline = new Timeline(
-                    new KeyFrame(Duration.millis(0),
-                            new KeyValue(opacityProperty(), 1, Motion.EASE),
-                            new KeyValue(scaleXProperty(), 1, Motion.EASE),
-                            new KeyValue(scaleYProperty(), 1, Motion.EASE),
-                            new KeyValue(scaleZProperty(), 0.3, Motion.EASE)
-                    ),
-                    new KeyFrame(Duration.millis(200),
-                            new KeyValue(opacityProperty(), 0, Motion.EASE),
-                            new KeyValue(scaleXProperty(), 0.8, Motion.EASE),
-                            new KeyValue(scaleYProperty(), 0.8, Motion.EASE),
-                            new KeyValue(scaleZProperty(), 0.8, Motion.EASE)
-                    )
-            );
-            timeline.setOnFinished(event -> Launcher.stopApplication());
-            timeline.play();
-        } else {
-            Launcher.stopApplication();
-        }
+        Launcher.hideApplicationToTray();
     }
 
     public void capableDraggingWindow(Node node) {

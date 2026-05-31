@@ -172,7 +172,7 @@ public class DownloadPage extends Control implements DecoratorPage {
         fileChooser.setTitle(i18n("button.save_as"));
         fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter(i18n("file"), "*." + extension));
         fileChooser.setInitialFileName(file.getFile().getFilename());
-        Path dest = FileUtils.toPath(fileChooser.showSaveDialog(Controllers.getStage()));
+        Path dest = FileUtils.toPath(FXUtils.showSaveDialog(fileChooser, Controllers.getStage()));
         if (dest == null) {
             return;
         }

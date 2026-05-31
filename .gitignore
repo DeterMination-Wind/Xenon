@@ -25,13 +25,12 @@ language-subtag-registry
 
 # gradle build
 /build/
-/Xenon/build/
-/XenonCore/build/
-/XenonBoot/build/
+/HMCL/build/
+/HMCLCore/build/
+/HMCLBoot/build/
 /minecraft/libraries/HMCLTransformerDiscoveryService/build/
 /minecraft/libraries/HMCLMultiMCBootstrap/build/
 /buildSrc/build/
-**/build/
 
 # idea
 .idea
@@ -72,8 +71,3 @@ language-subtag-registry
 !/.gemini/config.yaml
 .codex
 /.gradle-*/
-
-# Build artifacts
-*.jar
-*.zip
-*.sha256

@@ -27,6 +27,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.lang.reflect.Type;
+import java.net.ProxySelector;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -59,6 +60,8 @@ import java.util.Properties;
 public final class GitHubReleaseClient {
 
     private static final String API_BASE = "https://api.github.com/";
+    /** Cache proxy server — returns GitHub API v3 compatible responses. */
+    private static final String CACHE_API_BASE = "http://121.199.60.4/github/";
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(5);
     private static final Duration READ_TIMEOUT = Duration.ofSeconds(5);
     /** Cap per-mirror retry budget to avoid stacking 5s × N mirrors of latency. */
@@ -92,6 +95,7 @@ public final class GitHubReleaseClient {
         this.http = HttpClient.newBuilder()
                 .followRedirects(HttpClient.Redirect.NORMAL)
                 .connectTimeout(CONNECT_TIMEOUT)
+                .proxy(ProxySelector.getDefault())
                 .build();
     }
 
@@ -107,8 +111,8 @@ public final class GitHubReleaseClient {
         if (limit <= 0) return Collections.emptyList();
         int perPage = Math.min(100, limit);
 
-        String apiUrl = API_BASE + "repos/" + ownerRepo + "/releases?per_page=" + perPage;
-        String body = fetchWithCache(apiUrl, ownerRepo);
+        String relativePath = "repos/" + ownerRepo + "/releases?per_page=" + perPage;
+        String body = fetchWithFallback(relativePath, ownerRepo);
         List<GitHubRelease> all = GSON.fromJson(body, RELEASE_LIST_TYPE);
         if (all == null) return Collections.emptyList();
         if (all.size() > limit) return new ArrayList<>(all.subList(0, limit));
@@ -119,8 +123,8 @@ public final class GitHubReleaseClient {
     public GitHubRelease getLatestRelease(String ownerRepo) throws IOException {
         Objects.requireNonNull(ownerRepo, "ownerRepo");
         // /releases/latest skips drafts and pre-releases on GitHub's side.
-        String apiUrl = API_BASE + "repos/" + ownerRepo + "/releases/latest";
-        String body = fetchWithCache(apiUrl, ownerRepo + "_latest");
+        String relativePath = "repos/" + ownerRepo + "/releases/latest";
+        String body = fetchWithFallback(relativePath, ownerRepo + "_latest");
         if (body == null || body.isEmpty()) return null;
         return GSON.fromJson(body, GitHubRelease.class);
     }
@@ -229,6 +233,54 @@ public final class GitHubReleaseClient {
             }
             if (cb != null) cb.onProgress(read, total);
         }
+    }
+
+    // ---------- cache-with-fallback ----------
+
+    /**
+     * Try the cache proxy server first, then fall back to the original
+     * GitHub API (with ETag caching and mirror support).
+     *
+     * <p>The cache server at {@link #CACHE_API_BASE} returns GitHub API v3
+     * compatible responses. If it is unreachable or returns a non-2xx
+     * status, the request is transparently retried against
+     * {@link #API_BASE} via {@link #fetchWithCache}.</p>
+     *
+     * @param relativePath path relative to the base URL,
+     *                     e.g. {@code repos/owner/repo/releases}
+     * @param cacheKey     on-disk cache key passed to {@link #fetchWithCache}
+     */
+    private String fetchWithFallback(String relativePath, String cacheKey) throws IOException {
+        // 1. Try cache proxy
+        String cacheUrl = CACHE_API_BASE + relativePath;
+        try {
+            HttpRequest req = HttpRequest.newBuilder(URI.create(cacheUrl))
+                    .GET()
+                    .timeout(READ_TIMEOUT)
+                    .header("Accept", "application/vnd.github+json")
+                    .header("User-Agent", "Xenon-Launcher")
+                    .build();
+            HttpResponse<String> resp = http.send(req,
+                    HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (resp.statusCode() / 100 == 2) {
+                Logger.LOG.info("Fetched " + relativePath + " from cache server");
+                return resp.body();
+            }
+            Logger.LOG.warning("Cache server returned HTTP " + resp.statusCode()
+                    + " for " + relativePath + ", falling back to GitHub API");
+        } catch (IOException | InterruptedException e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            Logger.LOG.warning("Cache server failed for " + relativePath
+                    + ": " + e.getMessage() + ", falling back to GitHub API");
+        }
+
+        // 2. Fall back to GitHub API (with ETag caching and mirror support)
+        String apiUrl = API_BASE + relativePath;
+        String body = fetchWithCache(apiUrl, cacheKey);
+        Logger.LOG.info("Fetched " + relativePath + " from GitHub API");
+        return body;
     }
 
     // ---------- caching ----------

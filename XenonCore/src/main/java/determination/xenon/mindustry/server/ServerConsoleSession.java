@@ -57,7 +57,7 @@ public final class ServerConsoleSession {
     /** Log level constants used inside {@link StdoutLine#level()}. */
     public static final String LEVEL_INFO = "INFO";
     public static final String LEVEL_WARN = "WARN";
-    public static final String LEVEL_ERR = "ERR";
+    public static final String LEVEL_ERR  = "ERR";
 
     // ---------- ConsoleEvent algebra ----------
 
@@ -75,11 +75,7 @@ public final class ServerConsoleSession {
     public static record StderrLine(String text) implements ConsoleEvent {}
 
     /** Emitted once after the process has exited and pump threads drained. */
-    public static record Exited(int code, boolean expected) implements ConsoleEvent {
-        public Exited(int code) {
-            this(code, code == 0);
-        }
-    }
+    public static record Exited(int code) implements ConsoleEvent {}
 
     /**
      * Emitted by {@link ServerSessionRunner} (not by {@link ServerConsoleSession}
@@ -96,7 +92,6 @@ public final class ServerConsoleSession {
 
     private volatile ServerProcess proc;
     private volatile Consumer<ConsoleEvent> ui;
-    private volatile boolean stopRequested;
 
     public ServerConsoleSession(ServerInstance inst, ServerInstanceManager mgr) {
         this.inst = Objects.requireNonNull(inst, "inst");
@@ -126,7 +121,7 @@ public final class ServerConsoleSession {
             if (err != null) {
                 Logger.LOG.warning("server " + inst.getId() + " exit observation failed: " + err);
             }
-            emit(new Exited(c, stopRequested || c == 0));
+            emit(new Exited(c));
         });
     }
 
@@ -141,9 +136,6 @@ public final class ServerConsoleSession {
         if (p == null || !p.isAlive()) {
             throw new UncheckedIOException(new IOException(
                     "server " + inst.getId() + " is not running"));
-        }
-        if ("stop".equalsIgnoreCase(cmd.trim()) || "exit".equalsIgnoreCase(cmd.trim())) {
-            stopRequested = true;
         }
         try {
             p.sendCommand(cmd);
@@ -165,7 +157,6 @@ public final class ServerConsoleSession {
      * 3-second grace period see {@link ServerSessionRunner#stop()}.
      */
     public void stop() {
-        stopRequested = true;
         ServerProcess p = proc;
         if (p == null) return;
         p.destroy();
@@ -226,7 +217,7 @@ public final class ServerConsoleSession {
             case "I": return LEVEL_INFO;
             case "W": return LEVEL_WARN;
             case "E": return LEVEL_ERR;
-            default: return LEVEL_INFO;
+            default:  return LEVEL_INFO;
         }
     }
 }

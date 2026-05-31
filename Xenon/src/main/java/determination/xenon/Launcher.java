@@ -69,6 +69,7 @@ import static determination.xenon.util.logging.Logger.LOG;
 
 public final class Launcher extends Application {
     public static final CookieManager COOKIE_MANAGER = new CookieManager();
+    private static volatile boolean stoppingApplication;
 
     @Override
     public void start(Stage primaryStage) {
@@ -380,11 +381,16 @@ public final class Launcher extends Application {
     }
 
     public static void stopApplication() {
+        if (stoppingApplication)
+            return;
+        stoppingApplication = true;
+
         LOG.info("Stopping application.\n" + StringUtils.getStackTrace(Thread.currentThread().getStackTrace()));
 
         runInFX(() -> {
             if (Controllers.getStage() == null)
                 return;
+            Controllers.getStage().setOnCloseRequest(null);
             Controllers.getStage().close();
             Schedulers.shutdown();
             Controllers.shutdown();
@@ -393,15 +399,37 @@ public final class Launcher extends Application {
     }
 
     public static void stopWithoutPlatform() {
+        if (stoppingApplication)
+            return;
+        stoppingApplication = true;
+
         LOG.info("Stopping application without JavaFX Toolkit.\n" + StringUtils.getStackTrace(Thread.currentThread().getStackTrace()));
 
         runInFX(() -> {
             if (Controllers.getStage() == null)
                 return;
+            Controllers.getStage().setOnCloseRequest(null);
             Controllers.getStage().close();
             Schedulers.shutdown();
             Controllers.shutdown();
             Lang.executeDelayed(System::gc, TimeUnit.SECONDS, 5, true);
+        });
+    }
+
+    public static boolean isStoppingApplication() {
+        return stoppingApplication;
+    }
+
+    public static void hideApplicationToTray() {
+        runInFX(() -> {
+            if (Controllers.getStage() == null)
+                return;
+            if (!determination.xenon.ui.TrayIconManager.isInstalled()) {
+                stopApplication();
+                return;
+            }
+            Controllers.saveWindowStates();
+            Controllers.getStage().hide();
         });
     }
 

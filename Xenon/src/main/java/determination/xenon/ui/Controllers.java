@@ -43,9 +43,9 @@ import javafx.util.Duration;
 import determination.xenon.Launcher;
 import determination.xenon.Metadata;
 import determination.xenon.game.LauncherHelper;
-import determination.xenon.game.ModpackHelper;
 import determination.xenon.java.JavaManager;
 import determination.xenon.java.JavaRuntime;
+import determination.xenon.mindustry.MindustryImportFlow;
 import determination.xenon.setting.*;
 import determination.xenon.task.Task;
 import determination.xenon.task.TaskExecutor;
@@ -57,7 +57,6 @@ import determination.xenon.ui.construct.*;
 import determination.xenon.ui.construct.MessageDialogPane.MessageType;
 import determination.xenon.ui.decorator.DecoratorController;
 import determination.xenon.ui.download.DownloadPage;
-import determination.xenon.ui.download.ModpackInstallWizardProvider;
 import determination.xenon.ui.main.LauncherSettingsPage;
 import determination.xenon.ui.main.RootPage;
 import determination.xenon.ui.terracotta.TerracottaPage;
@@ -106,11 +105,11 @@ public final class Controllers {
         GameListPage gameListPage = new GameListPage();
         gameListPage.selectedProfileProperty().bindBidirectional(Profiles.selectedProfileProperty());
         gameListPage.profilesProperty().bindContent(Profiles.profilesProperty());
-        FXUtils.applyDragListener(gameListPage, file -> ModpackHelper.isFileModpackByExtension(file) || "json".equalsIgnoreCase(FileUtils.getNameWithoutExtension(file)), files -> {
+        FXUtils.applyDragListener(gameListPage, file -> MindustryImportFlow.isXenonModpackFile(file) || "json".equalsIgnoreCase(FileUtils.getExtension(file)), files -> {
             Path file = files.get(0);
 
-            if (ModpackHelper.isFileModpackByExtension(file)) {
-                Controllers.getDecorator().startWizard(new ModpackInstallWizardProvider(Profiles.getSelectedProfile(), file), i18n("install.modpack"));
+            if (MindustryImportFlow.isXenonModpackFile(file)) {
+                MindustryImportFlow.showInstallModpackDialog(file);
             } else if ("json".equalsIgnoreCase(FileUtils.getExtension(file))) {
                 Versions.installFromJson(Profiles.getSelectedProfile(), file);
             }
@@ -344,7 +343,13 @@ public final class Controllers {
         stage.heightProperty().addListener(weakListener);
         stage.widthProperty().addListener(weakListener);
 
-        stage.setOnCloseRequest(e -> Launcher.stopApplication());
+        stage.setOnCloseRequest(e -> {
+            if (Launcher.isStoppingApplication()) {
+                return;
+            }
+            e.consume();
+            Launcher.hideApplicationToTray();
+        });
 
         decorator = new DecoratorController(stage, getRootPage());
 
@@ -366,7 +371,6 @@ public final class Controllers {
 
         FXUtils.setIcon(stage);
         stage.setTitle(Metadata.FULL_TITLE);
-        stage.setResizable(true);
         // Win11 24H2 won't paint a taskbar thumbnail for layered (TRANSPARENT)
         // stages until they're minimized, so the icon disappears while the
         // window is on screen — even with WS_EX_APPWINDOW applied. UNDECORATED

@@ -25,6 +25,7 @@ import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 import determination.xenon.Metadata;
 import determination.xenon.ui.Controllers;
+import determination.xenon.ui.FXUtils;
 import determination.xenon.ui.SVG;
 import determination.xenon.util.io.FileUtils;
 
@@ -85,7 +86,7 @@ public class LineFileChooserButton extends LineButton {
             if (initialDirectory != null)
                 directoryChooser.setInitialDirectory(initialDirectory.toFile());
 
-            path = FileUtils.toPath(directoryChooser.showDialog(owner));
+            path = FileUtils.toPath(FXUtils.showDirectoryDialog(directoryChooser, owner));
         } else {
             var fileChooser = new FileChooser();
             if (windowTitle != null)
@@ -99,8 +100,8 @@ public class LineFileChooserButton extends LineButton {
             fileChooser.setInitialFileName(getInitialFileName());
 
             path = FileUtils.toPath(switch (type) {
-                case OPEN_FILE -> fileChooser.showOpenDialog(owner);
-                case SAVE_FILE -> fileChooser.showSaveDialog(owner);
+                case OPEN_FILE -> FXUtils.showOpenDialog(fileChooser, owner);
+                case SAVE_FILE -> FXUtils.showSaveDialog(fileChooser, owner);
                 default -> throw new AssertionError("Unknown Type: " + type);
             });
         }

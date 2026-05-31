@@ -18,12 +18,9 @@
 package determination.xenon.mindustry.ui;
 
 import com.jfoenix.controls.JFXButton;
-import determination.xenon.mindustry.LaunchOptions;
 import determination.xenon.mindustry.MindustryImportFlow;
-import determination.xenon.mindustry.MindustryLaunchService;
 import determination.xenon.mindustry.MindustryVersion;
 import determination.xenon.mindustry.XenonGameRepository;
-import determination.xenon.mindustry.XenonLauncher;
 import determination.xenon.task.Schedulers;
 import determination.xenon.ui.Controllers;
 import determination.xenon.ui.FXUtils;
@@ -37,6 +34,7 @@ import determination.xenon.ui.decorator.DecoratorPage;
 import javafx.application.Platform;
 import javafx.beans.property.ReadOnlyObjectProperty;
 import javafx.beans.property.ReadOnlyObjectWrapper;
+import javafx.scene.control.Label;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 
@@ -91,9 +89,10 @@ public final class MindustryVersionPage extends DecoratorAnimatedPage implements
         AdvancedListBox toolbar = new AdvancedListBox()
                 .addNavigationDrawerItem(i18n("version.launch.test"), SVG.ROCKET_LAUNCH, this::launch)
                 .addNavigationDrawerItem(i18n("settings.game.exploration"), SVG.FOLDER_OPEN, () -> FXUtils.openFolder(versionRoot))
+                .addNavigationDrawerItem(i18n("modpack.export"), SVG.OUTPUT, () -> MindustryRoutes.exportModpack(version))
                 .addNavigationDrawerItem(i18n("version.manage.remove"), SVG.DELETE, this::deleteVersion);
         toolbar.getStyleClass().add("advanced-list-box-clear-padding");
-        FXUtils.setLimitHeight(toolbar, 40 * 3 + 12 * 2);
+        FXUtils.setLimitHeight(toolbar, 40 * 4 + 12 * 2);
 
         setLeft(sideBar, toolbar);
         setCenter(transitionPane);
@@ -107,23 +106,7 @@ public final class MindustryVersionPage extends DecoratorAnimatedPage implements
     }
 
     private void launch() {
-        Schedulers.io().execute(() -> {
-            try {
-                XenonGameRepository repo = MindustryImportFlow.repository();
-                LaunchOptions opts = MindustryLaunchService.buildLaunchOptions(repo, version,
-                        determination.xenon.mindustry.CurrentPlayerProfile.current());
-                XenonLauncher.MindustryProcess proc = XenonLauncher.launch(opts,
-                        line -> LOG.info("[mindustry] " + line),
-                        line -> LOG.warning("[mindustry] " + line));
-                LOG.info("Mindustry process started: pid=" + proc.getProcess().pid());
-                Platform.runLater(() -> Controllers.showToast(i18n("version.launch.test")));
-            } catch (Throwable ex) {
-                LOG.warning("Mindustry launch failed", ex);
-                Platform.runLater(() -> Controllers.dialog(
-                        i18n("xenon.mindustry.launch.failed") + "\n\n" + ex.getMessage(),
-                        i18n("message.error"), MessageDialogPane.MessageType.ERROR));
-            }
-        });
+        MindustryRoutes.launch(version);
     }
 
     private void deleteVersion() {

@@ -32,8 +32,6 @@ import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 
-import java.util.Locale;
-
 import static determination.xenon.util.i18n.I18n.i18n;
 
 /**
@@ -49,14 +47,14 @@ public final class MindustryVariantPickerPane extends ScrollPane {
         VBox content = new VBox();
         content.getStyleClass().add("advanced-list-box-content");
 
-        content.getChildren().add(new ClassTitle(i18n("xenon.install.variant.title").toUpperCase(Locale.ROOT)));
+        content.getChildren().add(new ClassTitle(i18n("xenon.install.variant.title").toUpperCase()));
 
         for (VersionVariant variant : VersionVariant.values()) {
             if (variant == VersionVariant.CUSTOM) continue;
             AdvancedListItem item = new AdvancedListItem();
             item.setLeftGraphic(buildIconNode(variant));
             item.setTitle(variant.getDisplayName());
-            item.setSubtitle(i18n("xenon.install.variant." + variant.name().toLowerCase(Locale.ROOT) + ".desc"));
+            item.setSubtitle(i18n("xenon.install.variant." + variant.name().toLowerCase() + ".desc"));
             item.setOnAction(e -> {
                 XenonInstallWizardProvider provider = new XenonInstallWizardProvider();
                 provider.preseedVariant(variant);
@@ -73,6 +71,13 @@ public final class MindustryVariantPickerPane extends ScrollPane {
         importItem.setSubtitle(i18n("xenon.install.variant.custom.desc"));
         importItem.setOnAction(e -> determination.xenon.mindustry.MindustryImportFlow.showImportAndLaunchDialog());
         content.getChildren().add(importItem);
+
+        AdvancedListItem modpackItem = new AdvancedListItem();
+        modpackItem.setLeftIcon(SVG.ARCHIVE);
+        modpackItem.setTitle(i18n("modpack.task.install"));
+        modpackItem.setSubtitle(i18n("modpack.choose.local.detail"));
+        modpackItem.setOnAction(e -> determination.xenon.mindustry.MindustryImportFlow.showInstallModpackFileChooser());
+        content.getChildren().add(modpackItem);
 
         setContent(content);
         setFitToWidth(true);
@@ -105,12 +110,12 @@ public final class MindustryVariantPickerPane extends ScrollPane {
     private static Image iconImage(VersionVariant v) {
         String path;
         switch (v) {
-            case VANILLA: path = "/assets/img/mindustry/vanilla.png"; break;
-            case BE: path = "/assets/img/mindustry/be.png"; break;
+            case VANILLA:     path = "/assets/img/mindustry/vanilla.png"; break;
+            case BE:          path = "/assets/img/mindustry/be.png"; break;
             case MINDUSTRY_X: path = "/assets/img/mindustry/mindustry_x.png"; break;
-            case CN_ARC: path = "/assets/img/mindustry/cn_arc.png"; break;
-            case FOO: path = "/assets/img/mindustry/foo.png"; break;
-            default: path = "/assets/img/mindustry/vanilla.png"; break;
+            case CN_ARC:      path = "/assets/img/mindustry/cn_arc.png"; break;
+            case FOO:         path = "/assets/img/mindustry/foo.png"; break;
+            default:          path = "/assets/img/mindustry/vanilla.png"; break;
         }
         return FXUtils.newBuiltinImage(path);
     }

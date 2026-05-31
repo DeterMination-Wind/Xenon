@@ -49,7 +49,7 @@ public final class Metadata {
     public static final String DOWNLOAD_URL = PUBLISH_URL + "/releases";
     public static final String XENON_UPDATE_URL = System.getProperty(
             "xenon.update_source.override",
-            "https://api.github.com/repos/DeterMination-Wind/Xenon/releases/latest");
+            "http://121.199.60.4/github/repos/DeterMination-Wind/Xenon/releases/latest");
     public static final String MANUAL_UPDATE_URL = PUBLISH_URL + "/releases";
 
     public static final String DOCS_URL = PUBLISH_URL + "/blob/main/docs";
@@ -65,7 +65,7 @@ public final class Metadata {
     public static final String UPSTREAM_MINDUSTRY_X_REPO = "TinyLake/MindustryX";
     public static final String UPSTREAM_CN_ARC_REPO = "BlueWolf3434/Mindustry-CN-ARC";
     public static final String UPSTREAM_FOO_REPO = "mindustry-antigrief/mindustry-client";
-    public static final String UPSTREAM_MOD_INDEX = "https://raw.githubusercontent.com/Anuken/mindustry-mods/master/mods.json";
+    public static final String UPSTREAM_MOD_INDEX = "http://121.199.60.4/github/repos/Anuken/mindustry-mods/mods.json";
 
     public static final String BUILD_CHANNEL = JarUtils.getAttribute("xenon.version.type", "nightly");
     public static final String GITHUB_SHA = JarUtils.getAttribute("xenon.version.hash", null);

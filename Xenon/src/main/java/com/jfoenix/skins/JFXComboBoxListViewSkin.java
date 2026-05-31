@@ -5,6 +5,7 @@
 
 package com.jfoenix.skins;
 
+import com.jfoenix.adapters.skins.ComboBoxListViewSkin;
 import com.jfoenix.concurrency.JFXUtilities;
 import com.jfoenix.controls.JFXComboBox;
 import com.jfoenix.transitions.CachedTransition;
@@ -17,7 +18,6 @@ import javafx.beans.property.SimpleObjectProperty;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.ComboBoxBase;
-import javafx.scene.control.skin.ComboBoxListViewSkin;
 import javafx.scene.layout.*;
 import javafx.scene.paint.Color;
 import javafx.scene.paint.Paint;
@@ -50,6 +50,7 @@ public class JFXComboBoxListViewSkin<T> extends ComboBoxListViewSkin<T> {
         this.promptTextScale = new Scale(1.0F, 1.0F, 0.0F, 0.0F);
         this.promptTextFill = new SimpleObjectProperty(Color.valueOf("#B2B2B2"));
         this.usePromptText = Bindings.createBooleanBinding(this::usePromptText, ((JFXComboBox) this.getSkinnable()).valueProperty(), this.getSkinnable().promptTextProperty());
+        this.getArrowButton().setBackground(new Background(new BackgroundFill(Color.TRANSPARENT, null, null)));
         this.promptText.textProperty().bind(comboBox.promptTextProperty());
         this.promptText.fillProperty().bind(this.promptTextFill);
         this.promptText.getStyleClass().addAll("text", "prompt-text");

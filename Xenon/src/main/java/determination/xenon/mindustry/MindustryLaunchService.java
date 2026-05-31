@@ -26,7 +26,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -70,7 +69,7 @@ public final class MindustryLaunchService {
     /** Best-effort variant detection from a jar filename. */
     public static VersionVariant sniffVariant(Path jar) {
         if (jar == null) return VersionVariant.CUSTOM;
-        String n = jar.getFileName().toString().toLowerCase(Locale.ROOT);
+        String n = jar.getFileName().toString().toLowerCase();
         if (n.contains("mindustryx") || n.contains("mindustry-x")) return VersionVariant.MINDUSTRY_X;
         if (n.contains("cn-arc") || n.contains("cn_arc")) return VersionVariant.CN_ARC;
         if (n.contains("foo")) return VersionVariant.FOO;

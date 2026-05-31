@@ -126,7 +126,7 @@ public final class ResourcepackListPage extends ListPageBase<ResourcepackListPag
         FileChooser fileChooser = new FileChooser();
         fileChooser.setTitle(i18n("resourcepack.add.title"));
         fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter(i18n("extension.resourcepack"), "*.zip"));
-        List<Path> files = FileUtils.toPaths(fileChooser.showOpenMultipleDialog(Controllers.getStage()));
+        List<Path> files = FileUtils.toPaths(FXUtils.showOpenMultipleDialog(fileChooser, Controllers.getStage()));
         if (files != null && !files.isEmpty()) {
             addFiles(files);
         }

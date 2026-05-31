@@ -28,10 +28,11 @@ import determination.xenon.download.game.GameAssetDownloadTask;
 import determination.xenon.download.game.GameDownloadTask;
 import determination.xenon.download.game.GameLibrariesTask;
 import determination.xenon.game.*;
+import determination.xenon.mindustry.MindustryImportFlow;
+import determination.xenon.mindustry.MindustryVersion;
 import determination.xenon.mindustry.ui.MindustryRoutes;
 import determination.xenon.mod.RemoteMod;
 import determination.xenon.setting.*;
-import determination.xenon.task.FileDownloadTask;
 import determination.xenon.task.Schedulers;
 import determination.xenon.task.Task;
 import determination.xenon.task.TaskExecutor;
@@ -42,19 +43,15 @@ import determination.xenon.ui.construct.DialogCloseEvent;
 import determination.xenon.ui.construct.MessageDialogPane;
 import determination.xenon.ui.construct.PromptDialogPane;
 import determination.xenon.ui.construct.Validator;
-import determination.xenon.ui.download.ModpackInstallWizardProvider;
-import determination.xenon.ui.export.ExportWizardProvider;
 import determination.xenon.util.StringUtils;
 import determination.xenon.util.TaskCancellationAction;
 import determination.xenon.util.io.FileUtils;
 import determination.xenon.util.platform.OperatingSystem;
 
 import java.io.IOException;
-import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 
@@ -71,47 +68,11 @@ public final class Versions {
     }
 
     public static void importModpack() {
-        Profile profile = Profiles.getSelectedProfile();
-        if (profile.getRepository().isLoaded()) {
-            Controllers.getDecorator().startWizard(new ModpackInstallWizardProvider(profile), i18n("install.modpack"));
-        }
+        MindustryImportFlow.showInstallModpackFileChooser();
     }
 
     public static void downloadModpackImpl(DownloadProvider downloadProvider, Profile profile, String version, RemoteMod mod, RemoteMod.Version file) {
-        Path modpack;
-        List<URI> downloadURLs;
-        try {
-            downloadURLs = downloadProvider.injectURLWithCandidates(file.getFile().getUrl());
-            modpack = Files.createTempFile("modpack", ".zip");
-        } catch (IOException | IllegalArgumentException e) {
-            Controllers.dialog(
-                    i18n("install.failed.downloading.detail", file.getFile().getUrl()) + "\n" + StringUtils.getStackTrace(e),
-                    i18n("download.failed.no_code"), MessageDialogPane.MessageType.ERROR);
-            return;
-        }
-        Controllers.taskDialog(
-                new FileDownloadTask(downloadURLs, modpack)
-                        .whenComplete(Schedulers.javafx(), e -> {
-                            if (e == null) {
-                                ModpackInstallWizardProvider installWizardProvider;
-                                if (version != null)
-                                    installWizardProvider = new ModpackInstallWizardProvider(profile, modpack, version);
-                                else
-                                    installWizardProvider = new ModpackInstallWizardProvider(profile, modpack);
-                                if (StringUtils.isNotBlank(mod.getIconUrl()))
-                                    installWizardProvider.setIconUrl(mod.getIconUrl());
-                                Controllers.getDecorator().startWizard(installWizardProvider);
-                            } else if (e instanceof CancellationException) {
-                                Controllers.showToast(i18n("message.cancelled"));
-                            } else {
-                                Controllers.dialog(
-                                        i18n("install.failed.downloading.detail", file.getFile().getUrl()) + "\n" + StringUtils.getStackTrace(e),
-                                        i18n("download.failed.no_code"), MessageDialogPane.MessageType.ERROR);
-                            }
-                        }),
-                i18n("message.downloading"),
-                TaskCancellationAction.NORMAL
-        );
+        Controllers.showToast(i18n("modpack.unsupported"));
     }
 
     public static void deleteVersion(Profile profile, String version) {
@@ -160,7 +121,11 @@ public final class Versions {
     }
 
     public static void exportVersion(Profile profile, String version) {
-        Controllers.getDecorator().startWizard(new ExportWizardProvider(profile, version), i18n("modpack.wizard"));
+        if (MindustryRoutes.isMindustry(version)) {
+            MindustryRoutes.get(version).ifPresent(MindustryRoutes::exportModpack);
+            return;
+        }
+        Controllers.showToast(i18n("modpack.unsupported"));
     }
 
     public static void openFolder(Profile profile, String version) {
@@ -235,7 +200,7 @@ public final class Versions {
     }
 
     public static void updateVersion(Profile profile, String version) {
-        Controllers.getDecorator().startWizard(new ModpackInstallWizardProvider(profile, version));
+        Controllers.showToast(i18n("modpack.unsupported"));
     }
 
     public static void updateGameAssets(Profile profile, String version) {
@@ -272,7 +237,7 @@ public final class Versions {
                     ? new FileChooser.ExtensionFilter(i18n("extension.bat"), "*.bat")
                     : new FileChooser.ExtensionFilter(i18n("extension.sh"), "*.sh"));
             chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter(i18n("extension.ps1"), "*.ps1"));
-            Path file = FileUtils.toPath(chooser.showSaveDialog(Controllers.getStage()));
+            Path file = FileUtils.toPath(FXUtils.showSaveDialog(chooser, Controllers.getStage()));
             if (file != null) {
                 if (!isValidScriptExtension(FileUtils.getExtension(file))) {
                     String defaultExt = getDefaultScriptExtension();

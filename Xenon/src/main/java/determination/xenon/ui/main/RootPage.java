@@ -20,17 +20,12 @@ package determination.xenon.ui.main;
 import com.jfoenix.controls.JFXPopup;
 import javafx.beans.property.ReadOnlyObjectProperty;
 import javafx.scene.layout.Region;
-import determination.xenon.Metadata;
-import determination.xenon.event.EventBus;
-import determination.xenon.event.RefreshedVersionsEvent;
 import determination.xenon.game.HMCLGameRepository;
-import determination.xenon.game.ModpackHelper;
 import determination.xenon.game.Version;
+import determination.xenon.mindustry.MindustryImportFlow;
 import determination.xenon.setting.Accounts;
 import determination.xenon.setting.Profile;
 import determination.xenon.setting.Profiles;
-import determination.xenon.task.Schedulers;
-import determination.xenon.task.Task;
 import determination.xenon.ui.Controllers;
 import determination.xenon.ui.FXUtils;
 import determination.xenon.ui.SVG;
@@ -42,7 +37,6 @@ import determination.xenon.ui.construct.AdvancedListItem;
 import determination.xenon.ui.construct.MessageDialogPane;
 import determination.xenon.ui.decorator.DecoratorAnimatedPage;
 import determination.xenon.ui.decorator.DecoratorPage;
-import determination.xenon.ui.download.ModpackInstallWizardProvider;
 import determination.xenon.ui.nbt.NBTEditorPage;
 import determination.xenon.ui.nbt.NBTFileType;
 import determination.xenon.ui.versions.GameAdvancedListItem;
@@ -51,20 +45,15 @@ import determination.xenon.ui.versions.Versions;
 import determination.xenon.upgrade.UpdateChecker;
 import determination.xenon.util.Lang;
 import determination.xenon.util.StringUtils;
-import determination.xenon.util.TaskCancellationAction;
-import determination.xenon.util.io.CompressingUtils;
 import determination.xenon.util.io.FileUtils;
 import determination.xenon.util.platform.*;
 import determination.xenon.util.versioning.VersionNumber;
 
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Comparator;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
-import java.util.Set;
 import java.util.stream.Collectors;
 
 import static determination.xenon.ui.FXUtils.runInFX;
@@ -75,13 +64,6 @@ public class RootPage extends DecoratorAnimatedPage implements DecoratorPage {
     private MainPage mainPage = null;
 
     public RootPage() {
-        EventBus.EVENT_BUS.channel(RefreshedVersionsEvent.class)
-                .register(event -> onRefreshedVersions((HMCLGameRepository) event.getSource()));
-
-        Profile profile = Profiles.getSelectedProfile();
-        if (profile != null && profile.getRepository().isLoaded())
-            onRefreshedVersions(Profiles.selectedProfileProperty().get().getRepository());
-
         getStyleClass().remove("gray-background");
         getLeft().getStyleClass().add("gray-background");
     }
@@ -100,13 +82,11 @@ public class RootPage extends DecoratorAnimatedPage implements DecoratorPage {
         if (mainPage == null) {
             MainPage mainPage = new MainPage();
             FXUtils.applyDragListener(mainPage,
-                    file -> ModpackHelper.isFileModpackByExtension(file) || NBTFileType.isNBTFileByExtension(file) || "json".equalsIgnoreCase(FileUtils.getExtension(file)),
-                    modpacks -> {
-                        Path file = modpacks.get(0);
-                        if (ModpackHelper.isFileModpackByExtension(file)) {
-                            Controllers.getDecorator().startWizard(
-                                    new ModpackInstallWizardProvider(Profiles.getSelectedProfile(), file),
-                                    i18n("install.modpack"));
+                    file -> MindustryImportFlow.isXenonModpackFile(file) || NBTFileType.isNBTFileByExtension(file) || "json".equalsIgnoreCase(FileUtils.getExtension(file)),
+                    files -> {
+                        Path file = files.get(0);
+                        if (MindustryImportFlow.isXenonModpackFile(file)) {
+                            MindustryImportFlow.showInstallModpackDialog(file);
                         } else if (NBTFileType.isNBTFileByExtension(file)) {
                             try {
                                 Controllers.navigate(new NBTEditorPage(file));
@@ -126,16 +106,11 @@ public class RootPage extends DecoratorAnimatedPage implements DecoratorPage {
 
             Profiles.registerVersionsListener(profile -> {
                 HMCLGameRepository repository = profile.getRepository();
-                Set<String> ids = new HashSet<>();
                 List<Version> children = repository.getVersions().parallelStream()
                         .filter(version -> !version.isHidden())
-                        .filter(version -> !determination.xenon.mindustry.ui.MindustryRoutes
-                                .isMindustry(version.getId()))
                         .sorted(Comparator
                                 .comparing((Version version) -> Lang.requireNonNullElse(version.getReleaseTime(), Instant.EPOCH))
                                 .thenComparing(version -> VersionNumber.asVersion(repository.getGameVersion(version).orElse(version.getId()))))
-                        .sequential()
-                        .filter(version -> ids.add(version.getId()))
                         .collect(Collectors.toCollection(java.util.ArrayList::new));
 
                 // Merge Mindustry instances from XenonGameRepository so the
@@ -143,15 +118,16 @@ public class RootPage extends DecoratorAnimatedPage implements DecoratorPage {
                 // bottom-left says "no game instance" even when a Mindustry
                 // jar is registered (it appears in GameListPage because that
                 // page reads the Mindustry repo directly).
-                java.util.List<String> mindustryIds = new java.util.ArrayList<>();
+                java.util.Set<String> seenIds = children.stream()
+                        .map(Version::getId)
+                        .collect(Collectors.toCollection(java.util.LinkedHashSet::new));
                 try {
                     determination.xenon.mindustry.XenonGameRepository xrepo =
                             determination.xenon.mindustry.MindustryImportFlow.repository();
                     xrepo.refresh();
                     for (determination.xenon.mindustry.MindustryVersion v : xrepo.all()) {
-                        if (ids.add(v.getId())) {
+                        if (seenIds.add(v.getId())) {
                             children.add(new Version(v.getId()));
-                            mindustryIds.add(v.getId());
                         }
                     }
                 } catch (Throwable ex) {
@@ -161,14 +137,6 @@ public class RootPage extends DecoratorAnimatedPage implements DecoratorPage {
                 runInFX(() -> {
                     if (profile == Profiles.getSelectedProfile()) {
                         mainPage.initVersions(profile, children);
-                        // If HMCL has no selection but we have Mindustry
-                        // instances, point Profile.selectedVersion at one
-                        // so the launch button leaves the empty state.
-                        // Versions.launch already routes Mindustry ids to
-                        // MindustryRoutes, so this is safe.
-                        if (profile.getSelectedVersion() == null && !mindustryIds.isEmpty()) {
-                            profile.setSelectedVersion(mindustryIds.get(0));
-                        }
                     }
                 });
             });
@@ -228,6 +196,13 @@ public class RootPage extends DecoratorAnimatedPage implements DecoratorPage {
                 FXUtils.prepareOnMouseEnter(downloadItem, Controllers::prepareDownloadPage);
             }
 
+            // server manager — Mindustry dedicated-server instances
+            AdvancedListItem serverItem = new AdvancedListItem();
+            serverItem.setLeftIcon(SVG.PUBLIC);
+            serverItem.setTitle(i18n("xenon.mindustry.server.sidebar"));
+            serverItem.setOnAction(e -> Controllers.navigate(
+                    new determination.xenon.mindustry.ui.server.MindustryServerListPane()));
+
             // fifth item in left sidebar
             AdvancedListItem launcherSettingsItem = new AdvancedListItem();
             launcherSettingsItem.setLeftIcon(SVG.SETTINGS);
@@ -250,6 +225,7 @@ public class RootPage extends DecoratorAnimatedPage implements DecoratorPage {
                     .add(gameListItem)
                     .add(gameItem)
                     .add(downloadItem)
+                    .add(serverItem)
                     .startCategory(i18n("settings.launcher.general").toUpperCase(Locale.ROOT))
                     .add(launcherSettingsItem)
                     .addNavigationDrawerItem(i18n("contact.chat"), SVG.CHAT, () -> {
@@ -271,41 +247,5 @@ public class RootPage extends DecoratorAnimatedPage implements DecoratorPage {
                     getSkinnable().getMainPage().getProfile(),
                     getSkinnable().getMainPage().getVersions());
         }
-    }
-
-    private boolean checkedModpack = false;
-
-    private void onRefreshedVersions(HMCLGameRepository repository) {
-        runInFX(() -> {
-            if (!checkedModpack) {
-                checkedModpack = true;
-
-                if (repository.getVersionCount() == 0) {
-                    Path zipModpack = Metadata.CURRENT_DIRECTORY.resolve("modpack.zip");
-                    Path mrpackModpack = Metadata.CURRENT_DIRECTORY.resolve("modpack.mrpack");
-
-                    Path modpackFile;
-                    if (Files.exists(zipModpack)) {
-                        modpackFile = zipModpack;
-                    } else if (Files.exists(mrpackModpack)) {
-                        modpackFile = mrpackModpack;
-                    } else {
-                        modpackFile = null;
-                    }
-
-                    if (modpackFile != null) {
-                        Task.supplyAsync(() -> CompressingUtils.findSuitableEncoding(modpackFile))
-                                .thenApplyAsync(encoding -> ModpackHelper.readModpackManifest(modpackFile, encoding))
-                                .thenApplyAsync(modpack -> ModpackHelper
-                                        .getInstallTask(repository.getProfile(), modpackFile, modpack.getName(), modpack, null)
-                                        .executor())
-                                .thenAcceptAsync(Schedulers.javafx(), executor -> {
-                                    Controllers.taskDialog(executor, i18n("modpack.installing"), TaskCancellationAction.NO_CANCEL);
-                                    executor.start();
-                                }).start();
-                    }
-                }
-            }
-        });
     }
 }

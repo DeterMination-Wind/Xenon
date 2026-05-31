@@ -20,7 +20,6 @@ package determination.xenon.mindustry.ui;
 import com.jfoenix.controls.JFXButton;
 import com.jfoenix.controls.JFXListView;
 import com.jfoenix.controls.JFXTextField;
-import determination.xenon.Metadata;
 import determination.xenon.mindustry.MindustryImportFlow;
 import determination.xenon.mindustry.MindustryVersion;
 import determination.xenon.mindustry.XenonGameRepository;
@@ -90,9 +89,9 @@ public final class MindustryModBrowserPane extends BorderPane implements PageAwa
             .withZone(ZoneId.systemDefault());
 
     private final MindustryModsIndexRepository repo =
-            new MindustryModsIndexRepository(Metadata.getCachesDirectory());
+            new MindustryModsIndexRepository(MindustryImportFlow.cachesDirectory());
     private final GitHubReleaseClient client =
-            new GitHubReleaseClient(Metadata.getCachesDirectory());
+            new GitHubReleaseClient(MindustryImportFlow.cachesDirectory());
 
     private final JFXTextField search = new JFXTextField();
     private final ComboBox<MindustryVersion> targetVersion = new ComboBox<>();
@@ -123,7 +122,6 @@ public final class MindustryModBrowserPane extends BorderPane implements PageAwa
             @Override public String toString(MindustryVersion v) {
                 return v == null ? "" : (v.getName() == null ? v.getId() : v.getName());
             }
-
             @Override public MindustryVersion fromString(String s) { return null; }
         });
 
@@ -614,7 +612,6 @@ public final class MindustryModBrowserPane extends BorderPane implements PageAwa
     private static final class AssetPick {
         final GitHubAsset asset;
         final Path staging;
-
         AssetPick(GitHubAsset asset, Path staging) {
             this.asset = asset;
             this.staging = staging;
@@ -640,7 +637,7 @@ public final class MindustryModBrowserPane extends BorderPane implements PageAwa
 
         @Override
         public void execute() throws Exception {
-            new MirrorDownloader(Metadata.getCachesDirectory())
+            new MirrorDownloader(MindustryImportFlow.cachesDirectory())
                     .download(asset.getDownloadUrl(), target, asset.getSize(),
                             (read, total) -> {
                                 if (total > 0 && read >= 0) {

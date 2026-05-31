@@ -17,81 +17,42 @@
  */
 package determination.xenon.ui.main;
 
-import com.google.gson.annotations.SerializedName;
+import javafx.geometry.Insets;
+import javafx.geometry.Pos;
 import javafx.scene.control.ScrollPane;
+import javafx.scene.image.ImageView;
 import javafx.scene.layout.VBox;
-import determination.xenon.Metadata;
-import determination.xenon.task.Schedulers;
-import determination.xenon.task.Task;
 import determination.xenon.ui.FXUtils;
 import determination.xenon.ui.construct.ComponentList;
-import determination.xenon.ui.construct.LineButton;
+import determination.xenon.ui.construct.JFXHyperlink;
 import determination.xenon.ui.construct.SpinnerPane;
-import determination.xenon.util.gson.JsonSerializable;
-import determination.xenon.util.io.HttpRequest;
 
-import java.util.List;
-
-import static determination.xenon.util.gson.JsonUtils.listTypeOf;
-import static determination.xenon.util.i18n.I18n.i18n;
-
-public class HelpPage extends SpinnerPane {
-
-    private final VBox content;
+public final class HelpPage extends SpinnerPane {
+    private static final String HELP_GROUP_LINK = "https://qm.qq.com/q/9t6yPU8Tjq";
 
     public HelpPage() {
-        content = new VBox();
+        VBox content = new VBox();
         content.getStyleClass().add("spinner-pane-content");
         ScrollPane scrollPane = new ScrollPane(content);
         scrollPane.setFitToWidth(true);
         FXUtils.smoothScrolling(scrollPane);
         setContent(scrollPane);
 
-        var docPane = LineButton.createExternalLinkButton(Metadata.DOCS_URL);
-        docPane.setLargeTitle(true);
-        docPane.setTitle(i18n("help.doc"));
-        docPane.setSubtitle(i18n("help.detail"));
+        ImageView groupImage = new ImageView(FXUtils.newBuiltinImage("/assets/img/help-qq.png"));
+        groupImage.setFitWidth(420);
+        groupImage.setPreserveRatio(true);
+        groupImage.setSmooth(true);
 
-        ComponentList doc = new ComponentList();
-        doc.getContent().setAll(docPane);
-        content.getChildren().add(doc);
+        JFXHyperlink link = new JFXHyperlink(HELP_GROUP_LINK);
+        link.setExternalLink(HELP_GROUP_LINK);
+        link.setFocusTraversable(false);
 
-        loadHelp();
-    }
+        VBox cardContent = new VBox(14, groupImage, link);
+        cardContent.setAlignment(Pos.CENTER);
+        cardContent.setPadding(new Insets(24));
 
-    private void loadHelp() {
-        showSpinner();
-        Task.supplyAsync(() -> HttpRequest.GET(Metadata.DOCS_URL + "/index.json").getJson(listTypeOf(HelpCategory.class)))
-                .thenAcceptAsync(Schedulers.javafx(), helpCategories -> {
-                    for (HelpCategory category : helpCategories) {
-                        ComponentList categoryPane = new ComponentList();
-
-                        for (Help help : category.items()) {
-                            var item = LineButton.createExternalLinkButton(help.url());
-                            item.setLargeTitle(true);
-                            item.setTitle(help.title());
-                            item.setSubtitle(help.subtitle());
-
-                            categoryPane.getContent().add(item);
-                        }
-
-                        content.getChildren().add(ComponentList.createComponentListTitle(category.title()));
-                        content.getChildren().add(categoryPane);
-                    }
-                    hideSpinner();
-                }).start();
-    }
-
-    @JsonSerializable
-    private record HelpCategory(
-            @SerializedName("title") String title,
-            @SerializedName("items") List<Help> items) {
-    }
-
-    @JsonSerializable
-    private record Help(
-            @SerializedName("title") String title,
-            @SerializedName("subtitle") String subtitle,
-            @SerializedName("url") String url) {
+        ComponentList help = new ComponentList();
+        help.getContent().setAll(cardContent);
+        content.getChildren().setAll(help);
     }
 }

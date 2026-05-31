@@ -9,6 +9,27 @@ plugins {
 group = "determination"
 version = "0.1.0"
 
+fun org.gradle.api.artifacts.dsl.RepositoryHandler.mavenCentralWithMirrors() {
+    System.getenv("MAVEN_CENTRAL_REPO").let { repo ->
+        if (!repo.isNullOrBlank()) {
+            maven(url = repo)
+        }
+    }
+    maven(url = "https://maven.aliyun.com/repository/public")
+    maven(url = "https://repo.huaweicloud.com/repository/maven")
+    mavenCentral()
+}
+
+fun org.gradle.api.artifacts.dsl.RepositoryHandler.jitpackWithMirror() {
+    maven(url = "https://maven.aliyun.com/repository/jitpack")
+    maven(url = "https://jitpack.io")
+}
+
+fun org.gradle.api.artifacts.dsl.RepositoryHandler.minecraftLibrariesWithMirror() {
+    maven(url = "https://bmclapi2.bangbang93.com/maven")
+    maven(url = "https://libraries.minecraft.net")
+}
+
 subprojects {
     apply {
         plugin("java")
@@ -23,15 +44,9 @@ subprojects {
             dirs = setOf(rootProject.file("lib"))
         }
 
-        System.getenv("MAVEN_CENTRAL_REPO").let { repo ->
-            if (repo.isNullOrBlank())
-                mavenCentral()
-            else
-                maven(url = repo)
-        }
-
-        maven(url = "https://jitpack.io")
-        maven(url = "https://libraries.minecraft.net")
+        mavenCentralWithMirrors()
+        jitpackWithMirror()
+        minecraftLibrariesWithMirror()
     }
 
     tasks.withType<JavaCompile> {

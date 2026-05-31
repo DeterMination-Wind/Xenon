@@ -117,12 +117,6 @@ public final class WindowsNativeUtils {
             if (newStyle != style) {
                 u32.SetWindowLongW(hwnd, gwlExStyle, newStyle);
                 u32.SetWindowPos(hwnd, Pointer.NULL, 0, 0, 0, 0, swpFlags);
-                // The shell only re-evaluates WS_EX_APPWINDOW on the
-                // hide→show transition. SetWindowPos+FRAMECHANGED isn't
-                // enough — without this flip Windows keeps the window
-                // off the taskbar even though the style bit is set.
-                u32.ShowWindow(hwnd, 0); // SW_HIDE
-                u32.ShowWindow(hwnd, 5); // SW_SHOW
                 LOG.info("Applied WS_EX_APPWINDOW to taskbar stage (was=0x"
                         + Integer.toHexString(style) + ", now=0x"
                         + Integer.toHexString(newStyle) + ")");
@@ -156,7 +150,6 @@ public final class WindowsNativeUtils {
      * Minimal binding for the three {@code user32} entry points we need.
      * jna-platform isn't on the classpath, so we declare just what's used.
      */
-
     /**
      * Ask the Win11 DWM to round the four corners of the given stage.
      *
@@ -195,16 +188,11 @@ public final class WindowsNativeUtils {
 
     private interface User32Min extends StdCallLibrary {
         User32Min INSTANCE = Native.load("user32", User32Min.class);
-
         Pointer FindWindowW(WString lpClassName, WString lpWindowName);
-
         int GetWindowLongW(Pointer hWnd, int nIndex);
-
         int SetWindowLongW(Pointer hWnd, int nIndex, int dwNewLong);
-
         boolean SetWindowPos(Pointer hWnd, Pointer hWndInsertAfter,
                              int X, int Y, int cx, int cy, int uFlags);
-
         boolean ShowWindow(Pointer hWnd, int nCmdShow);
     }
 

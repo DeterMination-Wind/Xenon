@@ -27,7 +27,6 @@ import determination.xenon.util.io.NetworkUtils;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.IOException;
-import java.util.Locale;
 import java.util.Optional;
 
 public record RemoteVersion(UpdateChannel channel, String version, String url, Type type, IntegrityCheck integrityCheck,
@@ -61,7 +60,7 @@ public record RemoteVersion(UpdateChannel channel, String version, String url, T
                 for (JsonElement el : assets) {
                     JsonObject a = el.getAsJsonObject();
                     String name = Optional.ofNullable(a.get("name")).map(JsonElement::getAsString).orElse("");
-                    if (name.toLowerCase(Locale.ROOT).endsWith(".jar")) {
+                    if (name.toLowerCase().endsWith(".jar")) {
                         jarUrl = Optional.ofNullable(a.get("browser_download_url")).map(JsonElement::getAsString).orElse(null);
                         if (jarUrl != null) break;
                     }

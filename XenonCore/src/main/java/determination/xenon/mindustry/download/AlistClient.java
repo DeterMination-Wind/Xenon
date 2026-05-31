@@ -40,13 +40,13 @@ import java.util.List;
  * {@code /d/<path>} for direct download with 302 to the underlying mirror).
  *
  * <p>Used as a fast first-priority source for the MindustryX variant; the
- * site at {@code 47.238.248.194:5244/Github/MindustryX} mirrors every
+ * site at {@code alist.mindustry.ltd/Github/MindustryX} mirrors every
  * TinyLake release a few minutes after publish, far ahead of all
  * GitHub mirrors.</p>
  */
 public final class AlistClient {
 
-    public static final String DEFAULT_BASE = "http://47.238.248.194:5244";
+    public static final String DEFAULT_BASE = "https://alist.mindustry.ltd";
 
     private final String base;
     private final HttpClient http;

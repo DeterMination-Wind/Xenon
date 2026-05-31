@@ -189,18 +189,21 @@ public final class GameListCell extends ListCell<GameListItem> {
         PopupMenu menu = new PopupMenu();
         JFXPopup popup = new JFXPopup(menu);
 
-        menu.getContent().setAll(
-                new IconedMenuItem(SVG.ROCKET_LAUNCH, i18n("version.launch.test"), item::testGame, popup),
-                new IconedMenuItem(SVG.SCRIPT, i18n("version.launch_script"), item::generateLaunchScript, popup),
-                new MenuSeparator(),
-                new IconedMenuItem(SVG.SETTINGS, i18n("version.manage.manage"), item::modifyGameSettings, popup),
-                new MenuSeparator(),
-                new IconedMenuItem(SVG.EDIT, i18n("version.manage.rename"), item::rename, popup),
-                new IconedMenuItem(SVG.FOLDER_COPY, i18n("version.manage.duplicate"), item::duplicate, popup),
-                new IconedMenuItem(SVG.DELETE, i18n("version.manage.remove"), item::remove, popup),
-                new IconedMenuItem(SVG.OUTPUT, i18n("modpack.export"), item::export, popup),
-                new MenuSeparator(),
-                new IconedMenuItem(SVG.FOLDER_OPEN, i18n("folder.game"), item::browse, popup));
+        java.util.List<javafx.scene.Node> entries = new java.util.ArrayList<>();
+        entries.add(new IconedMenuItem(SVG.ROCKET_LAUNCH, i18n("version.launch.test"), item::testGame, popup));
+        entries.add(new IconedMenuItem(SVG.SCRIPT, i18n("version.launch_script"), item::generateLaunchScript, popup));
+        entries.add(new MenuSeparator());
+        entries.add(new IconedMenuItem(SVG.SETTINGS, i18n("version.manage.manage"), item::modifyGameSettings, popup));
+        entries.add(new MenuSeparator());
+        entries.add(new IconedMenuItem(SVG.EDIT, i18n("version.manage.rename"), item::rename, popup));
+        entries.add(new IconedMenuItem(SVG.FOLDER_COPY, i18n("version.manage.duplicate"), item::duplicate, popup));
+        entries.add(new IconedMenuItem(SVG.DELETE, i18n("version.manage.remove"), item::remove, popup));
+        if (item.isMindustry()) {
+            entries.add(new IconedMenuItem(SVG.OUTPUT, i18n("modpack.export"), item::export, popup));
+        }
+        entries.add(new MenuSeparator());
+        entries.add(new IconedMenuItem(SVG.FOLDER_OPEN, i18n("folder.game"), item::browse, popup));
+        menu.getContent().setAll(entries);
         return popup;
     }
 }

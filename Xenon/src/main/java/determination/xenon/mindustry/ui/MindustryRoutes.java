@@ -24,10 +24,16 @@ import determination.xenon.mindustry.MindustryLaunchService;
 import determination.xenon.mindustry.MindustryVersion;
 import determination.xenon.mindustry.XenonGameRepository;
 import determination.xenon.mindustry.XenonLauncher;
+import determination.xenon.mindustry.modpack.XenonModpackPacker;
 import determination.xenon.task.Schedulers;
+import determination.xenon.task.Task;
 import determination.xenon.ui.Controllers;
+import determination.xenon.ui.FXUtils;
 import determination.xenon.ui.construct.MessageDialogPane;
+import determination.xenon.util.TaskCancellationAction;
+import determination.xenon.util.io.FileUtils;
 import javafx.application.Platform;
+import javafx.stage.FileChooser;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -47,6 +53,9 @@ import static determination.xenon.util.logging.Logger.LOG;
  * {@link MindustryVersionPage}.</p>
  */
 public final class MindustryRoutes {
+    private static final java.util.Set<String> LAUNCHING_IDS =
+            java.util.concurrent.ConcurrentHashMap.newKeySet();
+
     private MindustryRoutes() {}
 
     /**
@@ -80,6 +89,35 @@ public final class MindustryRoutes {
         return MindustryImportFlow.repository().get(id);
     }
 
+    /** Export one Mindustry instance as a .xenon zip containing the game jar and data files. */
+    public static void exportModpack(MindustryVersion version) {
+        FileChooser chooser = new FileChooser();
+        chooser.setTitle(i18n("modpack.export"));
+        chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter(i18n("modpack"), "*.xenon"));
+        chooser.setInitialFileName(version.getId() + ".xenon");
+        Path selected = FileUtils.toPath(FXUtils.showSaveDialog(chooser, Controllers.getStage()));
+        if (selected == null) {
+            return;
+        }
+        Path output = "xenon".equalsIgnoreCase(FileUtils.getExtension(selected))
+                ? selected
+                : selected.resolveSibling(selected.getFileName().toString() + ".xenon");
+
+        Task<?> export = Task.supplyAsync(Schedulers.io(), () -> {
+            XenonModpackPacker.pack(MindustryImportFlow.repository(), version, output);
+            return output;
+        }).whenComplete(Schedulers.javafx(), (written, exception) -> {
+            if (exception == null) {
+                Controllers.showToast(i18n("message.success") + ": " + written);
+            } else {
+                LOG.warning("Failed to export Xenon modpack " + output, exception);
+                Controllers.dialog(exception.getMessage(),
+                        i18n("message.error"), MessageDialogPane.MessageType.ERROR);
+            }
+        }).setName(i18n("modpack.export"));
+        Controllers.taskDialog(export, i18n("modpack.export"), TaskCancellationAction.NORMAL);
+    }
+
     /** Open the per-version Mindustry management page. */
     public static void openVersionPage(MindustryVersion version) {
         Controllers.navigate(new MindustryVersionPage(version));
@@ -87,6 +125,11 @@ public final class MindustryRoutes {
 
     /** Spawn the Mindustry process for {@code id} via {@link XenonLauncher}. */
     public static void launch(MindustryVersion version) {
+        String id = version.getId();
+        if (!LAUNCHING_IDS.add(id)) {
+            LOG.info("Ignored duplicate Mindustry launch request for " + id);
+            return;
+        }
         Schedulers.io().execute(() -> {
             try {
                 XenonGameRepository repo = MindustryImportFlow.repository();
@@ -96,7 +139,9 @@ public final class MindustryRoutes {
                         line -> LOG.info("[mindustry] " + line),
                         line -> LOG.warning("[mindustry] " + line));
                 LOG.info("Mindustry process started: pid=" + proc.getProcess().pid());
+                proc.getProcess().onExit().thenRun(() -> LAUNCHING_IDS.remove(id));
             } catch (Throwable ex) {
+                LAUNCHING_IDS.remove(id);
                 LOG.warning("Mindustry launch failed", ex);
                 Platform.runLater(() -> Controllers.dialog(
                         i18n("xenon.mindustry.launch.failed") + "\n\n" + ex.getMessage(),
