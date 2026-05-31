@@ -64,7 +64,7 @@ public final class MindustryTopMapRepositoryTest {
         MindustryRemoteMap reserved = new MindustryRemoteMap(
                 43, "", "CON", "", "", List.of(), 0, 0, "");
 
-        assertEquals("map-42.msav", empty.suggestedFileName());
+        assertEquals("Map #42.msav", empty.suggestedFileName());
         assertEquals("map-43.msav", reserved.suggestedFileName());
     }
 

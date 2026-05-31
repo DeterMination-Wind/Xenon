@@ -31,26 +31,14 @@ jobs:
     - name: Get short SHA
       run: echo "SHORT_SHA=${GITHUB_SHA::7}" >> $GITHUB_ENV
     - name: Upload JAR
-      uses: actions/upload-artifact@v7
+      uses: actions/upload-artifact@v4
       with:
-        name: HMCL-${{ env.SHORT_SHA }}-jar
-        path: HMCL/build/libs/HMCL-*.jar
-        archive: false
-    - name: Upload EXE
-      uses: actions/upload-artifact@v7
+        name: Xenon-${{ env.SHORT_SHA }}-jar
+        path: Xenon/build/libs/Xenon-*.jar
+        if-no-files-found: error
+    - name: Upload portable zip
+      uses: actions/upload-artifact@v4
       with:
-        name: HMCL-${{ env.SHORT_SHA }}-exe
-        path: HMCL/build/libs/HMCL-*.exe
-        archive: false
-    - name: Upload SH
-      uses: actions/upload-artifact@v7
-      with:
-        name: HMCL-${{ env.SHORT_SHA }}-sh
-        path: HMCL/build/libs/HMCL-*.sh
-        archive: false
-    - name: Upload DEB
-      uses: actions/upload-artifact@v7
-      with:
-        name: HMCL-${{ env.SHORT_SHA }}-deb
-        path: HMCL/build/libs/HMCL-*.deb
-        archive: false
+        name: Xenon-${{ env.SHORT_SHA }}-portable
+        path: Xenon/build/dist/Xenon-portable-*.zip
+        if-no-files-found: ignore

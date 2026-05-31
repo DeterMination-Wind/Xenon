@@ -18,6 +18,7 @@
 package determination.xenon.mindustry.map;
 
 import determination.xenon.util.io.FileUtils;
+import determination.xenon.util.platform.OperatingSystem;
 import org.jetbrains.annotations.NotNullByDefault;
 import org.jetbrains.annotations.Nullable;
 
@@ -126,7 +127,10 @@ public record MindustryRemoteMap(
             stem = "map-" + id;
         }
         String candidate = stem + ".msav";
-        if (!FileUtils.isNameValid(candidate)) {
+        // Downloaded maps are frequently shared across Windows installs, so
+        // validate against the strictest mainstream platform rule-set here
+        // instead of the current host OS used by CI.
+        if (!FileUtils.isNameValid(OperatingSystem.WINDOWS, candidate)) {
             candidate = "map-" + id + ".msav";
         }
         return candidate;
