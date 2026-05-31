@@ -2,6 +2,12 @@
 
 These rules apply to all Java code written or modified in this repository.
 
+## Repository Usage
+
+- Use `C:\Users\华硕\Documents\codex\Xenon-worktree3` as the local working repository for development, builds, and verification.
+- Use `C:\Users\华硕\Documents\codex\Xenon-fork` only as the fork/sync target when preparing changes for remote synchronization.
+- Before changing files in `Xenon-fork`, make and verify the same change in `Xenon-worktree3` first, unless the task explicitly asks to operate only in the fork.
+
 ## Nullability
 
 - Annotate every class with JetBrains Annotations `@NotNullByDefault`.
