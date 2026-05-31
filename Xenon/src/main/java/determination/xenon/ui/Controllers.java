@@ -365,6 +365,7 @@ public final class Controllers {
         scene.setFill(Color.TRANSPARENT);
         stage.setMinWidth(MIN_WIDTH);
         stage.setMinHeight(MIN_HEIGHT);
+        stage.setResizable(true);
         decorator.getDecorator().prefWidthProperty().bind(scene.widthProperty());
         decorator.getDecorator().prefHeightProperty().bind(scene.heightProperty());
         StyleSheets.init(scene);

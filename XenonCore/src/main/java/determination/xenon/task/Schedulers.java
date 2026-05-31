@@ -99,10 +99,14 @@ public final class Schedulers {
 
     public static void shutdown() {
         LOG.info("Shutting down executor services.");
-
-        // shutdownNow will interrupt all threads.
-        // So when we want to close the app, no threads need to be waited for finish.
-        // Sometimes it resolves the problem that the app does not exit.
+        Holder.IO_EXECUTOR.shutdownNow();
+        try {
+            if (!Holder.IO_EXECUTOR.awaitTermination(3, TimeUnit.SECONDS)) {
+                LOG.warning("I/O executor did not terminate within timeout");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private static final class Holder {

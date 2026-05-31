@@ -1080,6 +1080,33 @@
     -fx-spacing: 10;
 }
 
+.mindustry-map-chip {
+    -fx-background-color: transparent;
+    -fx-border-color: -monet-outline-variant;
+    -fx-border-radius: 999;
+    -fx-background-radius: 999;
+    -fx-padding: 4 10 4 10;
+}
+
+.mindustry-map-chip:selected {
+    -fx-text-fill: -monet-on-secondary-container;
+    -fx-background-color: -monet-secondary-container;
+    -fx-border-color: transparent;
+}
+
+.mindustry-map-chip:disabled {
+    -fx-opacity: 0.6;
+}
+
+.mindustry-map-tag {
+    -fx-text-fill: -monet-on-secondary-container;
+    -fx-background-color: -monet-secondary-container;
+    -fx-background-radius: 2;
+    -fx-padding: 2 6 2 6;
+    -fx-font-weight: normal;
+    -fx-font-size: 12px;
+}
+
 .md-list-cell {
     -fx-border-color: -monet-outline-variant;
     -fx-border-width: 0 0 1 0;

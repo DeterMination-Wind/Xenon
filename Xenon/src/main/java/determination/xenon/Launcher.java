@@ -305,8 +305,11 @@ public final class Launcher extends Application {
     public void stop() throws Exception {
         determination.xenon.ui.TrayIconManager.uninstall();
         Controllers.onApplicationStop();
+        Schedulers.shutdown();
+        Controllers.shutdown();
         FileSaver.shutdown();
         LOG.shutdown();
+        System.exit(0);
     }
 
     public static void main(String[] args) {

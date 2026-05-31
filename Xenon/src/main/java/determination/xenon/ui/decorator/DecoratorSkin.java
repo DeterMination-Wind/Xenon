@@ -55,6 +55,8 @@ import determination.xenon.ui.wizard.Navigation;
 import determination.xenon.util.platform.OperatingSystem;
 
 public class DecoratorSkin extends SkinBase<Decorator> {
+    private static final double RESIZE_MARGIN = 8.0;
+
     private final StackPane root, parent;
     private final StackPane titleContainer;
     private final Stage primaryStage;
@@ -65,6 +67,7 @@ public class DecoratorSkin extends SkinBase<Decorator> {
     private final EventHandler<MouseEvent> onTitleBarDoubleClick;
 
     private double mouseInitX, mouseInitY, stageInitX, stageInitY, stageInitWidth, stageInitHeight;
+    private Cursor dragCursor = Cursor.DEFAULT;
 
     /**
      * Constructor for all SkinBase instances.
@@ -95,6 +98,7 @@ public class DecoratorSkin extends SkinBase<Decorator> {
         skinnable.getSnackbar().registerSnackbarContainer(parent);
 
         EventHandler<MouseEvent> onMouseReleased = this::onMouseReleased;
+        EventHandler<MouseEvent> onMousePressed = this::onMousePressed;
         EventHandler<MouseEvent> onMouseDragged = this::onMouseDragged;
         EventHandler<MouseEvent> onMouseMoved = this::onMouseMoved;
 
@@ -103,10 +107,12 @@ public class DecoratorSkin extends SkinBase<Decorator> {
             onWindowsStatusChange = observable -> {
                 if (primaryStage.isIconified() || primaryStage.isFullScreen() || primaryStage.isMaximized()) {
                     root.removeEventFilter(MouseEvent.MOUSE_RELEASED, onMouseReleased);
+                    root.removeEventFilter(MouseEvent.MOUSE_PRESSED, onMousePressed);
                     root.removeEventFilter(MouseEvent.MOUSE_DRAGGED, onMouseDragged);
                     root.removeEventFilter(MouseEvent.MOUSE_MOVED, onMouseMoved);
                 } else {
                     root.addEventFilter(MouseEvent.MOUSE_RELEASED, onMouseReleased);
+                    root.addEventFilter(MouseEvent.MOUSE_PRESSED, onMousePressed);
                     root.addEventFilter(MouseEvent.MOUSE_DRAGGED, onMouseDragged);
                     root.addEventFilter(MouseEvent.MOUSE_MOVED, onMouseMoved);
                 }
@@ -126,6 +132,7 @@ public class DecoratorSkin extends SkinBase<Decorator> {
             onWindowsStatusChange = null;
             onTitleBarDoubleClick = null;
             root.addEventFilter(MouseEvent.MOUSE_RELEASED, onMouseReleased);
+            root.addEventFilter(MouseEvent.MOUSE_PRESSED, onMousePressed);
             root.addEventFilter(MouseEvent.MOUSE_DRAGGED, onMouseDragged);
             root.addEventFilter(MouseEvent.MOUSE_MOVED, onMouseMoved);
         }
@@ -361,19 +368,68 @@ public class DecoratorSkin extends SkinBase<Decorator> {
     }
 
     private boolean isRightEdge(double x, double y, Bounds boundsInParent) {
-        return x < root.getWidth() && x >= root.getWidth() - root.snappedLeftInset();
+        return x < root.getWidth() && x >= root.getWidth() - RESIZE_MARGIN;
     }
 
     private boolean isTopEdge(double x, double y, Bounds boundsInParent) {
-        return y >= 0 && y <= root.snappedTopInset();
+        return y >= 0 && y <= RESIZE_MARGIN;
     }
 
     private boolean isBottomEdge(double x, double y, Bounds boundsInParent) {
-        return y < root.getHeight() && y >= root.getHeight() - root.snappedLeftInset();
+        return y < root.getHeight() && y >= root.getHeight() - RESIZE_MARGIN;
     }
 
     private boolean isLeftEdge(double x, double y, Bounds boundsInParent) {
-        return x >= 0 && x <= root.snappedLeftInset();
+        return x >= 0 && x <= RESIZE_MARGIN;
+    }
+
+    private Cursor cursorFor(double x, double y) {
+        Bounds boundsInParent = root.getBoundsInParent();
+        double diagonalSize = RESIZE_MARGIN + 10;
+        if (this.isRightEdge(x, y, boundsInParent)) {
+            if (y < diagonalSize) {
+                return Cursor.NE_RESIZE;
+            } else if (y > root.getHeight() - diagonalSize) {
+                return Cursor.SE_RESIZE;
+            } else {
+                return Cursor.E_RESIZE;
+            }
+        } else if (this.isLeftEdge(x, y, boundsInParent)) {
+            if (y < diagonalSize) {
+                return Cursor.NW_RESIZE;
+            } else if (y > root.getHeight() - diagonalSize) {
+                return Cursor.SW_RESIZE;
+            } else {
+                return Cursor.W_RESIZE;
+            }
+        } else if (this.isTopEdge(x, y, boundsInParent)) {
+            if (x < diagonalSize) {
+                return Cursor.NW_RESIZE;
+            } else if (x > root.getWidth() - diagonalSize) {
+                return Cursor.NE_RESIZE;
+            } else {
+                return Cursor.N_RESIZE;
+            }
+        } else if (this.isBottomEdge(x, y, boundsInParent)) {
+            if (x < diagonalSize) {
+                return Cursor.SW_RESIZE;
+            } else if (x > root.getWidth() - diagonalSize) {
+                return Cursor.SE_RESIZE;
+            } else {
+                return Cursor.S_RESIZE;
+            }
+        }
+        return Cursor.DEFAULT;
+    }
+
+    private void onMousePressed(MouseEvent mouseEvent) {
+        if (primaryStage.isFullScreen() || !mouseEvent.isPrimaryButtonDown()) {
+            return;
+        }
+        dragCursor = cursorFor(mouseEvent.getX(), mouseEvent.getY());
+        if (dragCursor != Cursor.DEFAULT) {
+            root.setCursor(dragCursor);
+        }
     }
 
     private void resizeStage(double newWidth, double newHeight) {
@@ -397,45 +453,8 @@ public class DecoratorSkin extends SkinBase<Decorator> {
     }
 
     private void onMouseMoved(MouseEvent mouseEvent) {
-        if (!primaryStage.isFullScreen() && primaryStage.isResizable()) {
-            double x = mouseEvent.getX(), y = mouseEvent.getY();
-            Bounds boundsInParent = root.getBoundsInParent();
-            double diagonalSize = root.snappedLeftInset() + 10;
-            if (this.isRightEdge(x, y, boundsInParent)) {
-                if (y < diagonalSize) {
-                    root.setCursor(Cursor.NE_RESIZE);
-                } else if (y > root.getHeight() - diagonalSize) {
-                    root.setCursor(Cursor.SE_RESIZE);
-                } else {
-                    root.setCursor(Cursor.E_RESIZE);
-                }
-            } else if (this.isLeftEdge(x, y, boundsInParent)) {
-                if (y < diagonalSize) {
-                    root.setCursor(Cursor.NW_RESIZE);
-                } else if (y > root.getHeight() - diagonalSize) {
-                    root.setCursor(Cursor.SW_RESIZE);
-                } else {
-                    root.setCursor(Cursor.W_RESIZE);
-                }
-            } else if (this.isTopEdge(x, y, boundsInParent)) {
-                if (x < diagonalSize) {
-                    root.setCursor(Cursor.NW_RESIZE);
-                } else if (x > root.getWidth() - diagonalSize) {
-                    root.setCursor(Cursor.NE_RESIZE);
-                } else {
-                    root.setCursor(Cursor.N_RESIZE);
-                }
-            } else if (this.isBottomEdge(x, y, boundsInParent)) {
-                if (x < diagonalSize) {
-                    root.setCursor(Cursor.SW_RESIZE);
-                } else if (x > root.getWidth() - diagonalSize) {
-                    root.setCursor(Cursor.SE_RESIZE);
-                } else {
-                    root.setCursor(Cursor.S_RESIZE);
-                }
-            } else {
-                root.setCursor(Cursor.DEFAULT);
-            }
+        if (!primaryStage.isFullScreen() && primaryStage.isResizable() && !getSkinnable().isDragging()) {
+            root.setCursor(cursorFor(mouseEvent.getX(), mouseEvent.getY()));
         } else {
             root.setCursor(Cursor.DEFAULT);
         }
@@ -443,6 +462,7 @@ public class DecoratorSkin extends SkinBase<Decorator> {
 
     private void onMouseReleased(MouseEvent mouseEvent) {
         getSkinnable().setDragging(false);
+        dragCursor = Cursor.DEFAULT;
     }
 
     private void onMouseDragged(MouseEvent mouseEvent) {
@@ -462,7 +482,7 @@ public class DecoratorSkin extends SkinBase<Decorator> {
         double dx = mouseEvent.getScreenX() - mouseInitX;
         double dy = mouseEvent.getScreenY() - mouseInitY;
 
-        Cursor cursor = root.getCursor();
+        Cursor cursor = dragCursor;
         if (getSkinnable().isAllowMove()) {
             if (cursor == Cursor.DEFAULT) {
                 primaryStage.setX(stageInitX + dx);

@@ -19,6 +19,7 @@ package determination.xenon.ui.download;
 
 import javafx.beans.property.ReadOnlyObjectProperty;
 import javafx.beans.property.ReadOnlyObjectWrapper;
+import determination.xenon.mindustry.ui.MindustryMapBrowserPane;
 import determination.xenon.mindustry.ui.MindustryModBrowserPane;
 import determination.xenon.mindustry.ui.MindustryVariantPickerPane;
 import determination.xenon.ui.FXUtils;
@@ -41,6 +42,9 @@ import static determination.xenon.util.i18n.I18n.i18n;
  *     <li><b>Game</b> — five-card variant picker
  *     ({@link MindustryVariantPickerPane}). Clicking a card hands off to
  *     the Xenon install wizard for that variant.</li>
+ *     <li><b>Maps</b> — mindustry.top browser
+ *     ({@link MindustryMapBrowserPane}) with one-click import into the
+ *     selected Mindustry instance's {@code maps/} folder.</li>
  *     <li><b>Mods</b> — community mod browser
  *     ({@link MindustryModBrowserPane}) backed by the
  *     {@code Anuken/mindustry-mods} index. Per the project decision,
@@ -57,6 +61,7 @@ public class DownloadPage extends DecoratorAnimatedPage implements DecoratorPage
 
     private final TabHeader tab;
     private final TabHeader.Tab<MindustryVariantPickerPane> newGameTab = new TabHeader.Tab<>("newGameTab");
+    private final TabHeader.Tab<MindustryMapBrowserPane> mapTab = new TabHeader.Tab<>("mapTab");
     private final TabHeader.Tab<MindustryModBrowserPane> modTab = new TabHeader.Tab<>("modTab");
     private final TransitionPane transitionPane = new TransitionPane();
 
@@ -71,9 +76,10 @@ public class DownloadPage extends DecoratorAnimatedPage implements DecoratorPage
     @SuppressWarnings("unused")
     public DownloadPage(String uploadVersion) {
         newGameTab.setNodeSupplier(MindustryVariantPickerPane::new);
+        mapTab.setNodeSupplier(MindustryMapBrowserPane::new);
         modTab.setNodeSupplier(MindustryModBrowserPane::new);
 
-        tab = new TabHeader(transitionPane, newGameTab, modTab);
+        tab = new TabHeader(transitionPane, newGameTab, mapTab, modTab);
         tab.select(newGameTab);
 
         AdvancedListBox sideBar = new AdvancedListBox()
@@ -81,6 +87,8 @@ public class DownloadPage extends DecoratorAnimatedPage implements DecoratorPage
                 .addNavigationDrawerTab(tab, newGameTab, i18n("game"),
                         SVG.STADIA_CONTROLLER, SVG.STADIA_CONTROLLER_FILL)
                 .startCategory(i18n("download.content").toUpperCase(Locale.ROOT))
+                .addNavigationDrawerTab(tab, mapTab, i18n("xenon.mindustry.maps"),
+                        SVG.LANDSCAPE, SVG.LANDSCAPE)
                 .addNavigationDrawerTab(tab, modTab, i18n("mods"),
                         SVG.EXTENSION, SVG.EXTENSION_FILL);
         FXUtils.setLimitWidth(sideBar, 200);
@@ -101,6 +109,10 @@ public class DownloadPage extends DecoratorAnimatedPage implements DecoratorPage
         tab.select(modTab, false);
     }
 
+    public void showMapDownloads() {
+        tab.select(mapTab, false);
+    }
+
     // ---- HMCL ABI shims (no-ops on Xenon) ---------------------------------
 
     /** No-op on Xenon: there is no Mindustry modpack tab. */
@@ -115,6 +127,6 @@ public class DownloadPage extends DecoratorAnimatedPage implements DecoratorPage
 
     /** No-op on Xenon: Mindustry has no shipped world catalog. */
     public void showWorldDownloads() {
-        tab.select(newGameTab, false);
+        tab.select(mapTab, false);
     }
 }

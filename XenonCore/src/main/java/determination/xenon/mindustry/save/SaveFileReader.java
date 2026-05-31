@@ -64,11 +64,12 @@ import java.util.zip.ZipException;
  * as the big-endian int {@code 0x4D534156}. We use the correct on-disk
  * value here.</p>
  *
- * <p>Only the {@link #SUPPORTED_VERSIONS supported} versions are accepted;
- * everything else triggers {@link MsavException.UnsupportedVersion}. The
- * meta-region layout has been stable across Save1..Save11 in upstream
- * Mindustry, so widening the support set is a one-line change should we ever
- * need to read older / newer headers.</p>
+ * <p>The meta-region layout has been stable across Save1..Save11 in upstream
+ * Mindustry. Callers that need a strict allow-list can use
+ * {@link #readHeader(Path)}; callers that only need a light-weight
+ * "is this still a parseable .msav container?" check can use
+ * {@link #readHeaderLenient(Path)} to avoid rejecting newer upstream save
+ * versions solely because the version integer increased.</p>
  */
 public final class SaveFileReader {
 
@@ -78,11 +79,13 @@ public final class SaveFileReader {
     /**
      * SAVE format versions this reader is willing to parse.
      *
-     * <p>Currently only the modern mainline format {@code 7} is whitelisted,
-     * matching the W6.1 brief. Versions outside this set raise
-     * {@link MsavException.UnsupportedVersion}.</p>
+     * <p>Mindustry currently ships save readers/writers for {@code Save1}
+     * through {@code Save11}, and the header/meta-region layout this parser
+     * consumes remains compatible across that range. Versions outside this
+     * set still raise {@link MsavException.UnsupportedVersion}.</p>
      */
-    public static final Set<Integer> SUPPORTED_VERSIONS = Set.of(7);
+    public static final Set<Integer> SUPPORTED_VERSIONS =
+            Set.of(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11);
 
     private static final int BUFFER_SIZE = 16 * 1024;
 
@@ -104,6 +107,23 @@ public final class SaveFileReader {
      * @throws IOException                      for plain filesystem errors (file missing, unreadable etc.)
      */
     public static SaveSummary readHeader(Path msav) throws IOException {
+        return readHeader(msav, true);
+    }
+
+    /**
+     * Parse the save header without enforcing {@link #SUPPORTED_VERSIONS}.
+     *
+     * <p>This is intended for validation / import flows where a future
+     * upstream save version should still be accepted as long as the header and
+     * meta-region remain parseable. If the on-disk framing changes, parsing
+     * still fails naturally via the existing magic / inflate / truncation
+     * checks.</p>
+     */
+    public static SaveSummary readHeaderLenient(Path msav) throws IOException {
+        return readHeader(msav, false);
+    }
+
+    private static SaveSummary readHeader(Path msav, boolean enforceSupportedVersions) throws IOException {
         Objects.requireNonNull(msav, "msav");
 
         long fileSize;
@@ -120,7 +140,7 @@ public final class SaveFileReader {
              InflaterInputStream inflated = new InflaterInputStream(buffered);
              DataInputStream in = new DataInputStream(inflated)) {
 
-            return doRead(in, msav, fileSize, lastModified);
+            return doRead(in, msav, fileSize, lastModified, enforceSupportedVersions);
 
         } catch (ZipException e) {
             throw new MsavException(
@@ -128,7 +148,8 @@ public final class SaveFileReader {
         }
     }
 
-    private static SaveSummary doRead(DataInputStream in, Path file, long fileSize, Instant lastModified)
+    private static SaveSummary doRead(DataInputStream in, Path file, long fileSize, Instant lastModified,
+                                      boolean enforceSupportedVersions)
             throws IOException {
 
         int magic = readIntOrTruncated(in, "magic header", file);
@@ -139,7 +160,7 @@ public final class SaveFileReader {
         }
 
         int version = readIntOrTruncated(in, "version int", file);
-        if (!SUPPORTED_VERSIONS.contains(version)) {
+        if (enforceSupportedVersions && !SUPPORTED_VERSIONS.contains(version)) {
             throw new MsavException.UnsupportedVersion(
                     version,
                     "Unsupported SAVE version " + version + " for " + file
