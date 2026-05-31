@@ -41,15 +41,9 @@ import javafx.scene.layout.VBox;
 import javafx.scene.text.TextFlow;
 import javafx.util.Duration;
 import determination.xenon.Metadata;
-import determination.xenon.download.DefaultDependencyManager;
-import determination.xenon.download.DownloadProvider;
-import determination.xenon.download.VersionList;
 import determination.xenon.game.Version;
-import determination.xenon.setting.DownloadProviders;
 import determination.xenon.setting.Profile;
 import determination.xenon.setting.Profiles;
-import determination.xenon.task.Schedulers;
-import determination.xenon.task.Task;
 import determination.xenon.theme.Themes;
 import determination.xenon.ui.Controllers;
 import determination.xenon.ui.FXUtils;
@@ -68,21 +62,14 @@ import determination.xenon.upgrade.UpdateHandler;
 import determination.xenon.util.*;
 import determination.xenon.util.i18n.I18n;
 import determination.xenon.util.javafx.BindingMapping;
-import determination.xenon.util.platform.OperatingSystem;
-import determination.xenon.util.platform.Platform;
-import determination.xenon.util.versioning.GameVersionNumber;
 
-import java.io.IOException;
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.CancellationException;
 import java.util.function.Consumer;
 
-import static determination.xenon.download.RemoteVersion.Type.RELEASE;
 import static determination.xenon.setting.ConfigHolder.config;
 import static determination.xenon.ui.FXUtils.SINE;
 import static determination.xenon.util.i18n.I18n.i18n;
-import static determination.xenon.util.logging.Logger.LOG;
 
 public final class MainPage extends StackPane implements DecoratorPage {
     private static final String ANNOUNCEMENT = "announcement";

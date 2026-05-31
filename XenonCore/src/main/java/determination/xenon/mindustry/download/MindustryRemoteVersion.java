@@ -80,12 +80,19 @@ public final class MindustryRemoteVersion {
     }
 
     public int getBuild() { return build; }
+
     public String getBuildType() { return buildType; }
+
     public VersionVariant getVariant() { return variant; }
+
     public String getDownloadUrl() { return downloadUrl; }
+
     public Instant getPublishedAt() { return publishedAt; }
+
     public long getSize() { return size; }
+
     public String getTagName() { return tagName; }
+
     public String getFileName() { return fileName; }
 
     /** Best-effort human-readable identifier: tag if present, else "build N". */

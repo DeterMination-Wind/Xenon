@@ -59,12 +59,19 @@ public final class LaunchOptions {
     }
 
     public Path getJavaExecutable() { return javaExecutable; }
+
     public Path getJar() { return jar; }
+
     public Path getWorkingDirectory() { return workingDirectory; }
+
     public Path getDataDir() { return dataDir; }
+
     public List<String> getJvmArgs() { return jvmArgs; }
+
     public List<String> getGameArgs() { return gameArgs; }
+
     public long getMaxHeapMb() { return maxHeapMb; }
+
     public long getMinHeapMb() { return minHeapMb; }
 
     /** Build the final command line that {@link XenonLauncher} will spawn. */
@@ -115,14 +122,23 @@ public final class LaunchOptions {
         private long minHeapMb = 0;
 
         public Builder javaExecutable(Path p) { this.javaExecutable = p; return this; }
+
         public Builder jar(Path p) { this.jar = p; return this; }
+
         public Builder workingDirectory(Path p) { this.workingDirectory = p; return this; }
+
         public Builder dataDir(Path p) { this.dataDir = p; return this; }
+
         public Builder jvmArgs(List<String> args) { this.jvmArgs.clear(); this.jvmArgs.addAll(args); return this; }
+
         public Builder addJvmArgs(String... args) { this.jvmArgs.addAll(Arrays.asList(args)); return this; }
+
         public Builder gameArgs(List<String> args) { this.gameArgs.clear(); this.gameArgs.addAll(args); return this; }
+
         public Builder addGameArgs(String... args) { this.gameArgs.addAll(Arrays.asList(args)); return this; }
+
         public Builder maxHeapMb(long m) { this.maxHeapMb = m; return this; }
+
         public Builder minHeapMb(long m) { this.minHeapMb = m; return this; }
 
         public LaunchOptions build() { return new LaunchOptions(this); }

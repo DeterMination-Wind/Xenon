@@ -20,6 +20,7 @@ package determination.xenon.mindustry.mod;
 import java.nio.file.Path;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 
 /**
@@ -70,7 +71,7 @@ public final class MindustryLocalMod {
                 ? Collections.emptyList()
                 : List.copyOf(dependencies);
         this.enabled = !file.getFileName().toString()
-                .toLowerCase().endsWith(".disabled");
+                .toLowerCase(Locale.ROOT).endsWith(".disabled");
     }
 
     public Path getFile() { return file; }

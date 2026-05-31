@@ -32,6 +32,8 @@ import javafx.scene.control.ToggleGroup;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 
+import java.util.Locale;
+
 import static determination.xenon.util.i18n.I18n.i18n;
 
 /**
@@ -112,7 +114,7 @@ public final class IsolationPage extends VBox implements WizardPage {
     public void onNavigate(SettingsMap settings) {
         MindustryRemoteVersion ver = settings.get(WizardKeys.REMOTE_VERSION);
         if (ver != null && (idField.getText() == null || idField.getText().isEmpty())) {
-            idField.setText(ver.getVariant().name().toLowerCase() + "-" + ver.getBuild());
+            idField.setText(ver.getVariant().name().toLowerCase(Locale.ROOT) + "-" + ver.getBuild());
         }
     }
 

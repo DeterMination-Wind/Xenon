@@ -49,7 +49,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static determination.xenon.ui.download.LocalModpackPage.MODPACK_FILE;
-import static determination.xenon.ui.download.LocalModpackPage.MODPACK_NAME;
 import static determination.xenon.ui.download.RemoteModpackPage.MODPACK_SERVER_MANIFEST;
 import static determination.xenon.util.i18n.I18n.i18n;
 

@@ -119,10 +119,15 @@ public final class MindustryModBrowserPane extends BorderPane implements PageAwa
         targetVersion.getStyleClass().add("jfx-combo-box");
         targetVersion.setPromptText(i18n("xenon.mindustry.mod.browser.target"));
         targetVersion.setConverter(new javafx.util.StringConverter<>() {
-            @Override public String toString(MindustryVersion v) {
+            @Override
+            public String toString(MindustryVersion v) {
                 return v == null ? "" : (v.getName() == null ? v.getId() : v.getName());
             }
-            @Override public MindustryVersion fromString(String s) { return null; }
+
+            @Override
+            public MindustryVersion fromString(String s) {
+                return null;
+            }
         });
 
         JFXButton refresh = FXUtils.newRaisedButton(i18n("xenon.mindustry.mod.browser.refresh"));

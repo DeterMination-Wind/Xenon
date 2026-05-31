@@ -30,10 +30,8 @@ import javafx.beans.value.ObservableValue;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.collections.transformation.FilteredList;
-import javafx.geometry.Insets;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.Skin;
-import javafx.scene.control.Tooltip;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 import determination.xenon.auth.Account;
@@ -48,8 +46,6 @@ import determination.xenon.ui.construct.ClassTitle;
 import determination.xenon.ui.decorator.DecoratorAnimatedPage;
 import determination.xenon.ui.decorator.DecoratorPage;
 import determination.xenon.util.i18n.LocaleUtils;
-import determination.xenon.util.io.NetworkUtils;
-import determination.xenon.util.javafx.BindingMapping;
 import determination.xenon.util.javafx.MappedObservableList;
 
 import java.util.Locale;
@@ -57,7 +53,6 @@ import java.util.Locale;
 import static determination.xenon.setting.ConfigHolder.globalConfig;
 import static determination.xenon.util.i18n.I18n.i18n;
 import static determination.xenon.util.javafx.ExtendedProperties.createSelectedItemPropertyFor;
-import static determination.xenon.util.logging.Logger.LOG;
 
 public final class AccountListPage extends DecoratorAnimatedPage implements DecoratorPage {
     static final BooleanProperty RESTRICTED = new SimpleBooleanProperty(true);

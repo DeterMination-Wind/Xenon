@@ -114,65 +114,85 @@ public final class ServerInstance {
     // ---------- getters / setters ----------
 
     public String getId() { return id; }
+
     public void setId(String id) { this.id = id; }
 
     public String getName() { return name == null || name.isEmpty() ? id : name; }
+
     public void setName(String name) { this.name = name; }
 
     public VersionVariant getVariant() { return variant == null ? VersionVariant.CUSTOM : variant; }
+
     public void setVariant(VersionVariant variant) { this.variant = variant; }
 
     public String getBuildType() { return buildType == null ? "" : buildType; }
+
     public void setBuildType(String buildType) { this.buildType = buildType; }
 
     public String getUpstreamTag() { return upstreamTag == null ? "" : upstreamTag; }
+
     public void setUpstreamTag(String upstreamTag) { this.upstreamTag = upstreamTag; }
 
     public int getBuild() { return build; }
+
     public void setBuild(int build) { this.build = build; }
 
     public String getJarPath() { return jarPath; }
+
     public void setJarPath(String jarPath) { this.jarPath = jarPath; }
 
     public int getJavaReq() { return javaReq; }
+
     public void setJavaReq(int javaReq) { this.javaReq = javaReq; }
 
     public String getJavaHome() { return javaHome; }
+
     public void setJavaHome(String javaHome) { this.javaHome = javaHome; }
 
     public boolean isScriptAgent() { return scriptAgent; }
+
     public void setScriptAgent(boolean scriptAgent) { this.scriptAgent = scriptAgent; }
 
     public boolean isAutoRestart() { return autoRestart; }
+
     public void setAutoRestart(boolean autoRestart) { this.autoRestart = autoRestart; }
 
     public int getAutoRestartMaxRetries() { return autoRestartMaxRetries; }
+
     public void setAutoRestartMaxRetries(int autoRestartMaxRetries) { this.autoRestartMaxRetries = autoRestartMaxRetries; }
 
     public int getAutoRestartDelaySec() { return autoRestartDelaySec; }
+
     public void setAutoRestartDelaySec(int autoRestartDelaySec) { this.autoRestartDelaySec = autoRestartDelaySec; }
 
     public String getJvmArgs() { return jvmArgs == null ? "" : jvmArgs; }
+
     public void setJvmArgs(String jvmArgs) { this.jvmArgs = jvmArgs; }
 
     public int getPort() { return port; }
+
     public void setPort(int port) { this.port = port; }
 
     public DataDirectoryPolicy getDataDirPolicy() { return dataDirPolicy == null ? DataDirectoryPolicy.ISOLATED : dataDirPolicy; }
+
     public void setDataDirPolicy(DataDirectoryPolicy dataDirPolicy) { this.dataDirPolicy = dataDirPolicy; }
 
     public String getCustomDataDir() { return customDataDir; }
+
     public void setCustomDataDir(String customDataDir) { this.customDataDir = customDataDir; }
 
     public LifecycleState getLastLifecycleState() {
         return lastLifecycleState == null ? LifecycleState.STOPPED : lastLifecycleState;
     }
+
     public void setLastLifecycleState(LifecycleState lastLifecycleState) { this.lastLifecycleState = lastLifecycleState; }
 
     public @Nullable Integer getLastExitCode() { return lastExitCode; }
+
     public void setLastExitCode(@Nullable Integer lastExitCode) { this.lastExitCode = lastExitCode; }
 
     public String getLastStatusMessage() { return lastStatusMessage == null ? "" : lastStatusMessage; }
+
     public void setLastStatusMessage(String lastStatusMessage) { this.lastStatusMessage = lastStatusMessage; }
 
     /// Lifecycle state Xenon persists for list/detail presentation.

@@ -125,11 +125,21 @@ public final class MindustrySettingsBin {
                 byte type = in.readByte();
                 Object value;
                 switch (type) {
-                    case TYPE_BOOL:   value = in.readBoolean(); break;
-                    case TYPE_INT:    value = in.readInt(); break;
-                    case TYPE_LONG:   value = in.readLong(); break;
-                    case TYPE_FLOAT:  value = in.readFloat(); break;
-                    case TYPE_STRING: value = in.readUTF(); break;
+                    case TYPE_BOOL:
+                        value = in.readBoolean();
+                        break;
+                    case TYPE_INT:
+                        value = in.readInt();
+                        break;
+                    case TYPE_LONG:
+                        value = in.readLong();
+                        break;
+                    case TYPE_FLOAT:
+                        value = in.readFloat();
+                        break;
+                    case TYPE_STRING:
+                        value = in.readUTF();
+                        break;
                     case TYPE_BYTES: {
                         int len = in.readInt();
                         byte[] b = new byte[len];
