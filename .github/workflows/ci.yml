@@ -74,14 +74,14 @@ jobs:
           find Xenon/build/dist -maxdepth 1 -type f -name 'Xenon-portable-*.zip' -print
 
       - name: Upload JAR
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Xenon-jar-${{ github.sha }}
           path: Xenon/build/libs/Xenon-*.jar
           if-no-files-found: error
 
       - name: Upload portable ZIP
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Xenon-portable-${{ github.sha }}
           path: Xenon/build/dist/Xenon-portable-*.zip

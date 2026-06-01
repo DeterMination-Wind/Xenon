@@ -83,7 +83,7 @@ jobs:
           ls -lh
 
       - name: Upload release bundle
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-${{ steps.version.outputs.version }}
           path: release/*
@@ -102,7 +102,7 @@ jobs:
           fetch-depth: 1
 
       - name: Download release bundle
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: release-${{ needs.build.outputs.version }}
           path: release
