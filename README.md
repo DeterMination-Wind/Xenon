@@ -131,3 +131,13 @@ GPLv3 — see [LICENSE](LICENSE).
 ---
 
 Built on HMCL. Mindustry, MindustryX, ScriptAgent are properties of their respective authors.
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=DeterMination-Wind%2FXenon&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=DeterMination-Wind/Xenon&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=DeterMination-Wind/Xenon&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=DeterMination-Wind/Xenon&type=date&legend=top-left" />
+ </picture>
+</a>
