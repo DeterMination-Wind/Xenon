@@ -1,133 +1,133 @@
-# Xenon
+﻿# Xenon — A Mindustry Launcher
 
 [中文](#中文) | [English](#english)
 
-A launcher for Mindustry players who want one place to install clients, browse maps, manage mods, and run servers.
-
-Latest release: **v1.2.0**
+Xenon 是基于 HMCL 框架的 Mindustry 启动器。统一管理 3 个客户端变体、Mod、存档、服务端与 ScriptAgent，无需手动配置 Java 参数和数据目录。
 
 ---
 
 ## 中文
 
-### Xenon 是什么
+### 简介
 
-Xenon 是一个面向 Mindustry 玩家和服主的启动器。
+Xenon 是一款跨平台 Mindustry 启动器，基于 [HMCL](https://github.com/HMCL-dev/HMCL) UI 框架开发。支持多实例隔离、一键安装、Mod 管理、服务端管理等功能。
 
-它把常用流程放到一个界面里：
+### 主要特性
 
-- 安装和管理多个 Mindustry 客户端
-- 浏览并导入社区地图
-- 安装和管理 Mod
-- 查看存档、蓝图和崩溃信息
-- 启动和管理 Mindustry 服务端
-
-你可以把它理解成一个更适合 Mindustry 日常使用的桌面入口。
-
-### 适合谁
-
-- 想同时保留多个客户端版本的人
-- 经常换图、装 Mod、整理存档的人
-- 需要维护自用或公用服务端的人
-
-### 主要功能
-
-- **多客户端并存**  
-  支持 Vanilla、Bleeding Edge、MindustryX。
-
-- **地图浏览与导入**  
-  直接在启动器里浏览社区地图并导入到实例。
-
-- **Mod 管理**  
-  浏览社区 Mod，安装到指定实例，减少手动复制文件的麻烦。
-
-- **实例隔离**  
-  不同实例可以各自保存地图、Mod、存档和设置，更容易整理。
-
-- **服务端工具**  
-  适合管理本地或长期运行的 Mindustry 服务端。
-
-### v1.2.0 发布说明
-
-- 下载界面保留 Vanilla、Bleeding Edge、MindustryX。
-- 移除 CN-ARC 和 Foo Client 下载入口。
+- **游戏下载镜像加速** — 自动测速选择最快 GitHub 镜像，国内也能满速下载
+- **Mod 管理** — 向导式安装社区 Mod，自动归入对应实例的 `mods/` 目录
+- **UUID 管理器** — 替代账户系统，为每个 UUID 绑定昵称，启动时自动注入
+- **3 种客户端变体** — Vanilla / Bleeding-Edge / MindustryX，各自独立数据目录，并存互不干扰
+- **导入本地 Jar** — 拖入 `MindustryX-Desktop.jar` 即可自动识别版本与 Java 需求
+- **存档与蓝图管理** — 解析 `.msav`、`.msch` 文件，支持导入/导出/分享码
+- **崩溃日志分析** — 自动扫描崩溃日志，识别 Mod 冲突并跳转对应 Issue 模板
+- **服务端管理** — 多实例并发、实时控制台、自动重启、端口检测、配置编辑、地图池管理
+- **ScriptAgent 集成** — 一键安装与管理 [ScriptAgent4Mindustry](https://github.com/way-zer/ScriptAgent4Mindustry) 模块
 
 ### 快速开始
 
-1. 下载发布包并解压。
-2. 启动 Xenon。
-3. 在“下载”里安装你需要的 Mindustry 客户端。
-4. 按需要导入地图、安装 Mod，或创建服务端实例。
+1. 下载 [最新版 Xenon-portable](https://github.com/DeterMination-Wind/Xenon/releases) 解压
+2. Windows 双击 `Xenon.bat`；Linux/macOS 执行 `chmod +x Xenon.sh && ./Xenon.sh`
+3. 侧栏 → "Install Mindustry" → 选择变体与版本 → 完成安装
+4. 侧栏 → "Mindustry Versions" → 一键启动
 
-### 获取帮助
+若系统无 Java 17+，启动器会自动引导下载。
 
-- GitHub Issues: <https://github.com/DeterMination-Wind/Xenon/issues>
-- Bilibili: <https://space.bilibili.com/1433776051>
+### 构建
+
+```bash
+./gradlew :Xenon:shadowJar          # fat jar
+./gradlew :Xenon:packagePortable    # 便携版 zip
+./gradlew :Xenon:packageAll         # 平台原生安装包
+```
+
+需要 JDK 17+。
+
+### 联系方式
+
+- [B 站](https://space.bilibili.com/1433776051)
 - QQ 群：`188709300`
+- [GitHub Issues](https://github.com/DeterMination-Wind/Xenon/issues)
 
-### 许可
+### 致谢
 
-GPLv3。详见 [LICENSE](LICENSE)。
+**特别感谢以下个人与项目对 Xenon 的贡献：**
+
+- **[Wayzer / TinyLake](https://github.com/way-zer)** — ScriptAgent 与 MindustryX
+- **[DeterMination](https://github.com/DeterMination-Wind)** — 高速镜像与维护服务
+- **[休闲 (Xiuxian)](https://alist.mindustry.ltd/Github/MindustryX)** — 为 MindustryX 提供国内高速镜像
+- **[爱看番的年兽sama](https://space.bilibili.com/433674920)** — 提供启动器默认背景图
+- **所有 GitHub 公益加速站贡献者** — 为游戏版本下载提供加速
+- **[HMCL 团队](https://github.com/HMCL-dev/HMCL)** — UI 框架基石
+- **[Anuken](https://github.com/Anuken)** — Mindustry / MindustryBuilds
+- **[TinyLake](https://github.com/TinyLake)** — MindustryX
+- 以及所有 [GitHub 贡献者](https://github.com/DeterMination-Wind/Xenon/graphs/contributors)
+
+### License
+
+GPLv3（沿用 HMCL）。详见 [LICENSE](LICENSE)。
 
 ---
 
 ## English
 
-### What Xenon is
+### What is Xenon?
 
-Xenon is a launcher built for Mindustry players and server operators.
+Xenon is a cross-platform Mindustry launcher forked from [HMCL](https://github.com/HMCL-dev/HMCL). It keeps HMCL's JavaFX UI framework and replaces the Minecraft-specific backends with Mindustry equivalents.
 
-It brings common tasks into one desktop app:
+### Key Features
 
-- install and manage multiple Mindustry clients
-- browse and import community maps
-- install and manage mods
-- work with saves, schematics, and crash logs
-- launch and manage Mindustry servers
-
-In short, it is a practical front-end for everyday Mindustry use.
-
-### Who it is for
-
-- players who keep more than one client build
-- players who switch maps and mods often
-- server operators who want a cleaner workflow
-
-### Highlights
-
-- **Multiple client variants**  
-  Supports Vanilla, Bleeding Edge, and MindustryX.
-
-- **Map browser and import**  
-  Browse community maps and import them directly from the launcher.
-
-- **Mod management**  
-  Install mods into a chosen instance without manual file juggling.
-
-- **Instance isolation**  
-  Keep maps, mods, saves, and settings organized per instance.
-
-- **Server tools**  
-  Useful for managing local or long-running Mindustry servers.
+- **GitHub mirror accelerator** — Auto-picks fastest mirror for China downloads
+- **Mod management** — Wizard-based community mod installation per instance
+- **UUID manager** — Bind nicknames to UUIDs, injected at launch
+- **3 client variants** — Vanilla, Bleeding-Edge, MindustryX, side by side with isolated data directories
+- **Import local jars** — Drag & drop to auto-detect variant and Java requirements
+- **Save & schematic management** — `.msav` / `.msch` parsing with import, export and share code
+- **Crash analyzer** — Scan crash logs, highlight mod frames, link to issue templates
+- **Server management** — Multi-instance, live console, auto-restart, config editor, map pool
+- **ScriptAgent integration** — One-click [ScriptAgent4Mindustry](https://github.com/way-zer/ScriptAgent4Mindustry) setup with hot-reload
 
 ### Quick Start
 
-1. Download `Xenon-portable-1.2.0.zip` and extract it.
-2. Launch Xenon.
-3. Use the **Download** page to install the Mindustry client you want.
-4. Import maps, install mods, or create a server instance as needed.
+1. Download the [latest release](https://github.com/DeterMination-Wind/Xenon/releases) and unzip
+2. Run `Xenon.bat` (Windows) or `Xenon.sh` (Linux/macOS)
+3. Sidebar → "Install Mindustry" → pick variant → install
+4. Sidebar → "Mindustry Versions" → Launch
 
-### v1.2.0 Release Notes
+### Build
 
-- The download page now keeps Vanilla, Bleeding Edge, and MindustryX.
-- Removed CN-ARC and Foo Client download entries.
+```bash
+./gradlew :Xenon:shadowJar
+./gradlew :Xenon:packagePortable
+./gradlew :Xenon:packageAll
+```
 
-### Support
+Requires JDK 17+.
 
-- GitHub Issues: <https://github.com/DeterMination-Wind/Xenon/issues>
-- Bilibili: <https://space.bilibili.com/1433776051>
+### Contact
+
+- [Bilibili](https://space.bilibili.com/1433776051)
 - QQ Group: `188709300`
+- [GitHub Issues](https://github.com/DeterMination-Wind/Xenon/issues)
+
+### Credits
+
+Special thanks to:
+
+- **[Wayzer / TinyLake](https://github.com/way-zer)** — ScriptAgent & MindustryX
+- **[DeterMination](https://github.com/DeterMination-Wind)** — Mirror hosting & maintenance
+- **[Xiuxian (休闲)](https://alist.mindustry.ltd/Github/MindustryX)** — High-speed China mirror for MindustryX
+- **[爱看番的年兽sama](https://space.bilibili.com/433674920)** — Default launcher background
+- All GitHub mirror accelerator contributors
+- **[HMCL Team](https://github.com/HMCL-dev/HMCL)** — UI framework foundation
+- **[Anuken](https://github.com/Anuken)** — Mindustry / MindustryBuilds
+- **[TinyLake](https://github.com/TinyLake)** — MindustryX
+- All [GitHub contributors](https://github.com/DeterMination-Wind/Xenon/graphs/contributors)
 
 ### License
 
-GPLv3. See [LICENSE](LICENSE).
+GPLv3 — see [LICENSE](LICENSE).
+
+---
+
+Built on HMCL. Mindustry, MindustryX, ScriptAgent are properties of their respective authors.
