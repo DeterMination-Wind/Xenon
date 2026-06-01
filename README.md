@@ -4,7 +4,7 @@
 
 A launcher for Mindustry players who want one place to install clients, browse maps, manage mods, and run servers.
 
-Latest release: **v1.1.0**
+Latest release: **v1.2.0**
 
 ---
 
@@ -33,7 +33,7 @@ Xenon 是一个面向 Mindustry 玩家和服主的启动器。
 ### 主要功能
 
 - **多客户端并存**  
-  支持 Vanilla、Bleeding Edge、MindustryX、CN-ARC、Foo Client。
+  支持 Vanilla、Bleeding Edge、MindustryX。
 
 - **地图浏览与导入**  
   直接在启动器里浏览社区地图并导入到实例。
@@ -47,11 +47,10 @@ Xenon 是一个面向 Mindustry 玩家和服主的启动器。
 - **服务端工具**  
   适合管理本地或长期运行的 Mindustry 服务端。
 
-### v1.1.0 发布说明
+### v1.2.0 发布说明
 
-- 新增地图浏览与导入。
-- 地图可以直接导入到当前实例。
-- 改善了窗口缩放和退出体验。
+- 下载界面保留 Vanilla、Bleeding Edge、MindustryX。
+- 移除 CN-ARC 和 Foo Client 下载入口。
 
 ### 快速开始
 
@@ -97,7 +96,7 @@ In short, it is a practical front-end for everyday Mindustry use.
 ### Highlights
 
 - **Multiple client variants**  
-  Supports Vanilla, Bleeding Edge, MindustryX, CN-ARC, and Foo Client.
+  Supports Vanilla, Bleeding Edge, and MindustryX.
 
 - **Map browser and import**  
   Browse community maps and import them directly from the launcher.
@@ -113,16 +112,15 @@ In short, it is a practical front-end for everyday Mindustry use.
 
 ### Quick Start
 
-1. Download `Xenon-portable-1.1.0.zip` and extract it.
+1. Download `Xenon-portable-1.2.0.zip` and extract it.
 2. Launch Xenon.
 3. Use the **Download** page to install the Mindustry client you want.
 4. Import maps, install mods, or create a server instance as needed.
 
-### v1.1.0 Release Notes
+### v1.2.0 Release Notes
 
-- Added a community map browser and import flow.
-- Maps can be imported into the selected instance directly.
-- Improved window resizing and exit behavior.
+- The download page now keeps Vanilla, Bleeding Edge, and MindustryX.
+- Removed CN-ARC and Foo Client download entries.
 
 ### Support
 

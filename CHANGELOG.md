@@ -2,6 +2,17 @@
 
 All notable changes to Xenon will be documented in this file.
 
+## [1.2.0] — 2026-06-01
+
+Download choices were simplified to the supported primary client lines.
+
+### Changed
+- The download page now shows Vanilla, Bleeding Edge, and MindustryX only.
+- CN-ARC and Foo Client are no longer offered as install choices.
+
+### Packaging
+- Release artifacts are built as `Xenon-1.2.0.jar` and `Xenon-portable-1.2.0.zip`.
+
 ## [1.1.0] — 2026-05-31
 
 Mindustry map browsing and instance-safe import landed in the launcher.
@@ -17,6 +28,7 @@ Mindustry map browsing and instance-safe import landed in the launcher.
 ### Fixed
 - `.msav` import now accepts newer upstream save versions.
 
+[1.2.0]: https://github.com/DeterMination-Wind/Xenon/releases/tag/v1.2.0
 [1.1.0]: https://github.com/DeterMination-Wind/Xenon/releases/tag/v1.1.0
 
 ## [0.1.0] — 2026-05-17

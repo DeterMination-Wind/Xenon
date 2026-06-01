@@ -305,7 +305,7 @@ public final class MainPage extends StackPane implements DecoratorPage {
     private void launchNoGame() {
         // Xenon: there is no Mindustry "auto-install latest" flow worth
         // hiding behind the launch button — the user has to pick a
-        // variant first (Vanilla / BE / MindustryX / CN-ARC / Foo).
+        // variant first (Vanilla / BE / MindustryX).
         // Send them to the Mindustry download tab instead of triggering
         // HMCL's vanilla-Minecraft install pipeline.
         Controllers.getDownloadPage().showGameDownloads();

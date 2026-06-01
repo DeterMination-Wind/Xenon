@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "determination"
-version = "1.1.0"
+version = "1.2.0"
 
 fun org.gradle.api.artifacts.dsl.RepositoryHandler.mavenCentralWithMirrors() {
     System.getenv("MAVEN_CENTRAL_REPO").let { repo ->
