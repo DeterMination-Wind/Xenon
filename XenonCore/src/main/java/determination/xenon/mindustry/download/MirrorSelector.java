@@ -70,9 +70,6 @@ public final class MirrorSelector {
      * mirror penalty.
      */
     private static final List<Mirror> CANDIDATES = List.of(
-            // Domestic cache proxy for Chinese users — faster than direct GitHub access
-            new Mirror("cache-121.199.60.4",
-                    "http://121.199.60.4/github/", Strategy.PREFIX_FULL_URL, "http://121.199.60.4/github/"),
             // gh.tinylake.top first — TinyLake's own proxy, the same one
             // mindustry.top/download links to. Empirically the most
             // reliable mirror for users in mainland China.
