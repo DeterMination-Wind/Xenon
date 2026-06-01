@@ -70,9 +70,13 @@ public final class MirrorSelector {
      * mirror penalty.
      */
     private static final List<Mirror> CANDIDATES = List.of(
-            // Domestic cache proxy for Chinese users — faster than direct GitHub access
+            // Domestic API cache proxy. Only handles GitHub API paths
+            // (/github/repos/...), not raw.githubusercontent.com or
+            // github.com pages. PREFIX_FULL_URL would produce
+            // /github/https://raw.githubusercontent.com/... which the
+            // server cannot serve → HTTP 403.
             new Mirror("cache-121.199.60.4",
-                    "http://121.199.60.4/github/", Strategy.PREFIX_FULL_URL, "http://121.199.60.4/github/"),
+                    "http://121.199.60.4/github/", Strategy.API_PREFIX, "http://121.199.60.4/github/"),
             // gh.tinylake.top first — TinyLake's own proxy, the same one
             // mindustry.top/download links to. Empirically the most
             // reliable mirror for users in mainland China.
@@ -252,7 +256,17 @@ public final class MirrorSelector {
          * Substitute {@code github.com} with the mirror host
          * (and {@code raw.githubusercontent.com} with {@code raw.<host>/}).
          */
-        HOST_REPLACE
+        HOST_REPLACE,
+        /**
+         * Rewrite only {@code api.github.com} URLs by stripping the API
+         * host and prepending {@code prefix} + {@code repos/...}.
+         * Other GitHub origins (raw, github.com, codeload) are passed
+         * through unchanged — this mirror cannot serve them.
+         *
+         * <p>Designed for cache proxies that speak the GitHub API v3
+         * protocol but cannot proxy raw file downloads.</p>
+         */
+        API_PREFIX
     }
 
     private static final class Mirror {
@@ -285,6 +299,12 @@ public final class MirrorSelector {
                         return "https://raw." + host + "/" + url.substring(RAW.length());
                     }
                     // api.github.com / codeload not handled by host-replace mirrors
+                    return url;
+                case API_PREFIX:
+                    if (url.startsWith(API)) {
+                        return prefix + url.substring(API.length());
+                    }
+                    // raw / github.com / codeload URLs cannot go through this proxy
                     return url;
                 default:
                     return url;
