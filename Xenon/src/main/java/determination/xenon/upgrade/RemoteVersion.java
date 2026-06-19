@@ -57,6 +57,8 @@ public record RemoteVersion(UpdateChannel channel, String version, String url, T
             if (tagEl != null && assetsEl instanceof JsonArray assets) {
                 String tag = tagEl.getAsString();
                 String version = tag.startsWith("v") ? tag.substring(1) : tag;
+                boolean isPrerelease = Optional.ofNullable(response.get("prerelease"))
+                        .map(JsonElement::getAsBoolean).orElse(false);
                 String jarUrl = null;
                 for (JsonElement el : assets) {
                     JsonObject a = el.getAsJsonObject();
@@ -68,7 +70,7 @@ public record RemoteVersion(UpdateChannel channel, String version, String url, T
                 }
                 if (jarUrl != null) {
                     // No SHA-1 from GitHub directly; integrity check is skipped (null).
-                    return new RemoteVersion(channel, version, jarUrl, Type.JAR, null, preview, false);
+                    return new RemoteVersion(channel, version, jarUrl, Type.JAR, null, isPrerelease, false);
                 }
                 throw new IOException("No .jar asset in GitHub release " + tag);
             }
