@@ -63,6 +63,23 @@ jobs:
           BUILD_NUMBER: ${{ steps.version.outputs.build_number }}
         run: timeout 15m ./gradlew :Xenon:shadowJar :Xenon:packagePortable --no-daemon --max-workers=2 --console=plain --stacktrace -x test
 
+      - name: Build HMCLauncher exe
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ steps.version.outputs.version }}"
+          jar="Xenon/build/libs/Xenon-$version.jar"
+          launcher_jar="/tmp/HMCLauncher.jar"
+          launcher_exe="/tmp/HMCLauncher.exe"
+          output="Xenon/build/dist/Xenon-$version.exe"
+
+          curl -fsSL "https://repo1.maven.org/maven2/org/glavo/hmcl/HMCLauncher/3.7.0.1/HMCLauncher-3.7.0.1.jar" -o "$launcher_jar"
+          unzip -o "$launcher_jar" "assets/HMCLauncher.exe" -d /tmp
+          cp "$launcher_exe" "$output"
+          cat "$jar" >> "$output"
+          chmod +x "$output"
+          ls -lh "$output"
+
       - name: Normalize release files
         shell: bash
         run: |
@@ -71,15 +88,17 @@ jobs:
           mkdir -p release
           jar="Xenon/build/libs/Xenon-$version.jar"
           zip="Xenon/build/dist/Xenon-portable-$version.zip"
-          test -n "$jar"
-          test -n "$zip"
+          exe="Xenon/build/dist/Xenon-$version.exe"
           test -f "$jar"
           test -f "$zip"
+          test -f "$exe"
           cp "$jar" "release/Xenon-$version.jar"
           cp "$zip" "release/Xenon-portable-$version.zip"
+          cp "$exe" "release/Xenon-$version.exe"
           cd release
           sha256sum "Xenon-$version.jar" > "Xenon-$version.jar.sha256"
           sha256sum "Xenon-portable-$version.zip" > "Xenon-portable-$version.zip.sha256"
+          sha256sum "Xenon-$version.exe" > "Xenon-$version.exe.sha256"
           ls -lh
 
       - name: Upload release bundle
@@ -118,6 +137,7 @@ jobs:
 
           | File | Description |
           | :--- | :---------- |
+          | \`Xenon-$version.exe\` | Windows exe (auto-downloads JRE on first run) |
           | \`Xenon-portable-$version.zip\` | Portable package |
           | \`Xenon-$version.jar\` | Executable JAR |
 
