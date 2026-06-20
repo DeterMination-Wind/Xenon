@@ -70,12 +70,11 @@ jobs:
           version="${{ steps.version.outputs.version }}"
           jar="Xenon/build/libs/Xenon-$version.jar"
           launcher_jar="/tmp/HMCLauncher.jar"
-          launcher_exe="/tmp/HMCLauncher.exe"
           output="Xenon/build/dist/Xenon-$version.exe"
 
           curl -fsSL "https://repo1.maven.org/maven2/org/glavo/hmcl/HMCLauncher/3.7.0.1/HMCLauncher-3.7.0.1.jar" -o "$launcher_jar"
           unzip -o "$launcher_jar" "assets/HMCLauncher.exe" -d /tmp
-          cp "$launcher_exe" "$output"
+          cp /tmp/assets/HMCLauncher.exe "$output"
           cat "$jar" >> "$output"
           chmod +x "$output"
           ls -lh "$output"
