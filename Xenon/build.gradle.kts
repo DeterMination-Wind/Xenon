@@ -293,12 +293,16 @@ val createLocaleNamesResourceBundle by tasks.registering(CreateLocaleNamesResour
 val jpackageOutDir = layout.buildDirectory.dir("dist")
 val jpackageInputDir = layout.buildDirectory.dir("jpackage-input")
 val windowsBootstrapDir = layout.buildDirectory.dir("windows-bootstrap")
+val windowsAppImageDir = layout.buildDirectory.dir("windows-app-image")
 val windowsBootstrapPayloadZip = layout.buildDirectory.file("windows-bootstrap/Xenon-payload.zip")
 
 val collectJpackageInput by tasks.registering(Copy::class) {
     dependsOn(tasks.shadowJar)
     from(shadowJarFile)
     into(jpackageInputDir)
+    doFirst {
+        jpackageInputDir.get().asFile.deleteRecursively()
+    }
 }
 
 abstract class JPackageTask : Exec() {
@@ -339,6 +343,24 @@ val packageWindows by tasks.registering(JPackageTask::class) {
         args.addAll(listOf("--type", "msi",
             "--win-shortcut", "--win-menu", "--win-menu-group", "Xenon",
             "--win-dir-chooser"))
+        commandLine(listOf(executable!!) + args)
+    }
+}
+
+val packageWindowsAppImage by tasks.registering(JPackageTask::class) {
+    group = "distribution"
+    description = "Build the Windows app-image consumed by the single-file bootstrapper"
+    dependsOn(collectJpackageInput)
+    val dest = windowsAppImageDir.get().asFile
+    doFirst {
+        if (!System.getProperty("os.name").lowercase().contains("win"))
+            throw GradleException("packageWindowsAppImage requires running on Windows")
+        if (dest.exists()) {
+            dest.deleteRecursively()
+        }
+        dest.mkdirs()
+        val args = commonJPackageArgs(shadowJarFile.get().asFile.name, dest)
+        args.addAll(listOf("--type", "app-image"))
         commandLine(listOf(executable!!) + args)
     }
 }
@@ -423,10 +445,10 @@ val packagePortable by tasks.registering(Zip::class) {
 val zipWindowsBootstrapPayload by tasks.registering(Zip::class) {
     group = "distribution"
     description = "Zip the Windows app-image payload consumed by the single-file bootstrapper"
-    dependsOn(packageWindows)
+    dependsOn(packageWindowsAppImage)
     archiveFileName.set("Xenon-payload.zip")
     destinationDirectory.set(windowsBootstrapDir)
-    from(jpackageOutDir.map { it.dir("Xenon-exe") })
+    from(windowsAppImageDir)
 }
 
 val compileWindowsBootstrapStub by tasks.registering(Exec::class) {
