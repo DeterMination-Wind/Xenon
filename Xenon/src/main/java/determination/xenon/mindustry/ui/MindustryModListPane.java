@@ -18,6 +18,7 @@
 package determination.xenon.mindustry.ui;
 
 import com.jfoenix.controls.JFXButton;
+import com.jfoenix.controls.JFXTextField;
 import determination.xenon.mindustry.mod.MindustryLocalMod;
 import determination.xenon.mindustry.mod.MindustryModManager;
 import determination.xenon.task.Schedulers;
@@ -33,13 +34,16 @@ import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 import javafx.stage.FileChooser;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 import static determination.xenon.util.i18n.I18n.i18n;
 import static determination.xenon.util.logging.Logger.LOG;
@@ -50,8 +54,10 @@ public final class MindustryModListPane extends BorderPane {
     private final Path modsDir;
     private final MindustryModManager manager;
     private final Label status = new Label();
+    private final JFXTextField search = new JFXTextField();
     private final VBox listBox = new VBox(2);
     private final ScrollPane scroll = new ScrollPane(listBox);
+    private List<MindustryLocalMod> allMods = List.of();
 
     public MindustryModListPane(Path dataDir) {
         this.modsDir = dataDir.resolve("mods");
@@ -70,10 +76,14 @@ public final class MindustryModListPane extends BorderPane {
         JFXButton openFolder = FXUtils.newRaisedButton(i18n("folder.mod"));
         openFolder.setOnAction(e -> FXUtils.openFolder(modsDir));
 
+        search.setPromptText(i18n("xenon.mindustry.modlist.search"));
+        search.textProperty().addListener((obs, oldValue, newValue) -> rebuildList());
+        HBox.setHgrow(search, Priority.ALWAYS);
+
         HBox toolbar = new HBox(8, refresh, install, openFolder);
         toolbar.setAlignment(Pos.CENTER_LEFT);
 
-        VBox header = new VBox(6, title, hint, toolbar, status);
+        VBox header = new VBox(6, title, hint, toolbar, search, status);
         header.setPadding(new Insets(0, 0, 8, 0));
         setTop(header);
 
@@ -100,15 +110,29 @@ public final class MindustryModListPane extends BorderPane {
     }
 
     private void populate(List<MindustryLocalMod> mods) {
+        allMods = List.copyOf(mods);
+        rebuildList();
+    }
+
+    private void rebuildList() {
         listBox.getChildren().clear();
-        status.setText(i18n("xenon.mindustry.modlist.count", mods.size()));
-        if (mods.isEmpty()) {
+        String query = search.getText() == null
+                ? ""
+                : search.getText().trim().toLowerCase(Locale.ROOT);
+        List<MindustryLocalMod> visible = new ArrayList<>();
+        for (MindustryLocalMod mod : allMods) {
+            if (matches(mod, query)) {
+                visible.add(mod);
+            }
+        }
+        status.setText(i18n("xenon.mindustry.modlist.count", visible.size()));
+        if (visible.isEmpty()) {
             Label empty = new Label(i18n("xenon.mindustry.modlist.empty"));
             empty.setPadding(new Insets(8));
             listBox.getChildren().add(empty);
             return;
         }
-        for (MindustryLocalMod mod : mods) {
+        for (MindustryLocalMod mod : visible) {
             listBox.getChildren().add(buildRow(mod));
         }
     }
@@ -119,10 +143,17 @@ public final class MindustryModListPane extends BorderPane {
         String label = mod.displayName();
         if (mod.getVersion() != null && !mod.getVersion().isBlank()) label += "  v" + mod.getVersion();
         if (!mod.isEnabled()) label += "  [" + i18n("xenon.mindustry.modlist.disabled") + "]";
+        if (mod.isIgnoredByDuplicate()) label += "  [" + i18n("xenon.mindustry.modlist.ignored") + "]";
         item.setTitle(label);
 
         StringBuilder subtitle = new StringBuilder();
-        if (mod.getAuthor() != null && !mod.getAuthor().isBlank()) subtitle.append(mod.getAuthor());
+        if (mod.isIgnoredByDuplicate()) {
+            subtitle.append(i18n("xenon.mindustry.modlist.ignored_by", mod.getIgnoredByFileName()));
+        }
+        if (mod.getAuthor() != null && !mod.getAuthor().isBlank()) {
+            if (subtitle.length() > 0) subtitle.append("  —  ");
+            subtitle.append(mod.getAuthor());
+        }
         if (mod.getDescription() != null && !mod.getDescription().isBlank()) {
             if (subtitle.length() > 0) subtitle.append("  —  ");
             String desc = mod.getDescription().replaceAll("\\s+", " ").trim();
@@ -154,6 +185,24 @@ public final class MindustryModListPane extends BorderPane {
         actions.getChildren().setAll(toggle, delete);
         item.setRightGraphic(actions);
         return item;
+    }
+
+    private boolean matches(MindustryLocalMod mod, String query) {
+        if (query.isEmpty()) {
+            return true;
+        }
+        return contains(mod.displayName(), query)
+                || contains(mod.getName(), query)
+                || contains(mod.getInternalName(), query)
+                || contains(mod.getAuthor(), query)
+                || contains(mod.getDescription(), query)
+                || contains(mod.getVersion(), query)
+                || contains(mod.getFile().getFileName().toString(), query)
+                || contains(mod.getIgnoredByFileName(), query);
+    }
+
+    private static boolean contains(String value, String query) {
+        return value != null && value.toLowerCase(Locale.ROOT).contains(query);
     }
 
     private void chooseAndInstall() {

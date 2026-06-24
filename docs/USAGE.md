@@ -1,6 +1,6 @@
 ﻿# Xenon 用户手册
 
-本文逐步演示 Xenon v1.2 的主要操作。每节末尾给出预期的状态校验，方便排错。
+本文逐步演示 Xenon v0.1 的主要操作。每节末尾给出预期的状态校验，方便排错。
 
 ## 1. 安装 Xenon
 
@@ -20,7 +20,7 @@
 ## 2. 安装一个 Mindustry 变体
 
 1. 侧栏点 "Install Mindustry"；
-2. **第 1 步 — 变体**：在 Vanilla / Bleeding-Edge / MindustryX 中选择一个；点 "Install" 进下一步；
+2. **第 1 步 — 变体**：5 张卡片任选一个：Vanilla / Bleeding-Edge / MindustryX / CN-ARC / Foo Client；点 "Install" 进下一步；
 3. **第 2 步 — 版本**：拉取 GitHub Release，列出 build / 发布日期。点选一行 → "Next >"；
 4. **第 3 步 — 命名/隔离**：
    - 版本 id（默认 `<variant>-<build>`）；只接受字母/数字/`._-`；

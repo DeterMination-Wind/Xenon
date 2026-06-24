@@ -37,17 +37,13 @@ import java.util.Locale;
 import static determination.xenon.util.i18n.I18n.i18n;
 
 /**
- * Mindustry variant picker.
+ * Five-card Mindustry variant picker.
  *
  * <p>Each card uses the upstream project's official icon (bundled under
- * {@code /assets/img/mindustry/}).</p>
+ * {@code /assets/img/mindustry/}); BE / CN-ARC are upstream forks that
+ * don't ship their own icon, so they reuse the Vanilla art.</p>
  */
 public final class MindustryVariantPickerPane extends ScrollPane {
-    private static final VersionVariant[] DOWNLOAD_VARIANTS = {
-            VersionVariant.VANILLA,
-            VersionVariant.BE,
-            VersionVariant.MINDUSTRY_X
-    };
 
     public MindustryVariantPickerPane() {
         VBox content = new VBox();
@@ -55,7 +51,8 @@ public final class MindustryVariantPickerPane extends ScrollPane {
 
         content.getChildren().add(new ClassTitle(i18n("xenon.install.variant.title").toUpperCase(Locale.ROOT)));
 
-        for (VersionVariant variant : DOWNLOAD_VARIANTS) {
+        for (VersionVariant variant : VersionVariant.values()) {
+            if (variant == VersionVariant.CUSTOM) continue;
             AdvancedListItem item = new AdvancedListItem();
             item.setLeftGraphic(buildIconNode(variant));
             item.setTitle(variant.getDisplayName());

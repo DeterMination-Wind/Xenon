@@ -85,33 +85,59 @@ public final class MindustrySettingsBin {
     public static void setPlayerProfile(Path dataDir, String uid, String nickname) {
         if (dataDir == null) return;
         if ((uid == null || uid.isBlank()) && (nickname == null || nickname.isBlank())) return;
+        LinkedHashMap<String, Object> values = new LinkedHashMap<>();
+        if (uid != null && !uid.isBlank()) values.put("uuid", uid);
+        if (nickname != null && !nickname.isBlank()) values.put("name", nickname);
+        // Forced player nickname flag — set by Mindustry when the user
+        // edits their name in-game, but harmless to preserve / true.
+        values.putIfAbsent("name-forced", Boolean.TRUE);
+        putValues(dataDir, values);
+    }
+
+    /**
+     * Merge launcher-provided values into {@code <dataDir>/settings.bin}.
+     *
+     * <p>Existing entries are preserved unless their keys are present in
+     * {@code values}. The backup file is updated after the primary write so
+     * Mindustry's own recovery path observes the same values.</p>
+     */
+    public static void putValues(Path dataDir, Map<String, Object> values) {
+        if (dataDir == null || values == null || values.isEmpty()) return;
         try {
-            Files.createDirectories(dataDir);
-            Path file = dataDir.resolve(FILE_NAME);
-
-            LinkedHashMap<String, Object> entries = readIfPresent(file);
-            if (uid != null && !uid.isBlank()) entries.put("uuid", uid);
-            if (nickname != null && !nickname.isBlank()) entries.put("name", nickname);
-            // Forced player nickname flag — set by Mindustry when the user
-            // edits their name in-game, but harmless to preserve / true.
-            entries.putIfAbsent("name-forced", Boolean.TRUE);
-
-            writeAtomically(file, entries);
-
-            // Mindustry checks the backup if the primary is corrupt; keep
-            // it in sync so a crash mid-write doesn't hand the user a
-            // stale name.
-            Path backup = dataDir.resolve(BACKUP_NAME);
-            try {
-                Files.copy(file, backup, StandardCopyOption.REPLACE_EXISTING);
-            } catch (IOException ignored) {
-                // Best-effort; primary file is the source of truth.
-            }
-            Logger.LOG.info("Mindustry settings.bin updated: name=\"" + nickname + "\" uid=" + uid);
+            putValuesOrThrow(dataDir, values);
         } catch (IOException ex) {
             Logger.LOG.warning("Failed to write Mindustry settings.bin in " + dataDir
                     + ": " + ex.getMessage());
         }
+    }
+
+    /**
+     * Merge launcher-provided values into {@code <dataDir>/settings.bin}.
+     *
+     * <p>Unlike {@link #putValues(Path, Map)}, this method reports IO
+     * failures to the caller. Use it for launch-time state that must be
+     * persisted before the game starts.</p>
+     */
+    public static void putValuesOrThrow(Path dataDir, Map<String, Object> values) throws IOException {
+        if (dataDir == null || values == null || values.isEmpty()) return;
+        Files.createDirectories(dataDir);
+        Path file = dataDir.resolve(FILE_NAME);
+
+        LinkedHashMap<String, Object> entries = readIfPresent(file);
+        entries.putAll(values);
+
+        writeAtomically(file, entries);
+
+        // Mindustry checks the backup if the primary is corrupt; keep
+        // it in sync so a crash mid-write doesn't hand the user a
+        // stale value.
+        Path backup = dataDir.resolve(BACKUP_NAME);
+        try {
+            Files.copy(file, backup, StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException ignored) {
+            // Best-effort; primary file is the source of truth.
+        }
+        Logger.LOG.info("Mindustry settings.bin updated with " + values.size() + " launcher value(s)");
     }
 
     private static LinkedHashMap<String, Object> readIfPresent(Path file) {

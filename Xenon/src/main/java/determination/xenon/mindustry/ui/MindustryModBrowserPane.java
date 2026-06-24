@@ -24,6 +24,7 @@ import determination.xenon.mindustry.MindustryImportFlow;
 import determination.xenon.mindustry.MindustryVersion;
 import determination.xenon.mindustry.XenonGameRepository;
 import determination.xenon.mindustry.download.GitHubAsset;
+import determination.xenon.mindustry.download.HighStarModCache;
 import determination.xenon.mindustry.download.GitHubRelease;
 import determination.xenon.mindustry.download.GitHubReleaseClient;
 import determination.xenon.mindustry.download.MirrorDownloader;
@@ -64,6 +65,7 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 
 import static determination.xenon.ui.FXUtils.newToggleButton4;
 import static determination.xenon.util.i18n.I18n.i18n;
@@ -556,19 +558,28 @@ public final class MindustryModBrowserPane extends BorderPane implements PageAwa
                 throw new IOException("No installable .zip/.jar asset in "
                         + ownerRepo + " release " + release.getTagName());
             }
+            String directDownloadUrl = asset.getDownloadUrl();
+            String primaryDownloadUrl = directDownloadUrl;
+            if (HighStarModCache.shouldTryCacheFirst(mod.getStars(), directDownloadUrl)) {
+                String cacheUrl = HighStarModCache.toCacheUrl(directDownloadUrl);
+                if (cacheUrl != null) {
+                    primaryDownloadUrl = cacheUrl;
+                }
+            }
             String assetName = asset.getName();
             String ext = assetName.toLowerCase(Locale.ROOT).endsWith(".jar") ? ".jar" : ".zip";
             String safeRepo = ownerRepo.replace('/', '_').replaceAll("[^A-Za-z0-9._-]", "_");
             Path staging = Path.of(System.getProperty("java.io.tmpdir", "."),
                     "xenon-mod-" + safeRepo + "-" + System.nanoTime() + ext);
-            return new AssetPick(asset, staging);
+            return new AssetPick(asset, staging, primaryDownloadUrl, directDownloadUrl);
         }).setName(i18n("xenon.mindustry.mod.browser.task.resolve", label));
 
-        // Stage 2: download via MirrorDownloader — same path Mindustry-jar
-        // installs use, so users get the same per-second speed counter +
-        // determinate progress bar in the task dialog.
+        // Stage 2: high-star mods try the 121 cache first when the chosen
+        // asset is a canonical GitHub release URL, then fall back to the
+        // usual MirrorDownloader GitHub race. Everything else keeps the
+        // existing mirror-racing path unchanged.
         Task<Path> download = resolve.thenComposeAsync(Schedulers.io(), pick ->
-                new ModDownloadTask(pick.asset, pick.staging, label));
+                new ModDownloadTask(pick, label));
 
         // Stage 3: copy the downloaded archive into <dataDir>/mods/, then
         // delete the staging file regardless of outcome.
@@ -617,9 +628,14 @@ public final class MindustryModBrowserPane extends BorderPane implements PageAwa
     private static final class AssetPick {
         final GitHubAsset asset;
         final Path staging;
-        AssetPick(GitHubAsset asset, Path staging) {
+        final String primaryDownloadUrl;
+        final String fallbackDownloadUrl;
+
+        AssetPick(GitHubAsset asset, Path staging, String primaryDownloadUrl, String fallbackDownloadUrl) {
             this.asset = asset;
             this.staging = staging;
+            this.primaryDownloadUrl = primaryDownloadUrl;
+            this.fallbackDownloadUrl = fallbackDownloadUrl;
         }
     }
 
@@ -632,24 +648,52 @@ public final class MindustryModBrowserPane extends BorderPane implements PageAwa
     private final class ModDownloadTask extends Task<Path> {
         private final GitHubAsset asset;
         private final Path target;
+        private final String primaryDownloadUrl;
+        private final String fallbackDownloadUrl;
 
-        ModDownloadTask(GitHubAsset asset, Path target, String label) {
-            this.asset = asset;
-            this.target = target;
+        ModDownloadTask(AssetPick pick, String label) {
+            this.asset = pick.asset;
+            this.target = pick.staging;
+            this.primaryDownloadUrl = pick.primaryDownloadUrl;
+            this.fallbackDownloadUrl = pick.fallbackDownloadUrl;
             setName(i18n("xenon.mindustry.mod.browser.task.download",
                     label, asset.getName()));
         }
 
         @Override
         public void execute() throws Exception {
-            new MirrorDownloader(MindustryImportFlow.cachesDirectory())
-                    .download(asset.getDownloadUrl(), target, asset.getSize(),
-                            (read, total) -> {
-                                if (total > 0 && read >= 0) {
-                                    updateProgress(Math.min(read, total), total);
-                                }
-                            });
+            MirrorDownloader downloader = new MirrorDownloader(MindustryImportFlow.cachesDirectory());
+            try {
+                downloadAndVerify(downloader, primaryDownloadUrl);
+            } catch (IOException primaryFailure) {
+                if (Objects.equals(primaryDownloadUrl, fallbackDownloadUrl)) {
+                    throw primaryFailure;
+                }
+                LOG.warning("High-star mod cache download failed for "
+                        + asset.getName() + " via " + primaryDownloadUrl
+                        + ": " + primaryFailure.getMessage()
+                        + " — falling back to mirror-race GitHub path",
+                        primaryFailure);
+                Files.deleteIfExists(target);
+                downloadAndVerify(downloader, fallbackDownloadUrl);
+            }
             setResult(target);
+        }
+
+        private void downloadAndVerify(MirrorDownloader downloader, String sourceUrl) throws IOException {
+            downloader.download(sourceUrl, target, asset.getSize(), (read, total) -> {
+                if (total > 0 && read >= 0) {
+                    updateProgress(Math.min(read, total), total);
+                }
+            });
+            if (asset.getSize() > 0) {
+                long actualSize = Files.size(target);
+                if (actualSize != asset.getSize()) {
+                    throw new IOException("Size mismatch downloading " + asset.getName()
+                            + " from " + sourceUrl + ": expected "
+                            + asset.getSize() + " bytes but got " + actualSize);
+                }
+            }
         }
     }
 

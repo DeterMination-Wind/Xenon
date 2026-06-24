@@ -17,28 +17,23 @@
  */
 package determination.xenon;
 
-import java.awt.GraphicsEnvironment;
-
 public final class JavaFXLauncher {
 
     private JavaFXLauncher() {
     }
 
-    private static final boolean started = startToolkit();
+    private static boolean started = false;
 
-    private static boolean startToolkit() {
-        if (isHeadless()) {
-            return false;
-        }
+    static {
+        // init JavaFX Toolkit
         try {
             javafx.application.Platform.startup(() -> {
             });
-            return true;
+            started = true;
         } catch (IllegalStateException e) {
-            return true;
+            started = true;
         } catch (Throwable e) {
             e.printStackTrace();
-            return false;
         }
     }
 
@@ -47,9 +42,5 @@ public final class JavaFXLauncher {
 
     public static boolean isStarted() {
         return started;
-    }
-
-    private static boolean isHeadless() {
-        return System.getenv("CI") != null || GraphicsEnvironment.isHeadless();
     }
 }

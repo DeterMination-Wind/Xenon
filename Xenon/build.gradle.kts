@@ -5,6 +5,8 @@ import determination.xenon.gradle.l10n.CreateLanguageList
 import determination.xenon.gradle.l10n.CreateLocaleNamesResourceBundle
 import determination.xenon.gradle.l10n.UpsideDownTranslate
 import determination.xenon.gradle.utils.PropertiesUtils
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.security.MessageDigest
 import java.util.zip.ZipFile
 
@@ -49,6 +51,8 @@ dependencies {
 }
 
 fun digest(algorithm: String, bytes: ByteArray): ByteArray = MessageDigest.getInstance(algorithm).digest(bytes)
+
+fun digestFile(algorithm: String, file: File): ByteArray = MessageDigest.getInstance(algorithm).digest(file.readBytes())
 
 fun createChecksum(file: File) {
     val algorithms = linkedMapOf("SHA-1" to "sha1", "SHA-256" to "sha256", "SHA-512" to "sha512")
@@ -288,6 +292,8 @@ val createLocaleNamesResourceBundle by tasks.registering(CreateLocaleNamesResour
 
 val jpackageOutDir = layout.buildDirectory.dir("dist")
 val jpackageInputDir = layout.buildDirectory.dir("jpackage-input")
+val windowsBootstrapDir = layout.buildDirectory.dir("windows-bootstrap")
+val windowsBootstrapPayloadZip = layout.buildDirectory.file("windows-bootstrap/Xenon-payload.zip")
 
 val collectJpackageInput by tasks.registering(Copy::class) {
     dependsOn(tasks.shadowJar)
@@ -414,13 +420,86 @@ val packagePortable by tasks.registering(Zip::class) {
     from(genPortableLaunchers.map { it.outputs.files })
 }
 
+val zipWindowsBootstrapPayload by tasks.registering(Zip::class) {
+    group = "distribution"
+    description = "Zip the Windows app-image payload consumed by the single-file bootstrapper"
+    dependsOn(packageWindows)
+    archiveFileName.set("Xenon-payload.zip")
+    destinationDirectory.set(windowsBootstrapDir)
+    from(jpackageOutDir.map { it.dir("Xenon-exe") })
+}
+
+val compileWindowsBootstrapStub by tasks.registering(Exec::class) {
+    group = "distribution"
+    description = "Compile the native-free Windows bootstrap stub with the system C# compiler"
+    val outputDir = windowsBootstrapDir.map { it.dir("stub") }
+    outputs.dir(outputDir)
+    doFirst {
+        if (!System.getProperty("os.name").lowercase().contains("win"))
+            throw GradleException("compileWindowsBootstrapStub requires running on Windows")
+        val dir = outputDir.get().asFile
+        if (dir.exists()) {
+            dir.deleteRecursively()
+        }
+        dir.mkdirs()
+        val frameworkDir = File(System.getenv("WINDIR") ?: "C:/Windows", "Microsoft.NET/Framework64/v4.0.30319")
+        val csc = frameworkDir.resolve("csc.exe")
+        if (!csc.isFile) {
+            throw GradleException("csc.exe not found at $csc")
+        }
+        executable = csc.absolutePath
+        commandLine(
+            csc.absolutePath,
+            "/nologo",
+            "/target:winexe",
+            "/optimize+",
+            "/out:${dir.resolve("XenonBootstrap.exe").absolutePath}",
+            "/r:${frameworkDir.resolve("System.IO.Compression.dll").absolutePath}",
+            "/r:${frameworkDir.resolve("System.IO.Compression.FileSystem.dll").absolutePath}",
+            "/r:${frameworkDir.resolve("System.Windows.Forms.dll").absolutePath}",
+            rootProject.file("XenonBootstrap/XenonBootstrap.cs").absolutePath
+        )
+    }
+}
+
+val packageWindowsSingleFileExe by tasks.registering {
+    group = "distribution"
+    description = "Build the single-file Xenon.exe that extracts its bundled runtime once and reuses it"
+    dependsOn(zipWindowsBootstrapPayload)
+    dependsOn(compileWindowsBootstrapStub)
+    val outputFile = layout.buildDirectory.file("dist/Xenon.exe")
+    outputs.file(outputFile)
+    doLast {
+        val bootstrapExe = windowsBootstrapDir.get().file("stub/XenonBootstrap.exe").asFile
+        val payloadZip = windowsBootstrapPayloadZip.get().asFile
+        val destination = outputFile.get().asFile
+        destination.parentFile.mkdirs()
+        val payloadHash = digestFile("SHA-256", payloadZip)
+        val footer = ByteBuffer.allocate(16 + Long.SIZE_BYTES + payloadHash.size)
+            .order(ByteOrder.LITTLE_ENDIAN)
+            .put("XENONPAYLOADV1!!".toByteArray(Charsets.US_ASCII))
+            .putLong(payloadZip.length())
+            .put(payloadHash)
+            .array()
+        destination.outputStream().use { output ->
+            bootstrapExe.inputStream().use { it.copyTo(output) }
+            payloadZip.inputStream().use { it.copyTo(output) }
+            output.write(footer)
+        }
+        createChecksum(destination)
+    }
+}
+
 tasks.register("packageAll") {
     group = "distribution"
     description = "Run whichever jpackage target matches the current host + always produce the portable zip"
     dependsOn(packagePortable)
     val osName = System.getProperty("os.name").lowercase()
     when {
-        osName.contains("win") -> dependsOn(packageWindows)
+        osName.contains("win") -> {
+            dependsOn(packageWindows)
+            dependsOn(packageWindowsSingleFileExe)
+        }
         osName.contains("mac") -> dependsOn(packageMac)
         else -> {
             dependsOn(packageLinuxDeb)

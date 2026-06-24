@@ -18,6 +18,8 @@
 package determination.xenon.mindustry;
 
 import determination.xenon.util.logging.Logger;
+import org.jetbrains.annotations.NotNullByDefault;
+import org.jetbrains.annotations.Nullable;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -36,6 +38,7 @@ import java.util.function.Consumer;
  * launcher pipeline into this code path would be a net loss. The whole
  * thing is one {@link ProcessBuilder} plus two reader threads.</p>
  */
+@NotNullByDefault
 public final class XenonLauncher {
 
     private XenonLauncher() {
@@ -48,8 +51,8 @@ public final class XenonLauncher {
      * silently drop them.
      */
     public static MindustryProcess launch(LaunchOptions options,
-                                          Consumer<String> stdout,
-                                          Consumer<String> stderr) throws IOException {
+                                          @Nullable Consumer<String> stdout,
+                                          @Nullable Consumer<String> stderr) throws IOException {
         Files.createDirectories(options.getDataDir());
 
         ProcessBuilder pb = new ProcessBuilder(options.buildCommandLine());

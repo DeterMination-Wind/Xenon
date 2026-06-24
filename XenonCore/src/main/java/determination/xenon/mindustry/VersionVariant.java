@@ -18,7 +18,7 @@
 package determination.xenon.mindustry;
 
 /**
- * Mindustry desktop client variants Xenon can recognize.
+ * The five Mindustry-desktop client variants Xenon can manage.
  * <p>
  * Each variant points at a different upstream GitHub repository; the
  * release-asset matching rules and the per-build Java requirements differ

@@ -19,6 +19,7 @@ package determination.xenon.mindustry;
 
 import determination.xenon.Metadata;
 import determination.xenon.mindustry.modpack.XenonModpackInstaller;
+import determination.xenon.mindustry.ui.MindustryRoutes;
 import determination.xenon.setting.Profile;
 import determination.xenon.setting.Profiles;
 import determination.xenon.setting.Settings;
@@ -177,12 +178,7 @@ public final class MindustryImportFlow {
         Schedulers.io().execute(() -> {
             try {
                 MindustryVersion version = MindustryLaunchService.importLocalJar(repo, jar, id, null);
-                LaunchOptions opts = MindustryLaunchService.buildLaunchOptions(repo, version,
-                        CurrentPlayerProfile.current());
-                XenonLauncher.MindustryProcess proc = XenonLauncher.launch(opts,
-                        line -> LOG.info("[mindustry] " + line),
-                        line -> LOG.warning("[mindustry] " + line));
-                LOG.info("Mindustry process started: pid=" + proc.getProcess().pid());
+                MindustryRoutes.launch(version);
             } catch (Throwable ex) {
                 LOG.warning("Mindustry import/launch failed", ex);
                 Schedulers.javafx().execute(() -> Controllers.dialog(

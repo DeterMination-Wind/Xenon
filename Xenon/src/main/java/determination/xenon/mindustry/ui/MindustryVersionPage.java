@@ -70,7 +70,7 @@ public final class MindustryVersionPage extends DecoratorAnimatedPage implements
         this.dataDir = version.resolveDataDir(versionRoot);
 
         modTab.setNodeSupplier(() -> new MindustryModListPane(dataDir));
-        saveTab.setNodeSupplier(() -> new MindustrySaveListPane(dataDir));
+        saveTab.setNodeSupplier(() -> new MindustrySaveListPane(repo, version, versionRoot));
         schematicTab.setNodeSupplier(() -> new MindustrySchematicListPane(dataDir));
         crashTab.setNodeSupplier(() -> new MindustryCrashListPane(dataDir, version.getVariant()));
 
@@ -80,7 +80,7 @@ public final class MindustryVersionPage extends DecoratorAnimatedPage implements
         AdvancedListBox sideBar = new AdvancedListBox()
                 .startCategory(version.getName())
                 .addNavigationDrawerTab(tab, modTab, i18n("xenon.mindustry.modlist.title"), SVG.EXTENSION, SVG.EXTENSION_FILL)
-                .addNavigationDrawerTab(tab, saveTab, i18n("xenon.mindustry.save.title"), SVG.PUBLIC)
+                .addNavigationDrawerTab(tab, saveTab, i18n("xenon.mindustry.save.title"), SVG.ARCHIVE, SVG.ARCHIVE_FILL)
                 .addNavigationDrawerTab(tab, schematicTab, i18n("xenon.mindustry.schematic.title"), SVG.SCHEMA, SVG.SCHEMA_FILL)
                 .addNavigationDrawerTab(tab, crashTab, i18n("xenon.mindustry.crash.title"), SVG.SCRIPT);
         VBox.setVgrow(sideBar, Priority.ALWAYS);

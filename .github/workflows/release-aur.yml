@@ -1,0 +1,131 @@
+name: Release and Update AUR
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Get version from tag
+        id: get_version
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Build with Gradle
+        run: ./gradlew :Xenon:shadowJar :Xenon:packagePortable --no-daemon
+
+      - name: Generate checksums
+        working-directory: Xenon/build
+        run: |
+          sha256sum dist/Xenon-portable-*.zip > Xenon-portable-${{ steps.get_version.outputs.version }}.zip.sha256
+          sha256sum libs/Xenon-*.jar > Xenon-${{ steps.get_version.outputs.version }}.jar.sha256
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts
+          path: |
+            Xenon/build/dist/Xenon-portable-*.zip
+            Xenon/build/libs/Xenon-*.jar
+            Xenon/build/*.sha256
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-artifacts
+
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          cat > RELEASE_NOTE.md << EOF
+          # Xenon v${{ needs.build.outputs.version }}
+
+          A Mindustry Launcher built on the HMCL UI.
+
+          ## Downloads
+
+          | File | Description |
+          | :--- | :---------- |
+          | \`Xenon-portable-${{ needs.build.outputs.version }}.zip\` | Portable build (no JRE) |
+          | \`Xenon-${{ needs.build.outputs.version }}.jar\` | Fat JAR |
+
+          ## Quick Start
+
+          1. Download \`Xenon-portable-${{ needs.build.outputs.version }}.zip\` and extract
+          2. Windows: double-click \`Xenon.bat\`
+          3. Linux/macOS: \`chmod +x Xenon.sh && ./Xenon.sh\`
+
+          Requires Java 17+ with JavaFX.
+
+          ## Changes
+
+          See [CHANGELOG.md](CHANGELOG.md) for details.
+          EOF
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            Xenon-portable-${{ needs.build.outputs.version }}.zip
+            Xenon-${{ needs.build.outputs.version }}.jar
+            Xenon-portable-${{ needs.build.outputs.version }}.zip.sha256
+            Xenon-${{ needs.build.outputs.version }}.jar.sha256
+          body_path: RELEASE_NOTE.md
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  update-aur:
+    needs: [build, release]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Checkout AUR
+        uses: actions/checkout@v4
+        with:
+          repository: aur.archlinux.org/xenon-mdt.git
+          ssh-known-hosts: aur.archlinux.org
+          ssh-private-key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+
+      - name: Update PKGBUILD
+        run: |
+          sed -i "s/pkgver=.*/pkgver=${{ needs.build.outputs.version }}/" PKGBUILD
+          sed -i "s/pkgrel=.*/pkgrel=1/" PKGBUILD
+          updpkgsums
+
+      - name: Generate SRCINFO
+        run: makepkg --printsrcinfo > .SRCINFO
+
+      - name: Commit and push to AUR
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add PKGBUILD .SRCINFO
+          git commit -m "Update to v${{ needs.build.outputs.version }}"
+          git push origin master
+        env:
+          GIT_SSH_COMMAND: "ssh -o StrictHostKeyChecking=no"

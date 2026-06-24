@@ -18,6 +18,8 @@
 package determination.xenon.mindustry;
 
 import determination.xenon.util.platform.OperatingSystem;
+import org.jetbrains.annotations.NotNullByDefault;
+import org.jetbrains.annotations.Nullable;
 
 import java.nio.file.Path;
 import java.util.Objects;
@@ -32,11 +34,12 @@ import java.util.Objects;
  * MC inheritance chain (libraries / asset index / quick-play / ...) does
  * not apply to Mindustry.</p>
  */
+@NotNullByDefault
 public final class MindustryVersion {
     /** Stable identifier picked by the user (also the directory name). */
-    private String id;
+    private @Nullable String id;
     /** Display name (defaults to {@link #id} if absent). */
-    private String name;
+    private @Nullable String name;
     private VersionVariant variant = VersionVariant.CUSTOM;
     /** Mindustry build number, or 0 for unknown / custom imports. */
     private int build;
@@ -46,7 +49,7 @@ public final class MindustryVersion {
      * Jar path, relative to the version root if it lives there,
      * otherwise an absolute path.
      */
-    private String jarPath;
+    private @Nullable String jarPath;
     /**
      * Minimum Java major version required. Build &gt;= 140 needs 17,
      * older builds can use 8.
@@ -56,15 +59,17 @@ public final class MindustryVersion {
      * Optional explicit Java home override. {@code null} = pick automatically
      * based on {@link #javaReq}.
      */
-    private String javaHome;
+    private @Nullable String javaHome;
     /** How to resolve {@code -Dmindustry.data.dir}. */
     private DataDirectoryPolicy dataDirPolicy = DataDirectoryPolicy.ISOLATED;
     /** Used only when {@link #dataDirPolicy} is {@link DataDirectoryPolicy#CUSTOM}. */
-    private String customDataDir;
+    private @Nullable String customDataDir;
     /** Free-form JVM args appended after Xenon's defaults. */
-    private String jvmArgs = "";
+    private @Nullable String jvmArgs = "";
     /** Free-form game arguments appended after the jar. */
-    private String gameArgs = "";
+    private @Nullable String gameArgs = "";
+    /** Optional file name under {@code save-archives/} to use as the launch data archive. */
+    private @Nullable String launchSaveFile;
 
     /** Resolve the actual jar file given this version's root directory. */
     public Path resolveJar(Path versionRoot) {
@@ -116,51 +121,55 @@ public final class MindustryVersion {
 
     // ---------- getters / setters ----------
 
-    public String getId() { return id; }
+    public @Nullable String getId() { return id; }
 
-    public void setId(String id) { this.id = id; }
+    public void setId(@Nullable String id) { this.id = id; }
 
-    public String getName() { return name == null || name.isEmpty() ? id : name; }
+    public String getName() { return name == null || name.isEmpty() ? (id == null ? "" : id) : name; }
 
-    public void setName(String name) { this.name = name; }
+    public void setName(@Nullable String name) { this.name = name; }
 
     public VersionVariant getVariant() { return variant == null ? VersionVariant.CUSTOM : variant; }
 
-    public void setVariant(VersionVariant variant) { this.variant = variant; }
+    public void setVariant(@Nullable VersionVariant variant) { this.variant = variant; }
 
     public int getBuild() { return build; }
 
     public void setBuild(int build) { this.build = build; }
 
-    public String getBuildType() { return buildType; }
+    public String getBuildType() { return buildType == null || buildType.isBlank() ? "custom" : buildType; }
 
-    public void setBuildType(String buildType) { this.buildType = buildType; }
+    public void setBuildType(@Nullable String buildType) { this.buildType = buildType; }
 
-    public String getJarPath() { return jarPath; }
+    public @Nullable String getJarPath() { return jarPath; }
 
-    public void setJarPath(String jarPath) { this.jarPath = jarPath; }
+    public void setJarPath(@Nullable String jarPath) { this.jarPath = jarPath; }
 
     public int getJavaReq() { return javaReq; }
 
     public void setJavaReq(int javaReq) { this.javaReq = javaReq; }
 
-    public String getJavaHome() { return javaHome; }
+    public @Nullable String getJavaHome() { return javaHome; }
 
-    public void setJavaHome(String javaHome) { this.javaHome = javaHome; }
+    public void setJavaHome(@Nullable String javaHome) { this.javaHome = javaHome; }
 
     public DataDirectoryPolicy getDataDirPolicy() { return dataDirPolicy == null ? DataDirectoryPolicy.ISOLATED : dataDirPolicy; }
 
-    public void setDataDirPolicy(DataDirectoryPolicy dataDirPolicy) { this.dataDirPolicy = dataDirPolicy; }
+    public void setDataDirPolicy(@Nullable DataDirectoryPolicy dataDirPolicy) { this.dataDirPolicy = dataDirPolicy; }
 
-    public String getCustomDataDir() { return customDataDir; }
+    public @Nullable String getCustomDataDir() { return customDataDir; }
 
-    public void setCustomDataDir(String customDataDir) { this.customDataDir = customDataDir; }
+    public void setCustomDataDir(@Nullable String customDataDir) { this.customDataDir = customDataDir; }
 
     public String getJvmArgs() { return jvmArgs == null ? "" : jvmArgs; }
 
-    public void setJvmArgs(String jvmArgs) { this.jvmArgs = jvmArgs; }
+    public void setJvmArgs(@Nullable String jvmArgs) { this.jvmArgs = jvmArgs; }
 
     public String getGameArgs() { return gameArgs == null ? "" : gameArgs; }
 
-    public void setGameArgs(String gameArgs) { this.gameArgs = gameArgs; }
+    public void setGameArgs(@Nullable String gameArgs) { this.gameArgs = gameArgs; }
+
+    public @Nullable String getLaunchSaveFile() { return launchSaveFile; }
+
+    public void setLaunchSaveFile(@Nullable String launchSaveFile) { this.launchSaveFile = launchSaveFile; }
 }

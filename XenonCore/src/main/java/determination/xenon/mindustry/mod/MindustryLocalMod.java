@@ -47,6 +47,8 @@ public final class MindustryLocalMod {
     private final boolean java;
     private final List<String> dependencies;
     private final boolean enabled;
+    private final String internalName;
+    private final String ignoredByFileName;
 
     public MindustryLocalMod(Path file,
                              String name,
@@ -58,6 +60,21 @@ public final class MindustryLocalMod {
                              int minGameVersion,
                              boolean java,
                              List<String> dependencies) {
+        this(file, name, displayName, author, version, description, main, minGameVersion,
+                java, dependencies, null);
+    }
+
+    private MindustryLocalMod(Path file,
+                              String name,
+                              String displayName,
+                              String author,
+                              String version,
+                              String description,
+                              String main,
+                              int minGameVersion,
+                              boolean java,
+                              List<String> dependencies,
+                              String ignoredByFileName) {
         this.file = Objects.requireNonNull(file, "file");
         this.name = name;
         this.displayName = displayName;
@@ -72,6 +89,8 @@ public final class MindustryLocalMod {
                 : List.copyOf(dependencies);
         this.enabled = !file.getFileName().toString()
                 .toLowerCase(Locale.ROOT).endsWith(".disabled");
+        this.internalName = normalizeInternalName(name);
+        this.ignoredByFileName = ignoredByFileName;
     }
 
     public Path getFile() { return file; }
@@ -97,6 +116,17 @@ public final class MindustryLocalMod {
 
     public boolean isEnabled() { return enabled; }
 
+    public String getInternalName() { return internalName; }
+
+    public boolean isIgnoredByDuplicate() { return ignoredByFileName != null; }
+
+    public String getIgnoredByFileName() { return ignoredByFileName; }
+
+    public MindustryLocalMod ignoredBy(MindustryLocalMod winner) {
+        return new MindustryLocalMod(file, name, displayName, author, version, description,
+                main, minGameVersion, java, dependencies, winner.getFile().getFileName().toString());
+    }
+
     /**
      * Best-effort human-readable label: {@code displayName} when present,
      * else {@code name}, else the archive's file name.
@@ -107,10 +137,18 @@ public final class MindustryLocalMod {
         return file.getFileName().toString();
     }
 
+    private static String normalizeInternalName(String rawName) {
+        if (rawName == null || rawName.isBlank()) {
+            return "";
+        }
+        return rawName.toLowerCase(Locale.ROOT).replace(" ", "-");
+    }
+
     @Override
     public String toString() {
         return "MindustryLocalMod{" + displayName()
                 + ", file=" + file.getFileName()
-                + ", enabled=" + enabled + '}';
+                + ", enabled=" + enabled
+                + ", ignoredBy=" + ignoredByFileName + '}';
     }
 }

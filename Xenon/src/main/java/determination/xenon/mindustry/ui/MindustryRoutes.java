@@ -19,6 +19,7 @@ package determination.xenon.mindustry.ui;
 
 import com.jfoenix.controls.JFXButton;
 import determination.xenon.mindustry.LaunchOptions;
+import determination.xenon.mindustry.MindustryClientRuntimeRegistry;
 import determination.xenon.mindustry.MindustryImportFlow;
 import determination.xenon.mindustry.MindustryLaunchService;
 import determination.xenon.mindustry.MindustryVersion;
@@ -35,9 +36,12 @@ import determination.xenon.util.TaskCancellationAction;
 import determination.xenon.util.io.FileUtils;
 import javafx.application.Platform;
 import javafx.stage.FileChooser;
+import org.jetbrains.annotations.NotNullByDefault;
+import org.jetbrains.annotations.Nullable;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CancellationException;
 
@@ -54,9 +58,9 @@ import static determination.xenon.util.logging.Logger.LOG;
  * Mindustry instances detour to the Xenon launcher and
  * {@link MindustryVersionPage}.</p>
  */
+@NotNullByDefault
 public final class MindustryRoutes {
-    private static final java.util.Set<String> LAUNCHING_IDS =
-            java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private static final int RECENT_LINE_DISPLAY_LIMIT = 12;
 
     private MindustryRoutes() {}
 
@@ -72,7 +76,7 @@ public final class MindustryRoutes {
      * has used historically: {@code <id>/version.json} (current) and
      * {@code <id>/<id>.json} (older Xenon installs).</p>
      */
-    public static boolean isMindustry(String id) {
+    public static boolean isMindustry(@Nullable String id) {
         if (id == null || id.isBlank()) return false;
         XenonGameRepository repo = MindustryImportFlow.repository();
         if (repo.has(id)) return true;
@@ -86,7 +90,7 @@ public final class MindustryRoutes {
         return false;
     }
 
-    public static Optional<MindustryVersion> get(String id) {
+    public static Optional<MindustryVersion> get(@Nullable String id) {
         if (id == null) return Optional.empty();
         return MindustryImportFlow.repository().get(id);
     }
@@ -153,28 +157,67 @@ public final class MindustryRoutes {
     /** Spawn the Mindustry process for {@code id} via {@link XenonLauncher}. */
     public static void launch(MindustryVersion version) {
         String id = version.getId();
-        if (!LAUNCHING_IDS.add(id)) {
-            LOG.info("Ignored duplicate Mindustry launch request for " + id);
-            return;
-        }
         Schedulers.io().execute(() -> {
             try {
                 XenonGameRepository repo = MindustryImportFlow.repository();
                 LaunchOptions opts = MindustryLaunchService.buildLaunchOptions(repo, version,
                         determination.xenon.mindustry.CurrentPlayerProfile.current());
-                XenonLauncher.MindustryProcess proc = XenonLauncher.launch(opts,
+                MindustryClientRuntimeRegistry.shared().launch(id, opts, MindustryRoutes::onClientEvent,
                         line -> LOG.info("[mindustry] " + line),
                         line -> LOG.warning("[mindustry] " + line));
-                LOG.info("Mindustry process started: pid=" + proc.getProcess().pid());
-                proc.getProcess().onExit().thenRun(() -> LAUNCHING_IDS.remove(id));
             } catch (Throwable ex) {
-                LAUNCHING_IDS.remove(id);
                 LOG.warning("Mindustry launch failed", ex);
                 Platform.runLater(() -> Controllers.dialog(
                         i18n("xenon.mindustry.launch.failed") + "\n\n" + ex.getMessage(),
                         i18n("message.error"), MessageDialogPane.MessageType.ERROR));
             }
         });
+    }
+
+    private static void onClientEvent(MindustryClientRuntimeRegistry.ClientEvent event) {
+        if (event instanceof MindustryClientRuntimeRegistry.Started started) {
+            LOG.info("Mindustry process started: id=" + started.id() + ", pid=" + started.pid());
+        } else if (event instanceof MindustryClientRuntimeRegistry.AlreadyRunning alreadyRunning) {
+            LOG.info("Ignored duplicate Mindustry launch request for " + alreadyRunning.id()
+                    + ", pid=" + alreadyRunning.pid());
+            Platform.runLater(() -> Controllers.showToast(i18n("xenon.mindustry.launch.already_running")));
+        } else if (event instanceof MindustryClientRuntimeRegistry.Exited exited) {
+            LOG.info("Mindustry process exited: id=" + exited.id() + ", pid=" + exited.pid()
+                    + ", code=" + exited.exitCode());
+            if (exited.exitCode() != 0) {
+                Platform.runLater(() -> Controllers.dialog(
+                        i18n("xenon.mindustry.launch.exited_abnormally", exited.exitCode())
+                                + formatRecentLines(exited.recentLines()),
+                        i18n("message.error"), MessageDialogPane.MessageType.ERROR));
+            }
+        } else if (event instanceof MindustryClientRuntimeRegistry.WindowlessProcessTerminated terminated) {
+            LOG.warning("Terminated windowless Mindustry process: id=" + terminated.id()
+                    + ", pid=" + terminated.pid());
+            Platform.runLater(() -> {
+                if (terminated.relaunching()) {
+                    Controllers.showToast(i18n("xenon.mindustry.launch.windowless.relaunching"));
+                } else {
+                    Controllers.dialog(
+                            i18n("xenon.mindustry.launch.windowless") + formatRecentLines(terminated.recentLines()),
+                            i18n("message.error"), MessageDialogPane.MessageType.ERROR);
+                }
+            });
+        } else if (event instanceof MindustryClientRuntimeRegistry.LaunchFailed failed) {
+            LOG.warning("Mindustry runtime launch failed: id=" + failed.id(), failed.error());
+        }
+    }
+
+    private static String formatRecentLines(List<String> recentLines) {
+        if (recentLines.isEmpty()) {
+            return "";
+        }
+        int start = Math.max(0, recentLines.size() - RECENT_LINE_DISPLAY_LIMIT);
+        StringBuilder builder = new StringBuilder("\n\n")
+                .append(i18n("xenon.mindustry.launch.recent_logs"));
+        for (int i = start; i < recentLines.size(); i++) {
+            builder.append('\n').append(recentLines.get(i));
+        }
+        return builder.toString();
     }
 
     /** Confirm + delete a Mindustry version (clears its data dir as well). */

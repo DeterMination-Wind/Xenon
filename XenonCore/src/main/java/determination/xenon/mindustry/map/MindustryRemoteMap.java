@@ -24,6 +24,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.regex.Pattern;
 
@@ -122,14 +123,11 @@ public record MindustryRemoteMap(
 
     /** Suggested filename for a downloaded map archive. */
     public String suggestedFileName() {
-        String stem = sanitizeFileStem(displayName());
+        String stem = sanitizeFileStem(name);
         if (stem.isBlank()) {
             stem = "map-" + id;
         }
         String candidate = stem + ".msav";
-        // Downloaded maps are frequently shared across Windows installs, so
-        // validate against the strictest mainstream platform rule-set here
-        // instead of the current host OS used by CI.
         if (!FileUtils.isNameValid(OperatingSystem.WINDOWS, candidate)) {
             candidate = "map-" + id + ".msav";
         }

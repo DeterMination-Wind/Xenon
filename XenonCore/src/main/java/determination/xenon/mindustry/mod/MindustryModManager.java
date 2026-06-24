@@ -25,8 +25,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -70,8 +72,100 @@ public final class MindustryModManager {
             Logger.LOG.log(System.Logger.Level.WARNING,
                     "Failed to list Mindustry mods dir " + modsDir, ex);
         }
+        result = markDuplicateWinners(result);
         result.sort((a, b) -> a.displayName().compareToIgnoreCase(b.displayName()));
         return result;
+    }
+
+    private static List<MindustryLocalMod> markDuplicateWinners(List<MindustryLocalMod> mods) {
+        List<MindustryLocalMod> loadOrder = new ArrayList<>(mods);
+        loadOrder.sort(MindustryModManager::compareLoadOrder);
+
+        Map<String, MindustryLocalMod> winners = new HashMap<>();
+        for (MindustryLocalMod mod : loadOrder) {
+            if (mod.isEnabled() && !mod.getInternalName().isBlank()) {
+                winners.put(mod.getInternalName(), mod);
+            }
+        }
+
+        List<MindustryLocalMod> result = new ArrayList<>(mods.size());
+        for (MindustryLocalMod mod : mods) {
+            MindustryLocalMod winner = winners.get(mod.getInternalName());
+            if (winner != null && winner != mod && mod.isEnabled()) {
+                result.add(mod.ignoredBy(winner));
+            } else {
+                result.add(mod);
+            }
+        }
+        return result;
+    }
+
+    private static int compareLoadOrder(MindustryLocalMod a, MindustryLocalMod b) {
+        int modified = Long.compare(lastModifiedMillis(a.getFile()), lastModifiedMillis(b.getFile()));
+        if (modified != 0) {
+            return modified;
+        }
+        return compareNatural(archiveFileName(a.getFile()), archiveFileName(b.getFile()));
+    }
+
+    private static long lastModifiedMillis(Path file) {
+        try {
+            return Files.getLastModifiedTime(file).toMillis();
+        } catch (IOException ignored) {
+            return 0L;
+        }
+    }
+
+    private static String archiveFileName(Path file) {
+        String name = file.getFileName().toString().toLowerCase(Locale.ROOT);
+        return name.endsWith(".disabled") ? name.substring(0, name.length() - ".disabled".length()) : name;
+    }
+
+    private static int compareNatural(String a, String b) {
+        int ai = 0;
+        int bi = 0;
+        while (ai < a.length() && bi < b.length()) {
+            char ac = a.charAt(ai);
+            char bc = b.charAt(bi);
+            if (Character.isDigit(ac) && Character.isDigit(bc)) {
+                int aStart = ai;
+                int bStart = bi;
+                while (ai < a.length() && Character.isDigit(a.charAt(ai))) ai++;
+                while (bi < b.length() && Character.isDigit(b.charAt(bi))) bi++;
+                String an = a.substring(aStart, ai);
+                String bn = b.substring(bStart, bi);
+                String av = stripLeadingZeroes(an);
+                String bv = stripLeadingZeroes(bn);
+                int number = Integer.compare(av.length(), bv.length());
+                if (number != 0) {
+                    return number;
+                }
+                number = av.compareTo(bv);
+                if (number != 0) {
+                    return number;
+                }
+                int length = Integer.compare(an.length(), bn.length());
+                if (length != 0) {
+                    return length;
+                }
+                continue;
+            }
+            int chars = Character.compare(ac, bc);
+            if (chars != 0) {
+                return chars;
+            }
+            ai++;
+            bi++;
+        }
+        return Integer.compare(a.length(), b.length());
+    }
+
+    private static String stripLeadingZeroes(String value) {
+        int index = 0;
+        while (index + 1 < value.length() && value.charAt(index) == '0') {
+            index++;
+        }
+        return value.substring(index);
     }
 
     /** Re-enable a disabled mod by stripping the {@code .disabled} suffix. */

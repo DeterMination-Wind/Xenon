@@ -24,6 +24,9 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.google.gson.JsonSyntaxException;
 import determination.xenon.util.logging.Logger;
+import org.jetbrains.annotations.NotNullByDefault;
+import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.Unmodifiable;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -46,11 +49,12 @@ import java.util.zip.ZipFile;
  * normalises a small but practically useful subset of Hjson into JSON
  * before delegating to Gson. See {@link #hjsonToJson(String)}.</p>
  */
+@NotNullByDefault
 public final class MindustryModParser {
     private static final Gson GSON = new Gson();
 
     /** Descriptor names checked in priority order (hjson first). */
-    private static final String[] CANDIDATES = {
+    private static final String @Unmodifiable [] CANDIDATES = {
             "mod.hjson", "mod.json", "plugin.hjson", "plugin.json"
     };
 
@@ -64,42 +68,53 @@ public final class MindustryModParser {
      *     descriptor cannot be parsed as either Hjson or JSON.
      */
     public static MindustryLocalMod parse(Path file) throws IOException {
-        String raw = null;
-        String picked = null;
         try (ZipFile zip = new ZipFile(file.toFile())) {
+            @Nullable MindustryModParseException firstFailure = null;
             for (String candidate : CANDIDATES) {
                 ZipEntry entry = zip.getEntry(candidate);
-                if (entry == null) continue;
+                if (entry == null) {
+                    continue;
+                }
                 try (InputStream in = zip.getInputStream(entry)) {
-                    raw = new String(in.readAllBytes(), StandardCharsets.UTF_8);
-                    picked = candidate;
-                    break;
+                    String raw = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+                    return build(file, parseDescriptor(file, candidate, raw));
+                } catch (MindustryModParseException ex) {
+                    if (firstFailure == null) {
+                        firstFailure = ex;
+                    }
                 }
             }
-        }
-        if (raw == null) {
-            throw new MindustryModParseException(
-                    "No mod.json / mod.hjson / plugin.json / plugin.hjson in " + file);
-        }
-
-        JsonObject obj;
-        if (picked.endsWith(".hjson")) {
-            obj = parseHjsonOrJson(raw, file);
-        } else {
-            try {
-                obj = JsonParser.parseString(raw).getAsJsonObject();
-            } catch (JsonSyntaxException strict) {
-                // Some authors ship .json that's actually hjson.
-                Logger.LOG.log(System.Logger.Level.DEBUG,
-                        "Strict JSON parse failed for " + file + ", retrying as hjson", strict);
-                obj = parseHjsonOrJson(raw, file);
+            if (firstFailure != null) {
+                throw new MindustryModParseException(
+                        "Failed to parse Mindustry mod descriptor in " + file
+                                + " (first failure: " + firstFailure.getMessage() + ")",
+                        firstFailure);
             }
         }
-
-        return build(file, obj);
+        throw new MindustryModParseException(
+                "No mod.json / mod.hjson / plugin.json / plugin.hjson in " + file);
     }
 
-    private static JsonObject parseHjsonOrJson(String raw, Path file)
+    /// Parses one descriptor candidate, preserving the current JSON-first fallback for `.json` files.
+    private static JsonObject parseDescriptor(Path file, String descriptorName, String raw)
+            throws MindustryModParseException {
+        if (descriptorName.endsWith(".hjson")) {
+            return parseHjsonOrJson(raw, file, descriptorName);
+        }
+        try {
+            return JsonParser.parseString(raw).getAsJsonObject();
+        } catch (JsonSyntaxException strict) {
+            // Some authors ship .json that's actually hjson.
+            Logger.LOG.log(System.Logger.Level.DEBUG,
+                    "Strict JSON parse failed for " + file + " (" + descriptorName
+                            + "), retrying as hjson",
+                    strict);
+            return parseHjsonOrJson(raw, file, descriptorName);
+        }
+    }
+
+    /// Parses Hjson-like descriptor text, then falls back to strict JSON parsing if normalisation fails.
+    private static JsonObject parseHjsonOrJson(String raw, Path file, String descriptorName)
             throws MindustryModParseException {
         String normalised = hjsonToJson(raw);
         try {
@@ -110,7 +125,7 @@ public final class MindustryModParser {
                 return JsonParser.parseString(raw).getAsJsonObject();
             } catch (JsonSyntaxException strict) {
                 throw new MindustryModParseException(
-                        "Failed to parse mod descriptor in " + file, hjson);
+                        "Failed to parse " + descriptorName + " in " + file, hjson);
             }
         }
     }
@@ -158,7 +173,7 @@ public final class MindustryModParser {
                 description, main, minGameVersion, java, deps);
     }
 
-    private static String string(JsonObject obj, String key) {
+    private static @Nullable String string(JsonObject obj, String key) {
         if (!obj.has(key) || obj.get(key).isJsonNull()) return null;
         JsonElement el = obj.get(key);
         return el.isJsonPrimitive() ? el.getAsString() : null;

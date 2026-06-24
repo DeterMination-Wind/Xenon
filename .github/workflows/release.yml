@@ -1,237 +1,136 @@
-name: Release
+name: Create Release
 
 on:
-  push:
-    tags:
-      - 'v*'
   workflow_dispatch:
-    inputs:
-      tag:
-        description: Release tag, for example v1.1.1
-        required: true
+#  schedule:
+#    - cron: '30 * * * *'
 
 permissions:
   contents: write
 
-concurrency:
-  group: release-${{ github.ref_name }}
-  cancel-in-progress: false
-
-env:
-  GRADLE_OPTS: -Dorg.gradle.daemon=false -Dorg.gradle.console=plain -Dorg.gradle.workers.max=2
-  TERM: dumb
-
 jobs:
-  build:
-    name: Build Release
+  check-update:
+    if: ${{ github.repository_owner == 'HMCL-dev' }}
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - channel: dev
+            task: checkUpdateDev
+          - channel: stable
+            task: checkUpdateStable
     runs-on: ubuntu-latest
-    timeout-minutes: 25
-    outputs:
-      version: ${{ steps.version.outputs.version }}
-
+    name: check-update-${{ matrix.channel }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          fetch-depth: 1
-          ref: ${{ github.event.inputs.tag || github.ref }}
-
-      - name: Set up JDK 17
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Set up JDK
         uses: actions/setup-java@v5
         with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Resolve version
-        id: version
-        shell: bash
+          distribution: 'temurin'
+          java-version: '25'
+      - name: Fetch last version
+        run: ./gradlew ${{ matrix.task }} --no-daemon --info --stacktrace
+      - name: Check for existing tags
+        run: if [ -z "$(git tag -l "$HMCL_TAG_NAME")" ]; then echo "continue=true" >> $GITHUB_ENV; fi
+      - name: Download artifacts
+        if: ${{ env.continue == 'true' }}
         run: |
-          tag="${{ github.event.inputs.tag || github.ref_name }}"
-          version="${tag#v}"
-          if [[ ! "$version" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]]; then
-            echo "Release tag must be vMAJOR.MINOR.PATCH, got: $tag" >&2
-            exit 1
-          fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "version_root=${version%.*}" >> "$GITHUB_OUTPUT"
-          echo "build_number=${version##*.}" >> "$GITHUB_OUTPUT"
+          wget "$HMCL_CI_DOWNLOAD_BASE_URI/HMCL-$HMCL_VERSION.exe"
+          wget "$HMCL_CI_DOWNLOAD_BASE_URI/HMCL-$HMCL_VERSION.exe.sha256"
+          wget "$HMCL_CI_DOWNLOAD_BASE_URI/HMCL-$HMCL_VERSION.jar"
+          wget "$HMCL_CI_DOWNLOAD_BASE_URI/HMCL-$HMCL_VERSION.jar.sha256"
+          wget "$HMCL_CI_DOWNLOAD_BASE_URI/HMCL-$HMCL_VERSION.sh"
+          wget "$HMCL_CI_DOWNLOAD_BASE_URI/HMCL-$HMCL_VERSION.sh.sha256"
+          wget "$HMCL_CI_DOWNLOAD_BASE_URI/HMCL-$HMCL_VERSION.deb"
+          wget "$HMCL_CI_DOWNLOAD_BASE_URI/HMCL-$HMCL_VERSION.deb.sha256"
+      - name: Verify artifacts
+        if: ${{ env.continue == 'true' }}
+        run: |
+          export JAR_SHA256=$(cat HMCL-$HMCL_VERSION.jar.sha256 | tr -d '\n')
+          export EXE_SHA256=$(cat HMCL-$HMCL_VERSION.exe.sha256 | tr -d '\n')
+          export SH_SHA256=$(cat HMCL-$HMCL_VERSION.sh.sha256 | tr -d '\n')
+          export DEB_SHA256=$(cat HMCL-$HMCL_VERSION.deb.sha256 | tr -d '\n')
+          
+          echo "$JAR_SHA256  HMCL-$HMCL_VERSION.jar" | sha256sum -c
+          echo "$EXE_SHA256  HMCL-$HMCL_VERSION.exe" | sha256sum -c
+          echo "$SH_SHA256  HMCL-$HMCL_VERSION.sh" | sha256sum -c
+          echo "$DEB_SHA256  HMCL-$HMCL_VERSION.deb" | sha256sum -c
+      - name: Generate release note
+        if: ${{ env.continue == 'true' }}
+        run: |
+          # GitHub Release Note
+          echo "&nbsp;**[Changelog](https://docs.hmcl.net/changelog/${{ matrix.channel }}.html#HMCL-$HMCL_VERSION)** (Chinese)" >> RELEASE_NOTE
+          echo "" >> RELEASE_NOTE
+          echo "| File | SHA-256 Checksum |"  >> RELEASE_NOTE
+          echo "| ---  | --- |" >> RELEASE_NOTE
+          echo "| [HMCL-$HMCL_VERSION.exe]($GH_DOWNLOAD_BASE_URL/v$HMCL_VERSION/HMCL-$HMCL_VERSION.exe) | \`$(cat HMCL-$HMCL_VERSION.exe.sha256)\` |" >> RELEASE_NOTE
+          echo "| [HMCL-$HMCL_VERSION.jar]($GH_DOWNLOAD_BASE_URL/v$HMCL_VERSION/HMCL-$HMCL_VERSION.jar) | \`$(cat HMCL-$HMCL_VERSION.jar.sha256)\` |" >> RELEASE_NOTE
+          echo "| [HMCL-$HMCL_VERSION.sh]($GH_DOWNLOAD_BASE_URL/v$HMCL_VERSION/HMCL-$HMCL_VERSION.sh)   | \`$(cat HMCL-$HMCL_VERSION.sh.sha256)\` |"  >> RELEASE_NOTE
+          echo "| [HMCL-$HMCL_VERSION.deb]($GH_DOWNLOAD_BASE_URL/v$HMCL_VERSION/HMCL-$HMCL_VERSION.deb) | \`$(cat HMCL-$HMCL_VERSION.deb.sha256)\` |"  >> RELEASE_NOTE
+          
+          # CNB Release Note
+          echo "[更新日志](https://docs.hmcl.net/changelog/${{ matrix.channel }}.html#HMCL-$HMCL_VERSION)" >> CNB_RELEASE_NOTE
+          echo "" >> CNB_RELEASE_NOTE
+          echo "| 文件 | SHA-256 校验码 |"  >> CNB_RELEASE_NOTE
+          echo "| :---  | --- |" >> CNB_RELEASE_NOTE
+          echo "| [HMCL-$HMCL_VERSION.exe]($CNB_DOWNLOAD_BASE_URL/v$HMCL_VERSION/HMCL-$HMCL_VERSION.exe) | \`$(cat HMCL-$HMCL_VERSION.exe.sha256)\` |" >> CNB_RELEASE_NOTE
+          echo "| [HMCL-$HMCL_VERSION.jar]($CNB_DOWNLOAD_BASE_URL/v$HMCL_VERSION/HMCL-$HMCL_VERSION.jar) | \`$(cat HMCL-$HMCL_VERSION.jar.sha256)\` |" >> CNB_RELEASE_NOTE
+          echo "| [HMCL-$HMCL_VERSION.sh]($CNB_DOWNLOAD_BASE_URL/v$HMCL_VERSION/HMCL-$HMCL_VERSION.sh)   | \`$(cat HMCL-$HMCL_VERSION.sh.sha256)\` |"  >> CNB_RELEASE_NOTE
+          echo "| [HMCL-$HMCL_VERSION.deb]($CNB_DOWNLOAD_BASE_URL/v$HMCL_VERSION/HMCL-$HMCL_VERSION.deb) | \`$(cat HMCL-$HMCL_VERSION.deb.sha256)\` |"  >> CNB_RELEASE_NOTE
 
-      - name: Build artifacts
         env:
-          VERSION_TYPE: stable
-          VERSION_ROOT: ${{ steps.version.outputs.version_root }}
-          BUILD_NUMBER: ${{ steps.version.outputs.build_number }}
-        run: timeout 15m ./gradlew :Xenon:shadowJar :Xenon:packagePortable --no-daemon --max-workers=2 --console=plain --stacktrace -x test
-
-      - name: Build HMCLauncher exe
-        shell: bash
+          GH_DOWNLOAD_BASE_URL: https://github.com/${{ github.repository }}/releases/download
+          CNB_DOWNLOAD_BASE_URL: https://cnb.cool/HMCL-dev/HMCL/-/releases/download
+      - name: Create GitHub release
+        if: ${{ env.continue == 'true' }}
         run: |
-          set -euo pipefail
-          version="${{ steps.version.outputs.version }}"
-          jar="Xenon/build/libs/Xenon-$version.jar"
-          launcher_jar="/tmp/HMCLauncher.jar"
-          output="Xenon/build/dist/Xenon-$version.exe"
-
-          curl -fsSL "https://repo1.maven.org/maven2/org/glavo/hmcl/HMCLauncher/3.7.0.1/HMCLauncher-3.7.0.1.jar" -o "$launcher_jar"
-          unzip -o "$launcher_jar" "assets/HMCLauncher.exe" -d /tmp
-          cp /tmp/assets/HMCLauncher.exe "$output"
-          cat "$jar" >> "$output"
-          chmod +x "$output"
-          ls -lh "$output"
-
-      - name: Normalize release files
-        shell: bash
-        run: |
-          set -euo pipefail
-          version="${{ steps.version.outputs.version }}"
-          mkdir -p release
-          jar="Xenon/build/libs/Xenon-$version.jar"
-          zip="Xenon/build/dist/Xenon-portable-$version.zip"
-          exe="Xenon/build/dist/Xenon-$version.exe"
-          test -f "$jar"
-          test -f "$zip"
-          test -f "$exe"
-          cp "$jar" "release/Xenon-$version.jar"
-          cp "$zip" "release/Xenon-portable-$version.zip"
-          cp "$exe" "release/Xenon-$version.exe"
-          cd release
-          sha256sum "Xenon-$version.jar" > "Xenon-$version.jar.sha256"
-          sha256sum "Xenon-portable-$version.zip" > "Xenon-portable-$version.zip.sha256"
-          sha256sum "Xenon-$version.exe" > "Xenon-$version.exe.sha256"
-          ls -lh
-
-      - name: Upload release bundle
-        uses: actions/upload-artifact@v7
-        with:
-          name: release-${{ steps.version.outputs.version }}
-          path: release/*
-          if-no-files-found: error
-
-  publish:
-    name: Publish GitHub Release
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    needs: build
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 1
-
-      - name: Download release bundle
-        uses: actions/download-artifact@v8
-        with:
-          name: release-${{ needs.build.outputs.version }}
-          path: release
-
-      - name: Write release notes
-        shell: bash
-        run: |
-          version="${{ needs.build.outputs.version }}"
-          cat > RELEASE_NOTE.md <<EOF
-          # Xenon v$version
-
-          ## Downloads
-
-          | File | Description |
-          | :--- | :---------- |
-          | \`Xenon-$version.exe\` | Windows exe (auto-downloads JRE on first run) |
-          | \`Xenon-portable-$version.zip\` | Portable package |
-          | \`Xenon-$version.jar\` | Executable JAR |
-
-          ## Changes
-
-          See CHANGELOG.md for details.
-          EOF
-
-      - name: Create or update release
-        shell: bash
+          gh release create "${{ env.HMCL_TAG_NAME }}" \
+            "HMCL-${{ env.HMCL_VERSION }}.exe" \
+            "HMCL-${{ env.HMCL_VERSION }}.jar" \
+            "HMCL-${{ env.HMCL_VERSION }}.sh" \
+            "HMCL-${{ env.HMCL_VERSION }}.deb" \
+            --target "${{ env.HMCL_COMMIT_SHA }}" \
+            --title "${{ env.HMCL_TAG_NAME }}" \
+            --notes-file RELEASE_NOTE \
+            --prerelease
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          tag="${{ github.event.inputs.tag || github.ref_name }}"
-          if gh release view "$tag" >/dev/null 2>&1; then
-            gh release edit "$tag" --title "$tag" --notes-file RELEASE_NOTE.md --latest
-          else
-            gh release create "$tag" --title "$tag" --notes-file RELEASE_NOTE.md --latest --verify-tag
-          fi
-          gh release upload "$tag" release/* --clobber
-
-  update-aur:
-    name: Update AUR
-    runs-on: ubuntu-latest
-    container:
-      image: archlinux:latest
-    timeout-minutes: 20
-    needs: [build, publish]
-
-    steps:
-      - name: Install AUR tooling
-        shell: bash
-        run: |
-          set -euo pipefail
-          printf 'Server = https://mirrors.kernel.org/archlinux/$repo/os/$arch\n' > /etc/pacman.d/mirrorlist
-          printf 'Server = https://geo.mirror.pkgbuild.com/$repo/os/$arch\n' >> /etc/pacman.d/mirrorlist
-          pacman -Syu --noconfirm --needed git openssh pacman-contrib base-devel
-
-      - name: Prepare SSH
-        shell: bash
+      - name: Install git-cnb
+        if: ${{ env.continue == 'true' }}
+        run: go install "cnb.cool/looc/git-cnb@$GIT_CNB_VERSION"
         env:
-          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          GIT_CNB_VERSION: '1.1.2'
+      - name: Create CNB release
+        if: ${{ env.continue == 'true' }}
         run: |
-          set -euo pipefail
-          if [ -z "${AUR_SSH_PRIVATE_KEY:-}" ]; then
-            echo "AUR_SSH_PRIVATE_KEY is not configured; skipping AUR update."
-            echo "skip_aur=true" >> "$GITHUB_ENV"
-            exit 0
-          fi
-          useradd -m builder
-          install -dm700 /home/builder/.ssh
-          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > /home/builder/.ssh/id_ed25519
-          chmod 600 /home/builder/.ssh/id_ed25519
-          ssh-keyscan aur.archlinux.org > /home/builder/.ssh/known_hosts
-          chown -R builder:builder /home/builder/.ssh
+          echo "Uploading tags to CNB"
+          git fetch --tags
+          git push "https://cnb:${{ secrets.CNB_SYNC_TOKEN }}@cnb.cool/$CNB_REPO.git" "$HMCL_TAG_NAME"
+          
+          echo "Creating CNB release"
+          ~/go/bin/git-cnb release create \
+             --repo "$CNB_REPO" \
+             --tag "$HMCL_TAG_NAME" \
+             --name "HMCL $HMCL_VERSION" \
+             --body "$(cat CNB_RELEASE_NOTE)" \
+             --prerelease true
 
-      - name: Clone AUR repository
-        if: env.skip_aur != 'true'
-        run: runuser -u builder -- git clone ssh://aur@aur.archlinux.org/xenon-mdt.git /home/builder/aur-repo
+           echo "Uploading HMCL-$HMCL_VERSION.jar"
+           ~/go/bin/git-cnb release asset-upload --repo="$CNB_REPO" --tag-name "$HMCL_TAG_NAME" --file-name "HMCL-$HMCL_VERSION.jar"
+
+           echo "Uploading HMCL-$HMCL_VERSION.exe"
+           ~/go/bin/git-cnb release asset-upload --repo="$CNB_REPO" --tag-name "$HMCL_TAG_NAME" --file-name "HMCL-$HMCL_VERSION.exe"
+
+           echo "Uploading HMCL-$HMCL_VERSION.sh"
+           ~/go/bin/git-cnb release asset-upload --repo="$CNB_REPO" --tag-name "$HMCL_TAG_NAME" --file-name "HMCL-$HMCL_VERSION.sh"
+          
+          echo "Uploading HMCL-$HMCL_VERSION.deb"
+           ~/go/bin/git-cnb release asset-upload --repo="$CNB_REPO" --tag-name "$HMCL_TAG_NAME" --file-name "HMCL-$HMCL_VERSION.deb"
         env:
-          GIT_SSH_COMMAND: ssh -o StrictHostKeyChecking=yes
-
-      - name: Update package files
-        if: env.skip_aur != 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          version="${{ needs.build.outputs.version }}"
-          runuser -u builder -- bash -lc "
-            set -euo pipefail
-            cd /home/builder/aur-repo
-            sed -i 's/^pkgver=.*/pkgver=$version/' PKGBUILD
-            sed -i 's/^pkgrel=.*/pkgrel=1/' PKGBUILD
-            updpkgsums
-            makepkg --printsrcinfo > .SRCINFO
-          "
-
-      - name: Commit and push
-        if: env.skip_aur != 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          runuser -u builder -- bash -lc '
-            set -euo pipefail
-            cd /home/builder/aur-repo
-            git config user.name "GitHub Actions"
-            git config user.email "actions@github.com"
-            git add PKGBUILD .SRCINFO
-            if git diff --cached --quiet; then
-              echo "No AUR changes to publish."
-              exit 0
-            fi
-            git commit -m "Update to v${{ needs.build.outputs.version }}"
-            git push origin master
-          '
-        env:
-          GIT_SSH_COMMAND: ssh -o StrictHostKeyChecking=yes
+          CNB_TOKEN: ${{ secrets.CNB_SYNC_TOKEN }}
+          CNB_REPO: HMCL-dev/HMCL

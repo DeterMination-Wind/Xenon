@@ -79,6 +79,12 @@ language-subtag-registry
 .codex
 /.gradle-*/
 /.xenon/
+/.tmp/
+/.omo/
+/config/logs/
+/config/settings.bin
+/config/settings_backup.bin
+/config/settings_backups/
 
 # root build artifacts
 /Xenon-*.jar

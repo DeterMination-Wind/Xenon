@@ -18,6 +18,7 @@
 package determination.xenon.mindustry;
 
 import determination.xenon.Metadata;
+import determination.xenon.mindustry.save.MindustryLaunchSaveService;
 import determination.xenon.mindustry.uuid.MindustryPlayerLaunchHook;
 import determination.xenon.mindustry.uuid.MindustrySettingsBin;
 import determination.xenon.mindustry.uuid.UuidProfile;
@@ -134,7 +135,16 @@ public final class MindustryLaunchService {
             throw new IOException("Mindustry jar missing: " + jar);
         }
         Path java = MindustryJavaPicker.resolveJavaExecutable(version);
-        Path dataDir = version.resolveDataDir(versionRoot);
+        String launchSaveFile = version.getLaunchSaveFile();
+        if (launchSaveFile != null && !launchSaveFile.toLowerCase(Locale.ROOT).endsWith(".zip")) {
+            version.setLaunchSaveFile(null);
+            repo.save(version);
+            launchSaveFile = null;
+        }
+        Path dataDir = MindustryLaunchSaveService.prepare(
+                versionRoot,
+                version.resolveDataDir(versionRoot),
+                launchSaveFile);
 
         LaunchOptions.Builder builder = LaunchOptions.builder()
                 .javaExecutable(java)
