@@ -134,7 +134,7 @@ public final class MindustryLaunchService {
         if (!Files.isRegularFile(jar)) {
             throw new IOException("Mindustry jar missing: " + jar);
         }
-        Path java = MindustryJavaPicker.resolveJavaExecutable(version);
+        Path java = MindustryJavaPicker.resolveJavaExecutable(version, versionRoot);
         String launchSaveFile = version.getLaunchSaveFile();
         if (launchSaveFile != null && !launchSaveFile.toLowerCase(Locale.ROOT).endsWith(".zip")) {
             version.setLaunchSaveFile(null);
@@ -149,7 +149,7 @@ public final class MindustryLaunchService {
         LaunchOptions.Builder builder = LaunchOptions.builder()
                 .javaExecutable(java)
                 .jar(jar)
-                .workingDirectory(versionRoot)
+                .workingDirectory(version.resolveWorkingDirectory(versionRoot))
                 .dataDir(dataDir)
                 .jvmArgs(LaunchOptions.tokenize(version.getJvmArgs()))
                 .gameArgs(LaunchOptions.tokenize(version.getGameArgs()));

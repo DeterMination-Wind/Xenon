@@ -18,6 +18,7 @@
 package determination.xenon.mindustry;
 
 import determination.xenon.Metadata;
+import determination.xenon.mindustry.MindustryInstallationDiscovery.DiscoveredInstallation;
 import determination.xenon.mindustry.modpack.XenonModpackInstaller;
 import determination.xenon.mindustry.ui.MindustryRoutes;
 import determination.xenon.setting.Profile;
@@ -31,9 +32,13 @@ import determination.xenon.ui.construct.MessageDialogPane;
 import determination.xenon.util.TaskCancellationAction;
 import determination.xenon.util.io.FileUtils;
 import javafx.stage.FileChooser;
+import org.jetbrains.annotations.Nullable;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Objects;
+import java.util.Optional;
 
 import static determination.xenon.util.i18n.I18n.i18n;
 import static determination.xenon.util.logging.Logger.LOG;
@@ -83,6 +88,46 @@ public final class MindustryImportFlow {
             // Metadata is always available, while Settings can be early during bootstrap.
         }
         return Metadata.getCachesDirectory();
+    }
+
+    /**
+     * If a profile's game directory points at an external Mindustry install
+     * such as Steam, register it as one normal Xenon Mindustry instance.
+     */
+    public static Optional<MindustryVersion> syncProfileGameDirectory(Profile profile) {
+        if (profile == null) {
+            return Optional.empty();
+        }
+        return syncExternalInstallation(profile.getGameDir());
+    }
+
+    /**
+     * Register an external Mindustry installation without copying its game jar.
+     * Repeated calls are idempotent for the same jar/data/working directory.
+     */
+    public static Optional<MindustryVersion> syncExternalInstallation(Path directory) {
+        Optional<DiscoveredInstallation> discovered = MindustryInstallationDiscovery.discover(directory);
+        if (discovered.isEmpty()) {
+            return Optional.empty();
+        }
+
+        try {
+            XenonGameRepository repo = repository();
+            repo.refresh();
+            MindustryVersion existing = findExistingExternalInstall(repo, discovered.get());
+            if (existing != null) {
+                return Optional.of(existing);
+            }
+
+            MindustryVersion version = toVersion(repo, discovered.get());
+            repo.save(version);
+            LOG.info("Registered external Mindustry install " + discovered.get().getRoot()
+                    + " as " + version.getId());
+            return Optional.of(version);
+        } catch (Throwable ex) {
+            LOG.warning("Failed to register external Mindustry install " + directory, ex);
+            return Optional.empty();
+        }
     }
 
     /** True iff the dropped file is a Xenon Mindustry modpack. */
@@ -187,6 +232,71 @@ public final class MindustryImportFlow {
                         MessageDialogPane.MessageType.ERROR));
             }
         });
+    }
+
+    private static MindustryVersion toVersion(XenonGameRepository repo, DiscoveredInstallation installation) {
+        String id = uniqueId(repo, installation.getSuggestedId());
+        MindustryVersion version = new MindustryVersion();
+        version.setId(id);
+        version.setName(installation.getDisplayName());
+        version.setVariant(installation.getVariant());
+        version.setBuild(installation.getBuild());
+        version.setBuildType(installation.getBuildType());
+        version.setJarPath(installation.getJar().toString());
+        version.setJavaReq(installation.getBuild() > 0 && installation.getBuild() < 140 ? 8 : 17);
+        if (installation.getJavaHome() != null) {
+            version.setJavaHome(installation.getJavaHome().toString());
+        }
+        version.setWorkingDirectory(installation.getWorkingDirectory().toString());
+        version.setDataDirPolicy(DataDirectoryPolicy.CUSTOM);
+        version.setCustomDataDir(installation.getDataDir().toString());
+        if (!installation.getJvmArgs().isEmpty()) {
+            version.setJvmArgs(String.join(" ", installation.getJvmArgs()));
+        }
+        return version;
+    }
+
+    private static String uniqueId(XenonGameRepository repo, String suggestedId) {
+        String base = sanitizeId(suggestedId);
+        if (!repo.has(base)) {
+            return base;
+        }
+        for (int i = 2; ; i++) {
+            String candidate = base + "-" + i;
+            if (!repo.has(candidate)) {
+                return candidate;
+            }
+        }
+    }
+
+    private static @Nullable MindustryVersion findExistingExternalInstall(
+            XenonGameRepository repo,
+            DiscoveredInstallation installation) {
+        for (MindustryVersion version : repo.all()) {
+            String id = version.getId();
+            if (id == null || id.isBlank()) {
+                continue;
+            }
+            Path versionRoot = repo.getVersionRoot(id);
+            if (samePath(version.resolveJar(versionRoot), installation.getJar())
+                    && samePath(version.resolveDataDir(versionRoot), installation.getDataDir())
+                    && samePath(version.resolveWorkingDirectory(versionRoot), installation.getWorkingDirectory())) {
+                return version;
+            }
+        }
+        return null;
+    }
+
+    private static boolean samePath(Path left, Path right) {
+        return Objects.equals(normalize(left), normalize(right));
+    }
+
+    private static Path normalize(Path path) {
+        try {
+            return path.toRealPath();
+        } catch (IOException ignored) {
+            return path.toAbsolutePath().normalize();
+        }
     }
 
     private static String sanitizeId(String raw) {

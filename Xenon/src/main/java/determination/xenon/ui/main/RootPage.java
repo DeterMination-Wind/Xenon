@@ -122,6 +122,7 @@ public class RootPage extends DecoratorAnimatedPage implements DecoratorPage {
                         .map(Version::getId)
                         .collect(Collectors.toCollection(java.util.LinkedHashSet::new));
                 try {
+                    MindustryImportFlow.syncProfileGameDirectory(profile);
                     determination.xenon.mindustry.XenonGameRepository xrepo =
                             determination.xenon.mindustry.MindustryImportFlow.repository();
                     xrepo.refresh();

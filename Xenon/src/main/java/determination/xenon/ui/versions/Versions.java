@@ -129,7 +129,8 @@ public final class Versions {
     public static void openFolder(Profile profile, String version) {
         if (MindustryRoutes.isMindustry(version)) {
             MindustryRoutes.get(version).ifPresent(v ->
-                    FXUtils.openFolder(determination.xenon.mindustry.MindustryImportFlow.repository().getVersionRoot(v.getId())));
+                    FXUtils.openFolder(v.resolveWorkingDirectory(
+                            determination.xenon.mindustry.MindustryImportFlow.repository().getVersionRoot(v.getId()))));
             return;
         }
         FXUtils.openFolder(profile.getRepository().getRunDirectory(version));

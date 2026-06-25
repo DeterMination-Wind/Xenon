@@ -167,6 +167,7 @@ public class GameListPage extends DecoratorAnimatedPage implements DecoratorPage
             // because they live under the same versions directory, so dedupe
             // by id before creating list cells.
             try {
+                determination.xenon.mindustry.MindustryImportFlow.syncProfileGameDirectory(profile);
                 determination.xenon.mindustry.XenonGameRepository xrepo =
                         determination.xenon.mindustry.MindustryImportFlow.repository();
                 xrepo.refresh();

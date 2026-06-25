@@ -8,49 +8,59 @@ on:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v4
     - name: Set up JDK 17
-      uses: actions/setup-java@v5
+      uses: actions/setup-java@v4
       with:
-        distribution: 'zulu'
+        distribution: 'temurin'
         java-version: '17'
-        java-package: 'jdk+fx'
     - name: Setup Gradle
-      uses: gradle/actions/setup-gradle@v5
+      uses: gradle/actions/setup-gradle@v4
       with:
         cache-cleanup: never
     - name: Build with Gradle
-      run: ./gradlew build --no-daemon --parallel
+      run: ./gradlew -g .gradle-user-home build :Xenon:shadowJar --no-daemon --parallel
       env:
         MICROSOFT_AUTH_ID: ${{ secrets.MICROSOFT_AUTH_ID }}
         CURSEFORGE_API_KEY: ${{ secrets.CURSEFORGE_API_KEY }}
     - name: Get short SHA
       run: echo "SHORT_SHA=${GITHUB_SHA::7}" >> $GITHUB_ENV
     - name: Upload JAR
-      uses: actions/upload-artifact@v7
+      uses: actions/upload-artifact@v4
       with:
-        name: HMCL-${{ env.SHORT_SHA }}-jar
-        path: HMCL/build/libs/HMCL-*.jar
-        archive: false
+        name: Xenon-${{ env.SHORT_SHA }}-jar
+        path: Xenon/build/libs/Xenon-*.jar
+        if-no-files-found: error
+
+  windows-exe:
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+    - name: Setup Gradle
+      uses: gradle/actions/setup-gradle@v4
+      with:
+        cache-cleanup: never
+    - name: Build Windows EXE
+      shell: pwsh
+      run: .\gradlew.bat -g .gradle-user-home --no-daemon :Xenon:shadowJar :Xenon:packageWindowsSingleFileExe
+      env:
+        MICROSOFT_AUTH_ID: ${{ secrets.MICROSOFT_AUTH_ID }}
+        CURSEFORGE_API_KEY: ${{ secrets.CURSEFORGE_API_KEY }}
+    - name: Get short SHA
+      shell: pwsh
+      run: '"SHORT_SHA=$($env:GITHUB_SHA.Substring(0, 7))" | Out-File -FilePath $env:GITHUB_ENV -Append'
     - name: Upload EXE
-      uses: actions/upload-artifact@v7
+      uses: actions/upload-artifact@v4
       with:
-        name: HMCL-${{ env.SHORT_SHA }}-exe
-        path: HMCL/build/libs/HMCL-*.exe
-        archive: false
-    - name: Upload SH
-      uses: actions/upload-artifact@v7
-      with:
-        name: HMCL-${{ env.SHORT_SHA }}-sh
-        path: HMCL/build/libs/HMCL-*.sh
-        archive: false
-    - name: Upload DEB
-      uses: actions/upload-artifact@v7
-      with:
-        name: HMCL-${{ env.SHORT_SHA }}-deb
-        path: HMCL/build/libs/HMCL-*.deb
-        archive: false
+        name: Xenon-${{ env.SHORT_SHA }}-exe
+        path: Xenon/build/dist/Xenon.exe
+        if-no-files-found: error

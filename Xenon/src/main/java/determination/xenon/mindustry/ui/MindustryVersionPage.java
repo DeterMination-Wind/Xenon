@@ -61,12 +61,14 @@ public final class MindustryVersionPage extends DecoratorAnimatedPage implements
 
     private final MindustryVersion version;
     private final Path versionRoot;
+    private final Path workingDirectory;
     private final Path dataDir;
 
     public MindustryVersionPage(MindustryVersion version) {
         this.version = version;
         XenonGameRepository repo = MindustryImportFlow.repository();
         this.versionRoot = repo.getVersionRoot(version.getId());
+        this.workingDirectory = version.resolveWorkingDirectory(versionRoot);
         this.dataDir = version.resolveDataDir(versionRoot);
 
         modTab.setNodeSupplier(() -> new MindustryModListPane(dataDir));
@@ -87,7 +89,7 @@ public final class MindustryVersionPage extends DecoratorAnimatedPage implements
 
         AdvancedListBox toolbar = new AdvancedListBox()
                 .addNavigationDrawerItem(i18n("version.launch.test"), SVG.ROCKET_LAUNCH, this::launch)
-                .addNavigationDrawerItem(i18n("settings.game.exploration"), SVG.FOLDER_OPEN, () -> FXUtils.openFolder(versionRoot))
+                .addNavigationDrawerItem(i18n("settings.game.exploration"), SVG.FOLDER_OPEN, () -> FXUtils.openFolder(workingDirectory))
                 .addNavigationDrawerItem(i18n("modpack.export"), SVG.OUTPUT, () -> MindustryRoutes.exportModpack(version))
                 .addNavigationDrawerItem(i18n("version.manage.remove"), SVG.DELETE, this::deleteVersion);
         toolbar.getStyleClass().add("advanced-list-box-clear-padding");

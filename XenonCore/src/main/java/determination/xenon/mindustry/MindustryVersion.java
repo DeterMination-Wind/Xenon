@@ -60,6 +60,12 @@ public final class MindustryVersion {
      * based on {@link #javaReq}.
      */
     private @Nullable String javaHome;
+    /**
+     * Optional process working directory override. Steam installs keep native
+     * libraries and launcher metadata beside the game executable, so launching
+     * their bundled jar from Xenon's version directory is not equivalent.
+     */
+    private @Nullable String workingDirectory;
     /** How to resolve {@code -Dmindustry.data.dir}. */
     private DataDirectoryPolicy dataDirPolicy = DataDirectoryPolicy.ISOLATED;
     /** Used only when {@link #dataDirPolicy} is {@link DataDirectoryPolicy#CUSTOM}. */
@@ -79,6 +85,26 @@ public final class MindustryVersion {
         }
         Path p = Path.of(jarPath);
         return p.isAbsolute() ? p : versionRoot.resolve(jarPath);
+    }
+
+    /** Resolve the process working directory for this version. */
+    public Path resolveWorkingDirectory(Path versionRoot) {
+        Objects.requireNonNull(versionRoot, "versionRoot");
+        if (workingDirectory == null || workingDirectory.isBlank()) {
+            return versionRoot.toAbsolutePath().normalize();
+        }
+        Path p = Path.of(workingDirectory);
+        return (p.isAbsolute() ? p : versionRoot.resolve(p)).toAbsolutePath().normalize();
+    }
+
+    /** Resolve the optional Java home override for this version. */
+    public @Nullable Path resolveJavaHome(Path versionRoot) {
+        Objects.requireNonNull(versionRoot, "versionRoot");
+        if (javaHome == null || javaHome.isBlank()) {
+            return null;
+        }
+        Path p = Path.of(javaHome);
+        return (p.isAbsolute() ? p : resolveWorkingDirectory(versionRoot).resolve(p)).toAbsolutePath().normalize();
     }
 
     /** Resolve the effective data directory for this version. */
@@ -152,6 +178,10 @@ public final class MindustryVersion {
     public @Nullable String getJavaHome() { return javaHome; }
 
     public void setJavaHome(@Nullable String javaHome) { this.javaHome = javaHome; }
+
+    public @Nullable String getWorkingDirectory() { return workingDirectory; }
+
+    public void setWorkingDirectory(@Nullable String workingDirectory) { this.workingDirectory = workingDirectory; }
 
     public DataDirectoryPolicy getDataDirPolicy() { return dataDirPolicy == null ? DataDirectoryPolicy.ISOLATED : dataDirPolicy; }
 

@@ -14,13 +14,13 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
           fetch-tags: true
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
@@ -45,32 +45,47 @@ jobs:
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "tag_name=${tag_name}" >> "$GITHUB_OUTPUT"
 
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-cleanup: never
+
       - name: Build jar and single-file exe
-        shell: bash
+        shell: pwsh
         env:
           VERSION_ROOT: ${{ steps.version.outputs.version_root }}
           BUILD_NUMBER: ${{ steps.version.outputs.build_number }}
           VERSION_TYPE: stable
-        run: ./gradlew -g .gradle-user-home --no-daemon :Xenon:shadowJar :Xenon:packageWindowsSingleFileExe
+        run: .\gradlew.bat -g .gradle-user-home --no-daemon :Xenon:shadowJar :Xenon:packageWindowsSingleFileExe
 
       - name: Prepare release assets
         id: assets
-        shell: bash
+        shell: pwsh
         run: |
-          version="${{ steps.version.outputs.version }}"
-          mkdir -p release
-          cp "Xenon/build/dist/Xenon.exe" "release/Xenon-${version}.exe"
-          cp "Xenon/build/libs/Xenon-${version}.jar" "release/Xenon-${version}.jar"
-          exe_sha="$(sha256sum "release/Xenon-${version}.exe" | cut -d' ' -f1)"
-          jar_sha="$(sha256sum "release/Xenon-${version}.jar" | cut -d' ' -f1)"
-          {
-            echo "# Xenon ${version}"
-            echo
-            echo "| Asset | SHA-256 |"
-            echo "| --- | --- |"
-            echo "| Xenon-${version}.exe | \`${exe_sha}\` |"
-            echo "| Xenon-${version}.jar | \`${jar_sha}\` |"
-          } > release/RELEASE_NOTE.md
+          $version = "${{ steps.version.outputs.version }}"
+          New-Item -ItemType Directory -Force release | Out-Null
+          Copy-Item "Xenon/build/dist/Xenon.exe" "release/Xenon-$version.exe"
+          Copy-Item "Xenon/build/libs/Xenon-$version.jar" "release/Xenon-$version.jar"
+          $exeSha = (Get-FileHash "release/Xenon-$version.exe" -Algorithm SHA256).Hash.ToLowerInvariant()
+          $jarSha = (Get-FileHash "release/Xenon-$version.jar" -Algorithm SHA256).Hash.ToLowerInvariant()
+          @(
+            "# Xenon $version"
+            ""
+            "| Asset | SHA-256 |"
+            "| --- | --- |"
+            "| Xenon-$version.exe | ``$exeSha`` |"
+            "| Xenon-$version.jar | ``$jarSha`` |"
+          ) | Set-Content -Path release/RELEASE_NOTE.md -Encoding UTF8
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Xenon-${{ steps.version.outputs.version }}-release
+          path: |
+            release/*.exe
+            release/*.jar
+            release/RELEASE_NOTE.md
+          if-no-files-found: error
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2

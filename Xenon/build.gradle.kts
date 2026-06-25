@@ -455,6 +455,7 @@ val compileWindowsBootstrapStub by tasks.registering(Exec::class) {
     group = "distribution"
     description = "Compile the native-free Windows bootstrap stub with the system C# compiler"
     val outputDir = windowsBootstrapDir.map { it.dir("stub") }
+    inputs.file(rootProject.file("XenonBootstrap/XenonBootstrap.cs"))
     outputs.dir(outputDir)
     doFirst {
         if (!System.getProperty("os.name").lowercase().contains("win"))
@@ -490,9 +491,12 @@ val packageWindowsSingleFileExe by tasks.registering {
     dependsOn(zipWindowsBootstrapPayload)
     dependsOn(compileWindowsBootstrapStub)
     val outputFile = layout.buildDirectory.file("dist/Xenon.exe")
+    val bootstrapStubExe = windowsBootstrapDir.map { it.file("stub/XenonBootstrap.exe") }
+    inputs.file(bootstrapStubExe)
+    inputs.file(windowsBootstrapPayloadZip)
     outputs.file(outputFile)
     doLast {
-        val bootstrapExe = windowsBootstrapDir.get().file("stub/XenonBootstrap.exe").asFile
+        val bootstrapExe = bootstrapStubExe.get().asFile
         val payloadZip = windowsBootstrapPayloadZip.get().asFile
         val destination = outputFile.get().asFile
         destination.parentFile.mkdirs()

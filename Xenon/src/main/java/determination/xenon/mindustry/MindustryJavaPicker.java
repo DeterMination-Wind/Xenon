@@ -52,9 +52,17 @@ public final class MindustryJavaPicker {
      * </ol>
      */
     public static Path resolveJavaExecutable(MindustryVersion version) throws InterruptedException {
+        return resolveJavaExecutable(version, Path.of("."));
+    }
+
+    /**
+     * Resolve the Java executable, allowing relative Java-home overrides to be
+     * resolved against the version's effective working directory.
+     */
+    public static Path resolveJavaExecutable(MindustryVersion version, Path versionRoot) throws InterruptedException {
         // 1. Explicit override.
-        if (version.getJavaHome() != null && !version.getJavaHome().isBlank()) {
-            Path home = Path.of(version.getJavaHome());
+        Path home = version.resolveJavaHome(versionRoot);
+        if (home != null) {
             Path exe = JavaManager.getExecutable(home);
             if (Files.isRegularFile(exe)) {
                 return exe;

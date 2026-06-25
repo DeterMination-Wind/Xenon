@@ -1,4 +1,4 @@
-name: Release and Update AUR
+name: Update AUR
 
 on:
   push:
@@ -46,61 +46,8 @@ jobs:
             Xenon/build/libs/Xenon-*.jar
             Xenon/build/*.sha256
 
-  release:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: release-artifacts
-
-      - name: Generate release notes
-        id: release_notes
-        run: |
-          cat > RELEASE_NOTE.md << EOF
-          # Xenon v${{ needs.build.outputs.version }}
-
-          A Mindustry Launcher built on the HMCL UI.
-
-          ## Downloads
-
-          | File | Description |
-          | :--- | :---------- |
-          | \`Xenon-portable-${{ needs.build.outputs.version }}.zip\` | Portable build (no JRE) |
-          | \`Xenon-${{ needs.build.outputs.version }}.jar\` | Fat JAR |
-
-          ## Quick Start
-
-          1. Download \`Xenon-portable-${{ needs.build.outputs.version }}.zip\` and extract
-          2. Windows: double-click \`Xenon.bat\`
-          3. Linux/macOS: \`chmod +x Xenon.sh && ./Xenon.sh\`
-
-          Requires Java 17+ with JavaFX.
-
-          ## Changes
-
-          See [CHANGELOG.md](CHANGELOG.md) for details.
-          EOF
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            Xenon-portable-${{ needs.build.outputs.version }}.zip
-            Xenon-${{ needs.build.outputs.version }}.jar
-            Xenon-portable-${{ needs.build.outputs.version }}.zip.sha256
-            Xenon-${{ needs.build.outputs.version }}.jar.sha256
-          body_path: RELEASE_NOTE.md
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
   update-aur:
-    needs: [build, release]
+    needs: [build]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
