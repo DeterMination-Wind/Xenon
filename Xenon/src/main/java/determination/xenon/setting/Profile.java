@@ -149,7 +149,11 @@ public final class Profile implements Observable {
         runInFX(() -> {
             if (!repository.isLoaded()) return;
             String newValue = selectedVersion.get();
-            if (MindustryRoutes.isMindustry(newValue)) return;
+            if (MindustryRoutes.isMindustry(newValue)
+                    && determination.xenon.mindustry.MindustryImportFlow.visibleVersions(this).stream()
+                    .anyMatch(version -> newValue.equals(version.getId()))) {
+                return;
+            }
             if (!repository.hasVersion(newValue)) {
                 Optional<String> version = repository.getVersions().stream().findFirst().map(Version::getId);
                 if (version.isPresent())

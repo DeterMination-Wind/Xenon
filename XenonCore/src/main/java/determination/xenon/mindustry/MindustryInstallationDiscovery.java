@@ -31,8 +31,10 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.zip.ZipEntry;
@@ -51,8 +53,11 @@ import java.util.zip.ZipFile;
 @NotNullByDefault
 public final class MindustryInstallationDiscovery {
     private static final String MINDUSTRY_JSON = "Mindustry.json";
+    private static final String MINDUSTRY_EXE = "Mindustry.exe";
+    private static final String STEAM_APP_ID = "1127400";
     private static final String DEFAULT_STEAM_ID = "steam-mindustry";
     private static final String DEFAULT_STEAM_NAME = "Steam Mindustry";
+    private static final Path DEFAULT_WINDOWS_STEAM_ROOT = Path.of("C:\\Program Files (x86)\\Steam");
     private static final @Unmodifiable List<String> FALLBACK_JAR_PATHS = List.of(
             "jre/desktop.jar",
             "desktop.jar",
@@ -70,13 +75,11 @@ public final class MindustryInstallationDiscovery {
      *         a runnable Mindustry jar.
      */
     public static Optional<DiscoveredInstallation> discover(@Nullable Path directory) {
-        if (directory == null) {
+        Optional<Path> normalizedRoot = normalizeInstallRoot(directory);
+        if (normalizedRoot.isEmpty()) {
             return Optional.empty();
         }
-        Path root = directory.toAbsolutePath().normalize();
-        if (!Files.isDirectory(root)) {
-            return Optional.empty();
-        }
+        Path root = normalizedRoot.get();
 
         Optional<JsonObject> launcherConfig = readLauncherConfig(root.resolve(MINDUSTRY_JSON));
         Optional<Path> jar = findJar(root, launcherConfig.orElse(null));
@@ -103,6 +106,112 @@ public final class MindustryInstallationDiscovery {
                 buildMetadata.buildType(),
                 jvmArgs
         ));
+    }
+
+    /**
+     * Find installed Windows Steam Mindustry roots from the default Steam
+     * locations. Returned roots have already passed {@link #discover(Path)}.
+     */
+    public static @Unmodifiable List<Path> findDefaultSteamInstallationRoots() {
+        if (OperatingSystem.CURRENT_OS != OperatingSystem.WINDOWS) {
+            return List.of();
+        }
+        List<Path> roots = new ArrayList<>();
+        for (Path steamRoot : defaultWindowsSteamRoots()) {
+            roots.addAll(steamMindustryInstallCandidates(
+                    steamRoot.resolve("steamapps").resolve("libraryfolders.vdf"),
+                    steamRoot));
+        }
+        return roots.stream()
+                .filter(root -> discover(root).isPresent())
+                .toList();
+    }
+
+    /** First discoverable Windows Steam Mindustry root, if any. */
+    public static Optional<Path> findDefaultSteamInstallationRoot() {
+        return findDefaultSteamInstallationRoots().stream().findFirst();
+    }
+
+    private static Optional<Path> normalizeInstallRoot(@Nullable Path directory) {
+        if (directory == null) {
+            return Optional.empty();
+        }
+        Path root = directory.toAbsolutePath().normalize();
+        if (Files.isRegularFile(root) && root.getFileName() != null
+                && MINDUSTRY_EXE.equalsIgnoreCase(root.getFileName().toString())) {
+            root = root.getParent();
+        }
+        if (!Files.isDirectory(root)) {
+            return Optional.empty();
+        }
+        return Optional.of(root);
+    }
+
+    private static @Unmodifiable List<Path> defaultWindowsSteamRoots() {
+        List<Path> roots = new ArrayList<>();
+        roots.add(DEFAULT_WINDOWS_STEAM_ROOT);
+
+        String programFilesX86 = System.getenv("ProgramFiles(x86)");
+        if (programFilesX86 != null && !programFilesX86.isBlank()) {
+            roots.add(Path.of(programFilesX86).resolve("Steam"));
+        }
+        return uniquePaths(roots);
+    }
+
+    static @Unmodifiable List<Path> steamMindustryInstallCandidates(Path libraryFoldersVdf) {
+        Path steamApps = libraryFoldersVdf.getParent();
+        Path steamRoot = steamApps == null ? null : steamApps.getParent();
+        return steamMindustryInstallCandidates(libraryFoldersVdf, steamRoot);
+    }
+
+    private static @Unmodifiable List<Path> steamMindustryInstallCandidates(
+            Path libraryFoldersVdf,
+            @Nullable Path fallbackSteamRoot) {
+        List<Path> candidates = new ArrayList<>();
+        for (Path library : steamLibrariesWithMindustry(libraryFoldersVdf)) {
+            candidates.add(library.resolve("steamapps").resolve("common").resolve("Mindustry"));
+        }
+        if (fallbackSteamRoot != null) {
+            candidates.add(fallbackSteamRoot.resolve("steamapps").resolve("common").resolve("Mindustry"));
+        }
+        return uniquePaths(candidates);
+    }
+
+    private static @Unmodifiable List<Path> steamLibrariesWithMindustry(Path libraryFoldersVdf) {
+        if (!Files.isRegularFile(libraryFoldersVdf)) {
+            return List.of();
+        }
+        try {
+            VdfObject root = parseVdf(Files.readString(libraryFoldersVdf));
+            VdfObject libraryFolders = root.object("libraryfolders");
+            if (libraryFolders == null) {
+                return List.of();
+            }
+
+            List<Path> libraries = new ArrayList<>();
+            for (VdfValue value : libraryFolders.values().values()) {
+                if (!(value instanceof VdfObject library)) {
+                    continue;
+                }
+                String path = library.string("path");
+                VdfObject apps = library.object("apps");
+                if (path != null && apps != null && apps.values().containsKey(STEAM_APP_ID)) {
+                    libraries.add(Path.of(path));
+                }
+            }
+            return uniquePaths(libraries);
+        } catch (Exception ignored) {
+            return List.of();
+        }
+    }
+
+    private static @Unmodifiable List<Path> uniquePaths(List<Path> paths) {
+        Map<String, Path> unique = new LinkedHashMap<>();
+        for (Path path : paths) {
+            Path normalized = path.toAbsolutePath().normalize();
+            unique.putIfAbsent(normalized.toString().toLowerCase(Locale.ROOT), normalized);
+        }
+        return List.copyOf(unique.values());
     }
 
     private static Optional<JsonObject> readLauncherConfig(Path json) {
@@ -246,6 +355,138 @@ public final class MindustryInstallationDiscovery {
     private static String sanitizeId(String raw) {
         String sanitized = raw == null ? "" : raw.replaceAll("[^A-Za-z0-9._-]", "-");
         return sanitized.isBlank() ? "mindustry" : sanitized;
+    }
+
+    private static VdfObject parseVdf(String text) {
+        VdfCursor cursor = new VdfCursor(tokenizeVdf(text));
+        Map<String, VdfValue> values = new LinkedHashMap<>();
+        while (cursor.hasNext()) {
+            String key = cursor.nextString();
+            values.put(key, parseVdfValue(cursor));
+        }
+        return new VdfObject(values);
+    }
+
+    private static VdfValue parseVdfValue(VdfCursor cursor) {
+        String token = cursor.next();
+        if ("{".equals(token)) {
+            return parseVdfObject(cursor);
+        }
+        if ("}".equals(token)) {
+            throw new IllegalArgumentException("Unexpected VDF object end");
+        }
+        return new VdfString(token);
+    }
+
+    private static VdfObject parseVdfObject(VdfCursor cursor) {
+        Map<String, VdfValue> values = new LinkedHashMap<>();
+        while (cursor.hasNext()) {
+            if ("}".equals(cursor.peek())) {
+                cursor.next();
+                return new VdfObject(values);
+            }
+            String key = cursor.nextString();
+            values.put(key, parseVdfValue(cursor));
+        }
+        throw new IllegalArgumentException("Unclosed VDF object");
+    }
+
+    private static @Unmodifiable List<String> tokenizeVdf(String text) {
+        List<String> tokens = new ArrayList<>();
+        int i = 0;
+        while (i < text.length()) {
+            char c = text.charAt(i);
+            if (Character.isWhitespace(c)) {
+                i++;
+                continue;
+            }
+            if (c == '{' || c == '}') {
+                tokens.add(Character.toString(c));
+                i++;
+                continue;
+            }
+            if (c == '"') {
+                StringBuilder token = new StringBuilder();
+                i++;
+                while (i < text.length()) {
+                    char ch = text.charAt(i++);
+                    if (ch == '"') {
+                        break;
+                    }
+                    if (ch == '\\' && i < text.length()
+                            && (text.charAt(i) == '\\' || text.charAt(i) == '"')) {
+                        token.append(text.charAt(i++));
+                    } else {
+                        token.append(ch);
+                    }
+                }
+                tokens.add(token.toString());
+                continue;
+            }
+
+            int start = i;
+            while (i < text.length()) {
+                c = text.charAt(i);
+                if (Character.isWhitespace(c) || c == '{' || c == '}') {
+                    break;
+                }
+                i++;
+            }
+            tokens.add(text.substring(start, i));
+        }
+        return List.copyOf(tokens);
+    }
+
+    private interface VdfValue {
+    }
+
+    private record VdfString(String value) implements VdfValue {
+    }
+
+    private record VdfObject(Map<String, VdfValue> values) implements VdfValue {
+        private @Nullable String string(String key) {
+            VdfValue value = values.get(key);
+            return value instanceof VdfString string ? string.value() : null;
+        }
+
+        private @Nullable VdfObject object(String key) {
+            VdfValue value = values.get(key);
+            return value instanceof VdfObject object ? object : null;
+        }
+    }
+
+    private static final class VdfCursor {
+        private final List<String> tokens;
+        private int index;
+
+        private VdfCursor(List<String> tokens) {
+            this.tokens = tokens;
+        }
+
+        private boolean hasNext() {
+            return index < tokens.size();
+        }
+
+        private String peek() {
+            if (!hasNext()) {
+                throw new IllegalArgumentException("Unexpected VDF end");
+            }
+            return tokens.get(index);
+        }
+
+        private String next() {
+            String token = peek();
+            index++;
+            return token;
+        }
+
+        private String nextString() {
+            String token = next();
+            if ("{".equals(token) || "}".equals(token)) {
+                throw new IllegalArgumentException("Expected VDF string");
+            }
+            return token;
+        }
     }
 
     /** Metadata extracted from a discovered installation. */

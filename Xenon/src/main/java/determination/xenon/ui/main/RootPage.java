@@ -122,11 +122,8 @@ public class RootPage extends DecoratorAnimatedPage implements DecoratorPage {
                         .map(Version::getId)
                         .collect(Collectors.toCollection(java.util.LinkedHashSet::new));
                 try {
-                    MindustryImportFlow.syncProfileGameDirectory(profile);
-                    determination.xenon.mindustry.XenonGameRepository xrepo =
-                            determination.xenon.mindustry.MindustryImportFlow.repository();
-                    xrepo.refresh();
-                    for (determination.xenon.mindustry.MindustryVersion v : xrepo.all()) {
+                    for (determination.xenon.mindustry.MindustryVersion v :
+                            determination.xenon.mindustry.MindustryImportFlow.visibleVersions(profile)) {
                         if (seenIds.add(v.getId())) {
                             children.add(new Version(v.getId()));
                         }

@@ -37,6 +37,8 @@ import org.jetbrains.annotations.Nullable;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -99,6 +101,44 @@ public final class MindustryImportFlow {
             return Optional.empty();
         }
         return syncExternalInstallation(profile.getGameDir());
+    }
+
+    /**
+     * Mindustry instances that should be visible for {@code profile}'s current
+     * game directory.
+     *
+     * <p>The registry is still stored globally for compatibility, but the UI
+     * must not show every registered Mindustry instance for every profile. A
+     * version is visible when the selected game directory is Xenon's global
+     * game root, or when the version's jar / working directory / data directory
+     * belongs to the selected game directory.</p>
+     */
+    public static List<MindustryVersion> visibleVersions(Profile profile) {
+        if (profile == null) {
+            return List.of();
+        }
+        syncProfileGameDirectory(profile);
+
+        XenonGameRepository repo = repository();
+        repo.refresh();
+        Path profileDir = normalize(profile.getGameDir());
+        if (samePath(profileDir, Metadata.XENON_GLOBAL_DIRECTORY)
+                || samePath(profileDir, repo.getVersionsRoot())) {
+            return new ArrayList<>(repo.all());
+        }
+
+        List<MindustryVersion> visible = new ArrayList<>();
+        for (MindustryVersion version : repo.all()) {
+            String id = version.getId();
+            if (id == null || id.isBlank()) {
+                continue;
+            }
+            Path versionRoot = repo.getVersionRoot(id);
+            if (belongsToProfile(version, versionRoot, profileDir)) {
+                visible.add(version);
+            }
+        }
+        return visible;
     }
 
     /**
@@ -289,6 +329,20 @@ public final class MindustryImportFlow {
 
     private static boolean samePath(Path left, Path right) {
         return Objects.equals(normalize(left), normalize(right));
+    }
+
+    private static boolean belongsToProfile(MindustryVersion version, Path versionRoot, Path profileDir) {
+        Path jar = normalize(version.resolveJar(versionRoot));
+        Path workingDirectory = normalize(version.resolveWorkingDirectory(versionRoot));
+        Path dataDir = normalize(version.resolveDataDir(versionRoot));
+        return samePath(workingDirectory, profileDir)
+                || samePath(dataDir, profileDir)
+                || isInside(jar, profileDir)
+                || isInside(dataDir, profileDir);
+    }
+
+    private static boolean isInside(Path child, Path parent) {
+        return child.startsWith(parent);
     }
 
     private static Path normalize(Path path) {

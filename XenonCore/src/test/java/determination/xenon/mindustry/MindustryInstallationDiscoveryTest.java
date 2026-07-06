@@ -25,6 +25,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -38,7 +39,75 @@ public final class MindustryInstallationDiscoveryTest {
     /// A Steam-style install is registered as one instance with jar, data dir and bundled JRE.
     @Test
     public void discoversSteamInstallLayout(@TempDir Path tempDir) throws IOException {
-        Path install = tempDir.resolve("Mindustry");
+        Path install = createSteamInstall(tempDir.resolve("Mindustry"));
+        Path jar = install.resolve("jre/desktop.jar");
+        Path data = install.resolve("saves");
+
+        MindustryInstallationDiscovery.DiscoveredInstallation discovered =
+                MindustryInstallationDiscovery.discover(install).orElseThrow();
+
+        assertEquals("steam-mindustry", discovered.getSuggestedId());
+        assertEquals("Steam Mindustry", discovered.getDisplayName());
+        assertEquals(jar.toAbsolutePath().normalize(), discovered.getJar());
+        assertEquals(install.resolve("jre").toAbsolutePath().normalize(), discovered.getJavaHome());
+        assertEquals(data.toAbsolutePath().normalize(), discovered.getDataDir());
+        assertEquals(install.toAbsolutePath().normalize(), discovered.getWorkingDirectory());
+        assertEquals(VersionVariant.VANILLA, discovered.getVariant());
+        assertEquals(158, discovered.getBuild());
+        assertEquals("stable", discovered.getBuildType());
+        assertTrue(discovered.getJvmArgs().contains("--enable-native-access=ALL-UNNAMED"));
+    }
+
+    /// Passing the executable path is normalized back to the Steam install root.
+    @Test
+    public void discoversSteamInstallFromExecutablePath(@TempDir Path tempDir) throws IOException {
+        Path install = createSteamInstall(tempDir.resolve("Mindustry"));
+
+        MindustryInstallationDiscovery.DiscoveredInstallation discovered =
+                MindustryInstallationDiscovery.discover(install.resolve("Mindustry.exe")).orElseThrow();
+
+        assertEquals(install.toAbsolutePath().normalize(), discovered.getRoot());
+        assertEquals(install.resolve("jre/desktop.jar").toAbsolutePath().normalize(), discovered.getJar());
+        assertEquals(install.resolve("saves").toAbsolutePath().normalize(), discovered.getDataDir());
+    }
+
+    /// Steam libraryfolders.vdf entries containing app 1127400 produce Mindustry install candidates.
+    @Test
+    public void findsSteamLibraryContainingMindustryApp(@TempDir Path tempDir) throws IOException {
+        Path steam = tempDir.resolve("Steam");
+        Path library = tempDir.resolve("Steam Library");
+        Path vdf = steam.resolve("steamapps/libraryfolders.vdf");
+        Files.createDirectories(vdf.getParent());
+        String escapedLibrary = library.toAbsolutePath().normalize().toString().replace("\\", "\\\\");
+        Files.writeString(vdf, """
+                "libraryfolders"
+                {
+                  "0"
+                  {
+                    "path" "%s"
+                    "apps"
+                    {
+                      "1127400" "651235848"
+                    }
+                  }
+                  "1"
+                  {
+                    "path" "Z:\\\\OtherSteam"
+                    "apps"
+                    {
+                      "431960" "42"
+                    }
+                  }
+                }
+                """.formatted(escapedLibrary), StandardCharsets.UTF_8);
+
+        List<Path> candidates = MindustryInstallationDiscovery.steamMindustryInstallCandidates(vdf);
+
+        assertTrue(candidates.contains(library.resolve("steamapps/common/Mindustry")
+                .toAbsolutePath().normalize()));
+    }
+
+    private static Path createSteamInstall(Path install) throws IOException {
         Path jar = install.resolve("jre/desktop.jar");
         Path javaBin = install.resolve("jre/bin");
         Path data = install.resolve("saves");
@@ -46,6 +115,7 @@ public final class MindustryInstallationDiscoveryTest {
         Files.createDirectories(data);
         Files.createFile(javaBin.resolve("java"));
         Files.createFile(javaBin.resolve("java.exe"));
+        Files.createFile(install.resolve("Mindustry.exe"));
         Files.createFile(install.resolve("steam_api64.dll"));
         Files.createFile(data.resolve("steam_autocloud.vdf"));
         writeJar(jar, """
@@ -61,20 +131,7 @@ public final class MindustryInstallationDiscoveryTest {
                   "vmArgs": ["-Dhttps.protocols=TLSv1.2", "--enable-native-access=ALL-UNNAMED"]
                 }
                 """, StandardCharsets.UTF_8);
-
-        MindustryInstallationDiscovery.DiscoveredInstallation discovered =
-                MindustryInstallationDiscovery.discover(install).orElseThrow();
-
-        assertEquals("steam-mindustry", discovered.getSuggestedId());
-        assertEquals("Steam Mindustry", discovered.getDisplayName());
-        assertEquals(jar.toAbsolutePath().normalize(), discovered.getJar());
-        assertEquals(install.resolve("jre").toAbsolutePath().normalize(), discovered.getJavaHome());
-        assertEquals(data.toAbsolutePath().normalize(), discovered.getDataDir());
-        assertEquals(install.toAbsolutePath().normalize(), discovered.getWorkingDirectory());
-        assertEquals(VersionVariant.VANILLA, discovered.getVariant());
-        assertEquals(158, discovered.getBuild());
-        assertEquals("stable", discovered.getBuildType());
-        assertTrue(discovered.getJvmArgs().contains("--enable-native-access=ALL-UNNAMED"));
+        return install;
     }
 
     private static void writeJar(Path jar, String versionProperties) throws IOException {

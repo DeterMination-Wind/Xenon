@@ -167,11 +167,8 @@ public class GameListPage extends DecoratorAnimatedPage implements DecoratorPage
             // because they live under the same versions directory, so dedupe
             // by id before creating list cells.
             try {
-                determination.xenon.mindustry.MindustryImportFlow.syncProfileGameDirectory(profile);
-                determination.xenon.mindustry.XenonGameRepository xrepo =
-                        determination.xenon.mindustry.MindustryImportFlow.repository();
-                xrepo.refresh();
-                for (determination.xenon.mindustry.MindustryVersion v : xrepo.all()) {
+                for (determination.xenon.mindustry.MindustryVersion v :
+                        determination.xenon.mindustry.MindustryImportFlow.visibleVersions(profile)) {
                     if (seenIds.add(v.getId())) {
                         versionItems.add(new GameListItem(profile, v.getId()));
                     }

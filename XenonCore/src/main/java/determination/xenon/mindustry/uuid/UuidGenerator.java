@@ -17,6 +17,8 @@
  */
 package determination.xenon.mindustry.uuid;
 
+import org.jetbrains.annotations.NotNullByDefault;
+
 import java.nio.ByteBuffer;
 import java.security.SecureRandom;
 import java.util.Base64;
@@ -37,8 +39,10 @@ import java.util.UUID;
  * {@link #toUuid(String)} decodes the 8 bytes back and zero-fills the
  * lower half so the round-trip is total but lossy on the
  * least-significant half (intentional — the launcher uses the resulting
- * UUID purely as an identifier).</p>
+ * UUID purely as an identifier). Steam's desktop launcher uses a separate
+ * deterministic path exposed through {@link #fromSteamAccountId(int)}.</p>
  */
+@NotNullByDefault
 public final class UuidGenerator {
 
     private static final SecureRandom RNG = new SecureRandom();
@@ -75,6 +79,29 @@ public final class UuidGenerator {
     }
 
     /**
+     * Generate the same local Mindustry UID as Steam
+     * {@code DesktopLauncher#getUUID()} for one Steam account id.
+     *
+     * <p>This is the 12-character UID stored in Mindustry's local
+     * {@code settings.bin}. It is not the decimal account id Steam lobby
+     * servers see after the networking layer rewrites connect packets.</p>
+     */
+    public static String fromSteamAccountId(int accountId) {
+        return ENCODER.encodeToString(ByteBuffer.allocate(UID_BYTES)
+                .putLong(firstArcRandLong(accountId))
+                .array());
+    }
+
+    /**
+     * Long overload for callers that carry Steam account ids as unsigned
+     * 32-bit values. The value is narrowed to the Java {@code int} shape
+     * used by Steamworks before seeding Arc {@code Rand}.
+     */
+    public static String fromSteamAccountId(long accountId) {
+        return fromSteamAccountId((int)accountId);
+    }
+
+    /**
      * Inverse of {@link #fromUuid(UUID)}. Accepts the 12-character
      * standard-base64 form. The decoded 8 bytes become the high half of
      * the returned {@link UUID}; the low half is zero. Throws
@@ -105,5 +132,23 @@ public final class UuidGenerator {
         } catch (RuntimeException e) {
             return false;
         }
+    }
+
+    private static long firstArcRandLong(long seed) {
+        long seed0 = murmurHash3(seed == 0L ? Long.MIN_VALUE : seed);
+        long seed1 = murmurHash3(seed0);
+        long s1 = seed0;
+        long s0 = seed1;
+        s1 ^= s1 << 23;
+        return (s1 ^ s0 ^ (s1 >>> 17) ^ (s0 >>> 26)) + s0;
+    }
+
+    private static long murmurHash3(long x) {
+        x ^= x >>> 33;
+        x *= 0xff51afd7ed558ccdL;
+        x ^= x >>> 33;
+        x *= 0xc4ceb9fe1a85ec53L;
+        x ^= x >>> 33;
+        return x;
     }
 }

@@ -25,11 +25,15 @@ import javafx.collections.ObservableList;
 import determination.xenon.Metadata;
 import determination.xenon.event.EventBus;
 import determination.xenon.event.RefreshedVersionsEvent;
+import determination.xenon.mindustry.MindustryImportFlow;
+import determination.xenon.mindustry.MindustryInstallationDiscovery;
+import determination.xenon.task.Schedulers;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.TreeMap;
 import java.util.function.Consumer;
 
@@ -101,9 +105,18 @@ public final class Profiles {
 
     private static void checkProfiles() {
         if (profiles.isEmpty()) {
-            Profile current = new Profile(Profiles.DEFAULT_PROFILE, Path.of(".minecraft"), new VersionSetting(), null, true);
+            Optional<Path> steamMindustry = MindustryInstallationDiscovery.findDefaultSteamInstallationRoot();
+            Path defaultGameDir = steamMindustry.orElse(Path.of(".minecraft"));
+            Profile current = new Profile(Profiles.DEFAULT_PROFILE, defaultGameDir,
+                    new VersionSetting(), null, steamMindustry.isEmpty());
             Profile home = new Profile(Profiles.HOME_PROFILE, Metadata.XENON_GLOBAL_DIRECTORY);
-            Platform.runLater(() -> profiles.addAll(current, home));
+            Platform.runLater(() -> {
+                profiles.addAll(current, home);
+                steamMindustry.ifPresent(root -> Schedulers.io().execute(() ->
+                        MindustryImportFlow.syncExternalInstallation(root)
+                                .ifPresent(version -> Platform.runLater(() ->
+                                        current.setSelectedVersion(version.getId())))));
+            });
         }
     }
 
