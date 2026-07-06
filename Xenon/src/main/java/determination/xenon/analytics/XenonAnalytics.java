@@ -422,13 +422,13 @@ public final class XenonAnalytics {
             default -> {
                 Architecture arch = Architecture.parseArchName(raw);
                 yield switch (arch) {
-                    case X86_64 -> "x64";
-                    case X86, IA32 -> "x86";
-                    case ARM64 -> "arm64";
-                    case ARM32 -> "arm32";
-                    case UNKNOWN -> raw.trim().isEmpty() ? "unknown" : raw.trim();
-                    default -> arch.getCheckedName();
-                };
+                        case X86_64 -> "x64";
+                        case X86, IA32 -> "x86";
+                        case ARM64 -> "arm64";
+                        case ARM32 -> "arm32";
+                        case UNKNOWN -> raw.trim().isEmpty() ? "unknown" : raw.trim();
+                        default -> arch.getCheckedName();
+                    };
             }
         };
     }

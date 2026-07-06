@@ -8,6 +8,9 @@ on:
 permissions:
   contents: write
 
+env:
+  MAVEN_CENTRAL_REPO: https://repo.maven.apache.org/maven2
+
 jobs:
   build:
     runs-on: ubuntu-latest
