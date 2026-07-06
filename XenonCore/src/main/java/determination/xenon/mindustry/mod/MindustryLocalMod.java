@@ -61,7 +61,7 @@ public final class MindustryLocalMod {
                              boolean java,
                              List<String> dependencies) {
         this(file, name, displayName, author, version, description, main, minGameVersion,
-                java, dependencies, null);
+                java, dependencies, isArchiveEnabled(file), null);
     }
 
     private MindustryLocalMod(Path file,
@@ -74,6 +74,7 @@ public final class MindustryLocalMod {
                               int minGameVersion,
                               boolean java,
                               List<String> dependencies,
+                              boolean enabled,
                               String ignoredByFileName) {
         this.file = Objects.requireNonNull(file, "file");
         this.name = name;
@@ -87,8 +88,7 @@ public final class MindustryLocalMod {
         this.dependencies = dependencies == null
                 ? Collections.emptyList()
                 : List.copyOf(dependencies);
-        this.enabled = !file.getFileName().toString()
-                .toLowerCase(Locale.ROOT).endsWith(".disabled");
+        this.enabled = enabled;
         this.internalName = normalizeInternalName(name);
         this.ignoredByFileName = ignoredByFileName;
     }
@@ -122,9 +122,20 @@ public final class MindustryLocalMod {
 
     public String getIgnoredByFileName() { return ignoredByFileName; }
 
+    /**
+     * Return the same metadata with a launcher/game-derived enabled
+     * state. Used when Mindustry's settings disable a normal archive.
+     */
+    public MindustryLocalMod withEnabled(boolean enabled) {
+        if (this.enabled == enabled) return this;
+        return new MindustryLocalMod(file, name, displayName, author, version, description,
+                main, minGameVersion, java, dependencies, enabled, ignoredByFileName);
+    }
+
     public MindustryLocalMod ignoredBy(MindustryLocalMod winner) {
         return new MindustryLocalMod(file, name, displayName, author, version, description,
-                main, minGameVersion, java, dependencies, winner.getFile().getFileName().toString());
+                main, minGameVersion, java, dependencies,
+                enabled, winner.getFile().getFileName().toString());
     }
 
     /**
@@ -142,6 +153,10 @@ public final class MindustryLocalMod {
             return "";
         }
         return rawName.toLowerCase(Locale.ROOT).replace(" ", "-");
+    }
+
+    private static boolean isArchiveEnabled(Path file) {
+        return !file.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".disabled");
     }
 
     @Override

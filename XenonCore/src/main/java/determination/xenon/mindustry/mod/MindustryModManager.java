@@ -17,6 +17,7 @@
  */
 package determination.xenon.mindustry.mod;
 
+import determination.xenon.mindustry.uuid.MindustrySettingsBin;
 import determination.xenon.util.logging.Logger;
 
 import java.io.IOException;
@@ -25,6 +26,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -42,12 +44,20 @@ import java.util.Objects;
  */
 public final class MindustryModManager {
     private final Path modsDir;
+    private final Path dataDir;
 
     public MindustryModManager(Path modsDir) {
+        this(modsDir, inferDataDir(modsDir));
+    }
+
+    public MindustryModManager(Path modsDir, Path dataDir) {
         this.modsDir = Objects.requireNonNull(modsDir, "modsDir").toAbsolutePath().normalize();
+        this.dataDir = Objects.requireNonNull(dataDir, "dataDir").toAbsolutePath().normalize();
     }
 
     public Path getModsDir() { return modsDir; }
+
+    public Path getDataDir() { return dataDir; }
 
     /**
      * Walk {@link #getModsDir()} (non-recursive) and parse every
@@ -57,12 +67,13 @@ public final class MindustryModManager {
     public synchronized List<MindustryLocalMod> scan() {
         List<MindustryLocalMod> result = new ArrayList<>();
         if (!Files.isDirectory(modsDir)) return result;
+        Map<String, Object> settings = MindustrySettingsBin.readValues(dataDir);
         try (DirectoryStream<Path> stream = Files.newDirectoryStream(modsDir)) {
             for (Path p : stream) {
                 if (!Files.isRegularFile(p)) continue;
                 if (!isModArchive(p)) continue;
                 try {
-                    result.add(MindustryModParser.parse(p));
+                    result.add(applyGameEnabledSetting(MindustryModParser.parse(p), settings));
                 } catch (IOException ex) {
                     Logger.LOG.log(System.Logger.Level.WARNING,
                             "Failed to parse Mindustry mod " + p + ": " + ex.getMessage());
@@ -73,8 +84,39 @@ public final class MindustryModManager {
                     "Failed to list Mindustry mods dir " + modsDir, ex);
         }
         result = markDuplicateWinners(result);
-        result.sort((a, b) -> a.displayName().compareToIgnoreCase(b.displayName()));
+        result.sort(MindustryModManager::compareDisplayOrder);
         return result;
+    }
+
+    private static Path inferDataDir(Path modsDir) {
+        Path normalized = Objects.requireNonNull(modsDir, "modsDir").toAbsolutePath().normalize();
+        Path parent = normalized.getParent();
+        return parent == null ? normalized : parent;
+    }
+
+    private static MindustryLocalMod applyGameEnabledSetting(MindustryLocalMod mod,
+                                                             Map<String, Object> settings) {
+        String key = enabledSettingKey(mod);
+        if (key == null) {
+            return mod;
+        }
+        boolean archiveEnabled = !mod.getFile().getFileName().toString()
+                .toLowerCase(Locale.ROOT).endsWith(".disabled");
+        boolean gameEnabled = MindustrySettingsBin.getBool(settings, key, true);
+        return mod.withEnabled(archiveEnabled && gameEnabled);
+    }
+
+    private static int compareDisplayOrder(MindustryLocalMod a, MindustryLocalMod b) {
+        int enabled = Boolean.compare(b.isEnabled(), a.isEnabled());
+        if (enabled != 0) {
+            return enabled;
+        }
+        int displayName = a.displayName().compareToIgnoreCase(b.displayName());
+        if (displayName != 0) {
+            return displayName;
+        }
+        return a.getFile().getFileName().toString()
+                .compareToIgnoreCase(b.getFile().getFileName().toString());
     }
 
     private static List<MindustryLocalMod> markDuplicateWinners(List<MindustryLocalMod> mods) {
@@ -172,19 +214,23 @@ public final class MindustryModManager {
     public void enable(MindustryLocalMod mod) throws IOException {
         Path src = mod.getFile();
         String name = src.getFileName().toString();
-        if (!name.toLowerCase(Locale.ROOT).endsWith(".disabled")) return;
-        String stripped = name.substring(0, name.length() - ".disabled".length());
-        Path dst = src.resolveSibling(stripped);
-        Files.move(src, dst, StandardCopyOption.REPLACE_EXISTING);
+        if (name.toLowerCase(Locale.ROOT).endsWith(".disabled")) {
+            String stripped = name.substring(0, name.length() - ".disabled".length());
+            Path dst = src.resolveSibling(stripped);
+            Files.move(src, dst, StandardCopyOption.REPLACE_EXISTING);
+        }
+        writeEnabledSetting(mod, true);
     }
 
     /** Disable a mod by appending the {@code .disabled} suffix. */
     public void disable(MindustryLocalMod mod) throws IOException {
         Path src = mod.getFile();
         String name = src.getFileName().toString();
-        if (name.toLowerCase(Locale.ROOT).endsWith(".disabled")) return;
-        Path dst = src.resolveSibling(name + ".disabled");
-        Files.move(src, dst, StandardCopyOption.REPLACE_EXISTING);
+        if (!name.toLowerCase(Locale.ROOT).endsWith(".disabled")) {
+            Path dst = src.resolveSibling(name + ".disabled");
+            Files.move(src, dst, StandardCopyOption.REPLACE_EXISTING);
+        }
+        writeEnabledSetting(mod, false);
     }
 
     /** Permanently remove the underlying archive from disk. */
@@ -216,5 +262,21 @@ public final class MindustryModManager {
             name = name.substring(0, name.length() - ".disabled".length());
         }
         return name.endsWith(".jar") || name.endsWith(".zip");
+    }
+
+    private void writeEnabledSetting(MindustryLocalMod mod, boolean enabled) throws IOException {
+        String key = enabledSettingKey(mod);
+        if (key == null) {
+            return;
+        }
+        MindustrySettingsBin.putValuesOrThrow(dataDir, Collections.singletonMap(key, enabled));
+    }
+
+    private static String enabledSettingKey(MindustryLocalMod mod) {
+        String internalName = mod.getInternalName();
+        if (internalName == null || internalName.isBlank()) {
+            return null;
+        }
+        return "mod-" + internalName + "-enabled";
     }
 }

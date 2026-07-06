@@ -96,6 +96,11 @@ public final class MindustryModListPane extends BorderPane {
         reload();
     }
 
+    /** Refresh the list from the instance's {@code mods/} folder. */
+    public void refreshFromDisk() {
+        reload();
+    }
+
     private void reload() {
         double keepV = scroll.getVvalue();
         status.setText(i18n("xenon.mindustry.modlist.loading"));

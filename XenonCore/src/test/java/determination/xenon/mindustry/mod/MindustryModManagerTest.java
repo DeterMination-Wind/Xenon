@@ -17,6 +17,7 @@
  */
 package determination.xenon.mindustry.mod;
 
+import determination.xenon.mindustry.uuid.MindustrySettingsBin;
 import org.jetbrains.annotations.NotNullByDefault;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -27,6 +28,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.util.List;
+import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -119,6 +121,71 @@ public final class MindustryModManagerTest {
         List<MindustryLocalMod> mods = new MindustryModManager(modsDir).scan();
 
         assertEquals("Neon / 氖", find(mods, "neon.zip").getDisplayName());
+    }
+
+    /// Mindustry's settings.bin disabled flag disables a normal archive.
+    @Test
+    public void gameSideDisabledSettingMakesArchiveDisabled(@TempDir Path tempDir)
+            throws IOException {
+        Path modsDir = tempDir.resolve("mods");
+        writeMod(modsDir.resolve("alpha.zip"), "alpha", "Alpha");
+        MindustrySettingsBin.putValuesOrThrow(tempDir,
+                Map.of("mod-alpha-enabled", Boolean.FALSE));
+
+        List<MindustryLocalMod> mods = new MindustryModManager(modsDir).scan();
+
+        assertFalse(find(mods, "alpha.zip").isEnabled());
+    }
+
+    /// A .disabled archive remains disabled even when settings.bin says the mod is enabled.
+    @Test
+    public void disabledArchiveWinsOverGameSideEnabledSetting(@TempDir Path tempDir)
+            throws IOException {
+        Path modsDir = tempDir.resolve("mods");
+        writeMod(modsDir.resolve("alpha.zip.disabled"), "alpha", "Alpha");
+        MindustrySettingsBin.putValuesOrThrow(tempDir,
+                Map.of("mod-alpha-enabled", Boolean.TRUE));
+
+        List<MindustryLocalMod> mods = new MindustryModManager(modsDir).scan();
+
+        assertFalse(find(mods, "alpha.zip.disabled").isEnabled());
+    }
+
+    /// Launcher toggles keep both the archive suffix and settings.bin in sync.
+    @Test
+    public void enableDisableOperationsUpdateArchiveAndSettings(@TempDir Path tempDir)
+            throws IOException {
+        Path modsDir = tempDir.resolve("mods");
+        writeMod(modsDir.resolve("alpha.zip"), "alpha", "Alpha");
+        MindustryModManager manager = new MindustryModManager(modsDir);
+
+        manager.disable(find(manager.scan(), "alpha.zip"));
+
+        assertTrue(Files.isRegularFile(modsDir.resolve("alpha.zip.disabled")));
+        assertFalse(MindustrySettingsBin.getBool(tempDir, "mod-alpha-enabled", true));
+
+        manager.enable(find(manager.scan(), "alpha.zip.disabled"));
+
+        assertTrue(Files.isRegularFile(modsDir.resolve("alpha.zip")));
+        assertTrue(MindustrySettingsBin.getBool(tempDir, "mod-alpha-enabled", false));
+    }
+
+    /// Enabled mods sort alphabetically before the disabled alphabetical group.
+    @Test
+    public void sortsEnabledGroupBeforeDisabledGroup(@TempDir Path tempDir)
+            throws IOException {
+        Path modsDir = tempDir.resolve("mods");
+        writeMod(modsDir.resolve("zulu.zip"), "zulu", "zulu");
+        writeMod(modsDir.resolve("alpha.zip"), "alpha", "Alpha");
+        writeMod(modsDir.resolve("beta.zip"), "beta", "Beta");
+        writeMod(modsDir.resolve("delta.zip.disabled"), "delta", "delta");
+        MindustrySettingsBin.putValuesOrThrow(tempDir,
+                Map.of("mod-beta-enabled", Boolean.FALSE));
+
+        List<MindustryLocalMod> mods = new MindustryModManager(modsDir).scan();
+
+        assertEquals(List.of("Alpha", "zulu", "Beta", "delta"),
+                mods.stream().map(MindustryLocalMod::displayName).toList());
     }
 
     private static Path writeMod(Path archive, String internalName, String displayName) throws IOException {

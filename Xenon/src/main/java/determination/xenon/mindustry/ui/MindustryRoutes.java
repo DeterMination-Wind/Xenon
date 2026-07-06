@@ -42,8 +42,11 @@ import org.jetbrains.annotations.Nullable;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import static determination.xenon.util.i18n.I18n.i18n;
 import static determination.xenon.util.logging.Logger.LOG;
@@ -61,6 +64,8 @@ import static determination.xenon.util.logging.Logger.LOG;
 @NotNullByDefault
 public final class MindustryRoutes {
     private static final int RECENT_LINE_DISPLAY_LIMIT = 12;
+    private static final Map<String, CopyOnWriteArrayList<Runnable>> MOD_PANE_REFRESH_LISTENERS =
+            new ConcurrentHashMap<>();
 
     private MindustryRoutes() {}
 
@@ -154,6 +159,25 @@ public final class MindustryRoutes {
         Controllers.navigate(new MindustryVersionPage(version));
     }
 
+    /** Register a visible mod pane refresh callback for one Mindustry instance id. */
+    public static void addModPaneRefreshListener(String id, Runnable listener) {
+        MOD_PANE_REFRESH_LISTENERS
+                .computeIfAbsent(id, ignored -> new CopyOnWriteArrayList<>())
+                .addIfAbsent(listener);
+    }
+
+    /** Remove a previously registered mod pane refresh callback. */
+    public static void removeModPaneRefreshListener(String id, Runnable listener) {
+        CopyOnWriteArrayList<Runnable> listeners = MOD_PANE_REFRESH_LISTENERS.get(id);
+        if (listeners == null) {
+            return;
+        }
+        listeners.remove(listener);
+        if (listeners.isEmpty()) {
+            MOD_PANE_REFRESH_LISTENERS.remove(id, listeners);
+        }
+    }
+
     /** Spawn the Mindustry process for {@code id} via {@link XenonLauncher}. */
     public static void launch(MindustryVersion version) {
         String id = version.getId();
@@ -184,6 +208,7 @@ public final class MindustryRoutes {
         } else if (event instanceof MindustryClientRuntimeRegistry.Exited exited) {
             LOG.info("Mindustry process exited: id=" + exited.id() + ", pid=" + exited.pid()
                     + ", code=" + exited.exitCode());
+            refreshOpenModPanes(exited.id());
             if (exited.exitCode() != 0) {
                 Platform.runLater(() -> Controllers.dialog(
                         i18n("xenon.mindustry.launch.exited_abnormally", exited.exitCode())
@@ -205,6 +230,22 @@ public final class MindustryRoutes {
         } else if (event instanceof MindustryClientRuntimeRegistry.LaunchFailed failed) {
             LOG.warning("Mindustry runtime launch failed: id=" + failed.id(), failed.error());
         }
+    }
+
+    private static void refreshOpenModPanes(String id) {
+        CopyOnWriteArrayList<Runnable> listeners = MOD_PANE_REFRESH_LISTENERS.get(id);
+        if (listeners == null || listeners.isEmpty()) {
+            return;
+        }
+        Platform.runLater(() -> {
+            for (Runnable listener : listeners) {
+                try {
+                    listener.run();
+                } catch (RuntimeException ex) {
+                    LOG.warning("Mindustry mod pane refresh listener failed for " + id, ex);
+                }
+            }
+        });
     }
 
     private static String formatRecentLines(List<String> recentLines) {

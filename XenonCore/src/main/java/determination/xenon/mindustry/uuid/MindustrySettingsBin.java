@@ -24,12 +24,14 @@ import java.io.BufferedOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.zip.InflaterInputStream;
 
 /**
  * Read-modify-write helper for Mindustry's {@code settings.bin}.
@@ -140,12 +142,45 @@ public final class MindustrySettingsBin {
         Logger.LOG.info("Mindustry settings.bin updated with " + values.size() + " launcher value(s)");
     }
 
+    /**
+     * Read every entry from {@code <dataDir>/settings.bin}. Plain Arc
+     * settings and Arc's optional zlib-compressed settings are both
+     * supported. Returns an empty map when the file is missing or cannot
+     * be parsed safely.
+     */
+    public static LinkedHashMap<String, Object> readValues(Path dataDir) {
+        if (dataDir == null) return new LinkedHashMap<>();
+        return readIfPresent(dataDir.resolve(FILE_NAME));
+    }
+
+    /**
+     * Read a boolean entry from {@code <dataDir>/settings.bin}.
+     * Returns {@code defaultValue} when the key is missing, has another
+     * type, or the file cannot be parsed.
+     */
+    public static boolean getBool(Path dataDir, String key, boolean defaultValue) {
+        return getBool(readValues(dataDir), key, defaultValue);
+    }
+
+    /**
+     * Read a boolean entry from a previously loaded settings map.
+     * Returns {@code defaultValue} when the key is missing or has another
+     * type.
+     */
+    public static boolean getBool(Map<String, Object> values, String key, boolean defaultValue) {
+        if (values == null || key == null) return defaultValue;
+        Object value = values.get(key);
+        return value instanceof Boolean ? (Boolean) value : defaultValue;
+    }
+
     private static LinkedHashMap<String, Object> readIfPresent(Path file) {
         LinkedHashMap<String, Object> out = new LinkedHashMap<>();
         if (!Files.isRegularFile(file)) return out;
-        try (DataInputStream in = new DataInputStream(
-                new BufferedInputStream(Files.newInputStream(file)))) {
+        try (DataInputStream in = new DataInputStream(openSettingsInput(file))) {
             int count = in.readInt();
+            if (count <= 0) {
+                throw new IOException("0 values are not allowed");
+            }
             for (int i = 0; i < count; i++) {
                 String key = in.readUTF();
                 byte type = in.readByte();
@@ -182,12 +217,33 @@ public final class MindustrySettingsBin {
                 }
                 out.put(key, value);
             }
+            int trailing = in.read();
+            if (trailing != -1) {
+                throw new IOException("Trailing settings data; expected EOF, got " + trailing);
+            }
         } catch (IOException ex) {
             Logger.LOG.warning("Failed to parse settings.bin (" + ex.getMessage()
                     + ") — starting fresh");
             return new LinkedHashMap<>();
         }
         return out;
+    }
+
+    private static InputStream openSettingsInput(Path file) throws IOException {
+        BufferedInputStream raw = new BufferedInputStream(Files.newInputStream(file));
+        raw.mark(2);
+        int first = raw.read();
+        int second = raw.read();
+        raw.reset();
+        if (isZlibHeader(first, second)) {
+            return new InflaterInputStream(raw);
+        }
+        return raw;
+    }
+
+    private static boolean isZlibHeader(int first, int second) {
+        return first == 0x78
+                && (second == 0x01 || second == 0x5e || second == 0x9c || second == 0xda);
     }
 
     private static void writeAtomically(Path file, Map<String, Object> entries) throws IOException {

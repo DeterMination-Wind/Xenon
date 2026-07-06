@@ -28,6 +28,7 @@ import determination.xenon.ui.SVG;
 import determination.xenon.ui.animation.TransitionPane;
 import determination.xenon.ui.construct.AdvancedListBox;
 import determination.xenon.ui.construct.MessageDialogPane;
+import determination.xenon.ui.construct.PageAware;
 import determination.xenon.ui.construct.TabHeader;
 import determination.xenon.ui.decorator.DecoratorAnimatedPage;
 import determination.xenon.ui.decorator.DecoratorPage;
@@ -48,7 +49,7 @@ import static determination.xenon.util.logging.Logger.LOG;
  * tab is Mindustry-shaped: Mod / Save / Schematic / Crash. The HMCL
  * VersionPage stays in place for legacy MC instances.
  */
-public final class MindustryVersionPage extends DecoratorAnimatedPage implements DecoratorPage {
+public final class MindustryVersionPage extends DecoratorAnimatedPage implements DecoratorPage, PageAware {
 
     private final ReadOnlyObjectWrapper<State> state = new ReadOnlyObjectWrapper<>();
 
@@ -63,6 +64,7 @@ public final class MindustryVersionPage extends DecoratorAnimatedPage implements
     private final Path versionRoot;
     private final Path workingDirectory;
     private final Path dataDir;
+    private final Runnable modPaneRefreshListener = this::refreshModPaneAfterProcessExit;
 
     public MindustryVersionPage(MindustryVersion version) {
         this.version = version;
@@ -106,8 +108,26 @@ public final class MindustryVersionPage extends DecoratorAnimatedPage implements
         return state.getReadOnlyProperty();
     }
 
+    @Override
+    public void onPageShown() {
+        MindustryRoutes.addModPaneRefreshListener(version.getId(), modPaneRefreshListener);
+        tab.onPageShown();
+    }
+
+    @Override
+    public void onPageHidden() {
+        MindustryRoutes.removeModPaneRefreshListener(version.getId(), modPaneRefreshListener);
+        tab.onPageHidden();
+    }
+
     private void launch() {
         MindustryRoutes.launch(version);
+    }
+
+    private void refreshModPaneAfterProcessExit() {
+        if (modTab.isInitialized()) {
+            modTab.getNode().refreshFromDisk();
+        }
     }
 
     private void deleteVersion() {

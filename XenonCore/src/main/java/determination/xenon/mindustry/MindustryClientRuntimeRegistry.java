@@ -128,6 +128,34 @@ public final class MindustryClientRuntimeRegistry {
         handles.remove(id, handle);
     }
 
+    private synchronized boolean relaunchIfReloadExit(RuntimeHandle handle,
+                                                      int exitCode,
+                                                      @Unmodifiable List<String> recentLines) {
+        if (!MindustryReloadExitDetector.isReloadExit(exitCode, recentLines)) {
+            return false;
+        }
+        if (handles.get(handle.id) != handle) {
+            return false;
+        }
+
+        handles.remove(handle.id, handle);
+        emit(handle.listener, new Exited(handle.id, handle.pid(), exitCode, recentLines));
+
+        RuntimeHandle replacement = new RuntimeHandle(handle.id, handle.options,
+                handle.listener, handle.stdout, handle.stderr);
+        try {
+            replacement.start();
+        } catch (IOException ex) {
+            emit(handle.listener, new LaunchFailed(handle.id, ex));
+            return true;
+        }
+        handles.put(handle.id, replacement);
+        emit(handle.listener, new Started(handle.id, replacement.pid()));
+        replacement.monitorExit(this);
+        replacement.monitorWindow(this);
+        return true;
+    }
+
     private static void emit(Consumer<ClientEvent> listener, ClientEvent event) {
         try {
             listener.accept(event);
@@ -259,13 +287,17 @@ public final class MindustryClientRuntimeRegistry {
                 if (monitor != null) {
                     monitor.cancel(false);
                 }
-                registry.removeIfCurrent(id, this);
                 int code = exitCode == null ? -1 : exitCode;
                 if (error != null) {
                     Logger.LOG.warning("Mindustry client exit observation failed for " + id, error);
                 }
+                @Unmodifiable List<String> lines = recentLines();
+                if (!staleTerminated && registry.relaunchIfReloadExit(this, code, lines)) {
+                    return;
+                }
+                registry.removeIfCurrent(id, this);
                 if (!staleTerminated) {
-                    emit(listener, new Exited(id, pid(), code, recentLines()));
+                    emit(listener, new Exited(id, pid(), code, lines));
                 }
             });
         }
