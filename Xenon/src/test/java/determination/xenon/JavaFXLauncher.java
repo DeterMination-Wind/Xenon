@@ -17,6 +17,8 @@
  */
 package determination.xenon;
 
+import java.util.Locale;
+
 public final class JavaFXLauncher {
 
     private JavaFXLauncher() {
@@ -26,14 +28,16 @@ public final class JavaFXLauncher {
 
     static {
         // init JavaFX Toolkit
-        try {
-            javafx.application.Platform.startup(() -> {
-            });
-            started = true;
-        } catch (IllegalStateException e) {
-            started = true;
-        } catch (Throwable e) {
-            e.printStackTrace();
+        if (!isHeadlessLinux()) {
+            try {
+                javafx.application.Platform.startup(() -> {
+                });
+                started = true;
+            } catch (IllegalStateException e) {
+                started = true;
+            } catch (Throwable e) {
+                e.printStackTrace();
+            }
         }
     }
 
@@ -42,5 +46,16 @@ public final class JavaFXLauncher {
 
     public static boolean isStarted() {
         return started;
+    }
+
+    private static boolean isHeadlessLinux() {
+        String osName = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+        return osName.contains("linux")
+                && isBlank(System.getenv("DISPLAY"))
+                && isBlank(System.getenv("WAYLAND_DISPLAY"));
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 }

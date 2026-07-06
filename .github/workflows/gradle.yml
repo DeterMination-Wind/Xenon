@@ -2,6 +2,8 @@ name: Java CI
 
 on:
   push:
+    branches:
+      - main
   pull_request:
     paths-ignore:
       - '**.md'
@@ -9,9 +11,14 @@ on:
 env:
   MAVEN_CENTRAL_REPO: https://repo.maven.apache.org/maven2
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
     - uses: actions/checkout@v4
@@ -40,6 +47,7 @@ jobs:
 
   windows-exe:
     runs-on: windows-latest
+    timeout-minutes: 20
 
     steps:
     - uses: actions/checkout@v4
