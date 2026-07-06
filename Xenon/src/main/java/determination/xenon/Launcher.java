@@ -33,6 +33,7 @@ import javafx.scene.input.DataFormat;
 import javafx.stage.Screen;
 import javafx.stage.Stage;
 import javafx.util.Duration;
+import determination.xenon.analytics.XenonAnalytics;
 import determination.xenon.setting.ConfigHolder;
 import determination.xenon.setting.SambaException;
 import determination.xenon.task.AsyncTaskExecutor;
@@ -129,6 +130,8 @@ public final class Launcher extends Application {
             if (Metadata.XENON_CURRENT_DIRECTORY.toString().indexOf('=') >= 0) {
                 showAlert(AlertType.WARNING, i18n("fatal.illegal_char"));
             }
+
+            XenonAnalytics.start();
 
             // runLater to ensure ConfigHolder.init() finished initialization
             Platform.runLater(() -> {
@@ -305,6 +308,7 @@ public final class Launcher extends Application {
     public void stop() throws Exception {
         determination.xenon.ui.TrayIconManager.uninstall();
         Controllers.onApplicationStop();
+        XenonAnalytics.shutdown();
         Schedulers.shutdown();
         Controllers.shutdown();
         FileSaver.shutdown();
@@ -395,6 +399,7 @@ public final class Launcher extends Application {
                 return;
             Controllers.getStage().setOnCloseRequest(null);
             Controllers.getStage().close();
+            XenonAnalytics.shutdown();
             Schedulers.shutdown();
             Controllers.shutdown();
             Platform.exit();
@@ -413,6 +418,7 @@ public final class Launcher extends Application {
                 return;
             Controllers.getStage().setOnCloseRequest(null);
             Controllers.getStage().close();
+            XenonAnalytics.shutdown();
             Schedulers.shutdown();
             Controllers.shutdown();
             Lang.executeDelayed(System::gc, TimeUnit.SECONDS, 5, true);

@@ -48,6 +48,7 @@ dependencies {
     implementation(libs.java.info)
     implementation(libs.monet.fx)
     implementation(libs.nayuki.qrcodegen)
+    implementation(libs.posthog.server)
 }
 
 fun digest(algorithm: String, bytes: ByteArray): ByteArray = MessageDigest.getInstance(algorithm).digest(bytes)
@@ -81,6 +82,9 @@ val runtimeCriticalClasses = listOf(
     "determination/xenon/mindustry/uuid/UuidProfileManager.class",
     "determination/xenon/ui/account/AccountListItem.class",
     "determination/xenon/ui/account/AccountListPage.class",
+    "com/posthog/server/PostHog.class",
+    "com/posthog/server/PostHogConfig.class",
+    "com/posthog/server/PostHogInterface.class",
 )
 
 tasks.withType<JavaCompile> {
@@ -123,6 +127,9 @@ val xenonProperties = buildList {
     add("xenon.add-opens" to addOpens.joinToString(" "))
     System.getenv("GITHUB_SHA")?.let { add("xenon.version.hash" to it) }
     add("xenon.version.type" to versionType)
+    (System.getenv("XENON_POSTHOG_API_KEY") ?: System.getenv("POSTHOG_API_KEY"))
+        ?.takeIf { it.isNotBlank() }
+        ?.let { add("xenon.posthog.api_key" to it) }
 }
 
 val xenonPropertiesFile = layout.buildDirectory.file("xenon.properties")
@@ -161,6 +168,10 @@ tasks.shadowJar {
         exclude(dependency("com.google.code.gson:.*:.*"))
         exclude(dependency("net.java.dev.jna:jna:.*"))
         exclude(dependency("libs:JFoenix:.*"))
+        exclude(dependency("com.posthog:.*:.*"))
+        exclude(dependency("com.squareup.okhttp3:.*:.*"))
+        exclude(dependency("com.squareup.okio:.*:.*"))
+        exclude(dependency("org.jetbrains.kotlin:.*:.*"))
         exclude(project(":XenonCore"))
         exclude(project(":XenonBoot"))
     }

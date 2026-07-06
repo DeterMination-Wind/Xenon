@@ -17,6 +17,7 @@
  */
 package determination.xenon;
 
+import determination.xenon.analytics.XenonAnalytics;
 import determination.xenon.util.FileSaver;
 import determination.xenon.util.SelfDependencyPatcher;
 import determination.xenon.util.SwingUtils;
@@ -69,6 +70,7 @@ public final class EntryPoint {
     }
 
     public static void exit(int exitCode) {
+        XenonAnalytics.shutdown();
         FileSaver.shutdown();
         LOG.shutdown();
         System.exit(exitCode);

@@ -119,6 +119,51 @@ public final class GlobalConfig extends ObservableSetting {
         enableOfflineAccount.set(value);
     }
 
+    @SerializedName("analyticsEnabled")
+    private final BooleanProperty analyticsEnabled = new SimpleBooleanProperty(true);
+
+    public BooleanProperty analyticsEnabledProperty() {
+        return analyticsEnabled;
+    }
+
+    public boolean isAnalyticsEnabled() {
+        return analyticsEnabled.get();
+    }
+
+    public void setAnalyticsEnabled(boolean value) {
+        analyticsEnabled.set(value);
+    }
+
+    @SerializedName("analyticsInstallId")
+    private final StringProperty analyticsInstallId = new SimpleStringProperty();
+
+    public StringProperty analyticsInstallIdProperty() {
+        return analyticsInstallId;
+    }
+
+    public String getAnalyticsInstallId() {
+        return analyticsInstallId.get();
+    }
+
+    public void setAnalyticsInstallId(String value) {
+        analyticsInstallId.set(value);
+    }
+
+    @SerializedName("analyticsFirstLaunchSent")
+    private final BooleanProperty analyticsFirstLaunchSent = new SimpleBooleanProperty(false);
+
+    public BooleanProperty analyticsFirstLaunchSentProperty() {
+        return analyticsFirstLaunchSent;
+    }
+
+    public boolean isAnalyticsFirstLaunchSent() {
+        return analyticsFirstLaunchSent.get();
+    }
+
+    public void setAnalyticsFirstLaunchSent(boolean value) {
+        analyticsFirstLaunchSent.set(value);
+    }
+
     @SerializedName("fontAntiAliasing")
     private final StringProperty fontAntiAliasing = new SimpleStringProperty();
 

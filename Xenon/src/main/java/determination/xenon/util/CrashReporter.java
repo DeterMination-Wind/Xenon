@@ -17,6 +17,7 @@
  */
 package determination.xenon.util;
 
+import determination.xenon.analytics.XenonAnalytics;
 import javafx.application.Platform;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Alert.AlertType;
@@ -83,6 +84,7 @@ public final class CrashReporter implements Thread.UncaughtExceptionHandler {
     @Override
     public void uncaughtException(Thread t, Throwable e) {
         LOG.error("Uncaught exception in thread " + t.getName(), e);
+        XenonAnalytics.captureCrash(t, e);
 
         try {
             CrashReport report = new CrashReport(t, e);
@@ -101,6 +103,7 @@ public final class CrashReporter implements Thread.UncaughtExceptionHandler {
             LOG.error("Unable to handle uncaught exception", handlingException);
         }
 
+        XenonAnalytics.shutdown();
         FileSaver.shutdown();
         LOG.shutdown();
     }
