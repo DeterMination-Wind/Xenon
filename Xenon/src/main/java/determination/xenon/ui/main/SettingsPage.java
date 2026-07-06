@@ -31,6 +31,7 @@ import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import determination.xenon.Metadata;
+import determination.xenon.analytics.XenonAnalytics;
 import determination.xenon.task.Schedulers;
 import determination.xenon.ui.Controllers;
 import determination.xenon.ui.FXUtils;
@@ -66,6 +67,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 import static determination.xenon.setting.ConfigHolder.config;
+import static determination.xenon.setting.ConfigHolder.globalConfig;
 import static determination.xenon.util.i18n.I18n.i18n;
 import static determination.xenon.util.logging.Logger.LOG;
 
@@ -206,6 +208,20 @@ public final class SettingsPage extends ScrollPane {
                     disableAprilFools.setSubtitle(i18n("settings.take_effect_after_restart"));
                     disableAprilFools.selectedProperty().bindBidirectional(config().disableAprilFoolsProperty());
                     miscPaneList.getContent().add(disableAprilFools);
+                }
+
+                {
+                    LineToggleButton analyticsPane = new LineToggleButton();
+                    analyticsPane.setTitle(i18n("settings.launcher.analytics"));
+                    analyticsPane.selectedProperty().bindBidirectional(globalConfig().analyticsEnabledProperty());
+                    analyticsPane.selectedProperty().addListener((observable, oldValue, enabled) -> {
+                        if (enabled) {
+                            XenonAnalytics.start();
+                        } else {
+                            XenonAnalytics.shutdown();
+                        }
+                    });
+                    miscPaneList.getContent().add(analyticsPane);
                 }
 
                 {

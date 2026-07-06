@@ -113,6 +113,9 @@ public final class XenonAnalytics {
     /// Captures one launcher crash event and flushes it immediately.
     public static void captureCrash(Thread thread, Throwable throwable) {
         synchronized (LOCK) {
+            if (!isAnalyticsEnabledLocked()) {
+                return;
+            }
             if (!initializeClientLocked()) {
                 return;
             }
@@ -191,6 +194,12 @@ public final class XenonAnalytics {
         }
 
         Instant now = clock.instant();
+        GlobalConfig config = ConfigHolder.globalConfig();
+        if (!config.isAnalyticsEnabled()) {
+            timer.markReported(now);
+            return;
+        }
+
         if (!force && !timer.isDue(now, REPORT_INTERVAL)) {
             return;
         }
@@ -201,7 +210,6 @@ public final class XenonAnalytics {
             return;
         }
 
-        GlobalConfig config = ConfigHolder.globalConfig();
         boolean firstLaunch = !config.isAnalyticsFirstLaunchSent();
         PlayerIdentity identity = resolvePlayerIdentity();
         Map<String, Object> properties = buildUsageProperties(
@@ -218,10 +226,6 @@ public final class XenonAnalytics {
     }
 
     private static boolean initializeClientLocked() {
-        if (client != null) {
-            return true;
-        }
-
         GlobalConfig config;
         try {
             config = ConfigHolder.globalConfig();
@@ -237,6 +241,10 @@ public final class XenonAnalytics {
             return false;
         }
 
+        if (client != null) {
+            return true;
+        }
+
         String apiKey = resolveApiKey();
         if (apiKey == null) {
             LOG.info("[Xenon/PostHog] analytics disabled: API key is not configured");
@@ -248,6 +256,14 @@ public final class XenonAnalytics {
             return true;
         } catch (Throwable ex) {
             LOG.warning("[Xenon/PostHog] failed to initialize SDK client", ex);
+            return false;
+        }
+    }
+
+    private static boolean isAnalyticsEnabledLocked() {
+        try {
+            return ConfigHolder.globalConfig().isAnalyticsEnabled();
+        } catch (IllegalStateException ex) {
             return false;
         }
     }

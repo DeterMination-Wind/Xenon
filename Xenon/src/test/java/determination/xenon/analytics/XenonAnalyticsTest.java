@@ -17,10 +17,15 @@
  */
 package determination.xenon.analytics;
 
+import determination.xenon.setting.ConfigHolder;
+import determination.xenon.setting.GlobalConfig;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Field;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -110,9 +115,49 @@ public final class XenonAnalyticsTest {
         assertEquals("failed", client.properties.get("error_message"));
     }
 
+    /// Disabling analytics while the launcher is running prevents final usage capture on shutdown.
+    @Test
+    public void disabledAnalyticsSkipsFinalUsageCapture() throws Exception {
+        Field globalConfigField = ConfigHolder.class.getDeclaredField("globalConfigInstance");
+        globalConfigField.setAccessible(true);
+        Object previousGlobalConfig = globalConfigField.get(null);
+        String previousApiKey = System.getProperty("xenon.posthog.api_key");
+
+        MutableClock clock = new MutableClock(Instant.parse("2026-07-06T00:00:00Z"));
+        FakeClient client = new FakeClient();
+        GlobalConfig config = new GlobalConfig();
+        config.setAnalyticsEnabled(true);
+        config.setAnalyticsInstallId("install-1");
+
+        try {
+            globalConfigField.set(null, config);
+            System.setProperty("xenon.posthog.api_key", "test-key");
+            XenonAnalytics.setClockForTesting(clock);
+            XenonAnalytics.setClientFactoryForTesting(apiKey -> client);
+
+            XenonAnalytics.start();
+            clock.advance(Duration.ofMinutes(15));
+            config.setAnalyticsEnabled(false);
+            XenonAnalytics.shutdown();
+
+            assertEquals(0, client.captureCalls);
+            assertEquals(0, client.flushCalls);
+            assertEquals(1, client.closeCalls);
+        } finally {
+            XenonAnalytics.resetForTesting();
+            globalConfigField.set(null, previousGlobalConfig);
+            if (previousApiKey == null) {
+                System.clearProperty("xenon.posthog.api_key");
+            } else {
+                System.setProperty("xenon.posthog.api_key", previousApiKey);
+            }
+        }
+    }
+
     private static final class FakeClient implements XenonAnalytics.AnalyticsClient {
         private int captureCalls;
         private int flushCalls;
+        private int closeCalls;
         private String distinctId;
         private String event;
         private Map<String, Object> properties = Map.of();
@@ -132,6 +177,34 @@ public final class XenonAnalyticsTest {
 
         @Override
         public void close() {
+            closeCalls++;
+        }
+    }
+
+    private static final class MutableClock extends Clock {
+        private Instant instant;
+
+        private MutableClock(Instant instant) {
+            this.instant = instant;
+        }
+
+        @Override
+        public ZoneId getZone() {
+            return ZoneId.of("UTC");
+        }
+
+        @Override
+        public Clock withZone(ZoneId zone) {
+            return this;
+        }
+
+        @Override
+        public Instant instant() {
+            return instant;
+        }
+
+        private void advance(Duration duration) {
+            instant = instant.plus(duration);
         }
     }
 }
