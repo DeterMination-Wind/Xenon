@@ -73,14 +73,14 @@ jobs:
       - name: Checkout AUR
         run: |
           runuser -u builder -- env GIT_SSH_COMMAND="ssh -i /home/builder/.ssh/aur -o IdentitiesOnly=yes" \
-            git clone ssh://aur@aur.archlinux.org/xenon-mdt.git aur
+            git clone ssh://aur@aur.archlinux.org/xenon-mdt.git /home/builder/aur
 
       - name: Update and push AUR package
         env:
           VERSION: ${{ needs.build.outputs.version }}
         run: |
           runuser -u builder -- bash -lc "
-            cd '$GITHUB_WORKSPACE/aur'
+            cd /home/builder/aur
             sed -i 's/pkgver=.*/pkgver=$VERSION/' PKGBUILD
             sed -i 's/pkgrel=.*/pkgrel=1/' PKGBUILD
             updpkgsums
