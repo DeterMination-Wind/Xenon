@@ -37,6 +37,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
@@ -49,6 +50,24 @@ public final class FetchTaskTest {
     @org.junit.jupiter.api.BeforeAll
     public static void notifyFetchTaskInitialized() {
         FetchTask.notifyInitialized();
+    }
+
+    /// Ensures brief gaps between payload chunks do not repeatedly publish zero speed.
+    @Test
+    public void rollingSpeedSamplerSmoothsBurstGapsUntilIdleReset() {
+        long tick = TimeUnit.MILLISECONDS.toNanos(500L);
+        FetchTask.SpeedSampler sampler = new FetchTask.SpeedSampler(0L);
+
+        long firstChunk = sampler.record(tick, 4096L);
+        long firstGap = sampler.record(tick * 2L, 0L);
+        long secondChunk = sampler.record(tick * 3L, 4096L);
+        long secondGap = sampler.record(tick * 4L, 0L);
+
+        assertTrue(firstChunk > 0L);
+        assertTrue(firstGap > 0L);
+        assertTrue(secondChunk > 0L);
+        assertTrue(secondGap > 0L);
+        assertEquals(0L, sampler.record(tick * 7L, 0L));
     }
 
     /// Ensures checksum failures are reported and do not replace an existing target file.
@@ -257,7 +276,7 @@ public final class FetchTaskTest {
         }
 
         @Override
-        protected Context getContext(@Nullable HttpResponse<?> response, boolean checkETag, String bmclapiHash) {
+        protected Context getContext(@Nullable HttpResponse<?> response, boolean checkETag, @Nullable String bmclapiHash) {
             Charset charset = NetworkUtils.getCharsetFromContentType(response == null
                     ? null
                     : response.headers().firstValue("content-type").orElse(null));

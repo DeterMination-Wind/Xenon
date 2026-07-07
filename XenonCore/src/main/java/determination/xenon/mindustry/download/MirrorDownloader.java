@@ -20,6 +20,9 @@ package determination.xenon.mindustry.download;
 import com.google.gson.Gson;
 import determination.xenon.task.FetchTask;
 import determination.xenon.util.logging.Logger;
+import org.jetbrains.annotations.NotNullByDefault;
+import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.Unmodifiable;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -46,36 +49,19 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
 
-/**
- * Parallel-mirror downloader, port of the {@code github-mirror-downloader}
- * (CainBot) strategy:
- *
- * <ol>
- *   <li>{@code Range: bytes=0-0} probe every mirror in parallel (8s timeout).</li>
- *   <li>Keep mirrors whose latency is {@code < 1500ms} as the startup pool.</li>
- *   <li>Start parallel downloads on every survivor, each into its own temp file.</li>
- *   <li>After a 3s speed-test window, sample bytes/sec per stream.</li>
- *   <li>Keep the fastest 2, abort the rest, and let the first to
- *       finish win. We never abort solely because of low speed —
- *       a slow mirror is still better than no download.</li>
- *   <li>Cache the winning mirror (8h TTL) so the next download can skip
- *       most of the probing.</li>
- * </ol>
- *
- * <p>The class is self-contained — it does not delegate to
- * {@link MirrorSelector}, since that picks a single mirror and that
- * approach has empirically produced "0 B/s" stalls (one slow but
- * reachable mirror would still win the probe).</p>
- */
+/// Parallel-mirror downloader, port of the `github-mirror-downloader`
+/// (CainBot) strategy.
+///
+/// The downloader probes mirrors with `Range: bytes=0-0`, races the
+/// responsive candidates, keeps the fastest finalists, and moves the first
+/// complete temp file into place. It reports progress as final-file progress,
+/// while global speed accounting uses every HTTP body byte actually read from
+/// every active racing stream.
+@NotNullByDefault
 public final class MirrorDownloader {
 
-    /**
-     * Mirror prefix list (URL gets concatenated as
-     * {@code <base>/<github-url>}, the same shape gh.tinylake.top accepts).
-     * Order is informational only — the probe race decides who actually
-     * gets used.
-     */
-    public static final List<String> MIRRORS = List.of(
+    /// Mirror prefix list. Each request URL is built as `<base>/<github-url>`.
+    public static final @Unmodifiable List<String> MIRRORS = List.of(
             "https://gh.tinylake.top",
             "https://github.chenc.dev",
             "https://ghproxy.cfd",
@@ -126,33 +112,64 @@ public final class MirrorDownloader {
     /** Maximum number of retry attempts after a failed download race. */
     private static final int MAX_RETRIES = 3;
 
+    /// HTTP client used for probe and payload requests.
     private final HttpClient http;
-    private final Path cacheFile;
+    /// Preferred-mirror cache file, or `null` when cache persistence is disabled.
+    private final @Nullable Path cacheFile;
+    /// Mirror bases used by this downloader instance.
+    private final @Unmodifiable List<String> mirrors;
+    /// Whether direct `github.com` should be added to each race.
+    private final boolean includeDirectOrigin;
+    /// Duration of the initial mirror speed-test race.
+    private final long speedTestWindowMs;
 
-    public MirrorDownloader(Path cachesRoot) {
-        this.http = HttpClient.newBuilder()
+    /// Creates a downloader that uses the production mirror pool.
+    public MirrorDownloader(@Nullable Path cachesRoot) {
+        this(cachesRoot, createHttpClient(), MIRRORS, true, SPEED_TEST_WINDOW_MS);
+    }
+
+    /// Creates a downloader with an injected mirror pool for local HTTP tests.
+    MirrorDownloader(@Nullable Path cachesRoot,
+                     @Unmodifiable List<String> mirrors,
+                     boolean includeDirectOrigin,
+                     long speedTestWindowMs) {
+        this(cachesRoot, createHttpClient(), mirrors, includeDirectOrigin, speedTestWindowMs);
+    }
+
+    /// Creates a downloader with injected transport and mirror configuration.
+    MirrorDownloader(@Nullable Path cachesRoot,
+                     HttpClient http,
+                     @Unmodifiable List<String> mirrors,
+                     boolean includeDirectOrigin,
+                     long speedTestWindowMs) {
+        this.http = http;
+        this.cacheFile = cachesRoot == null
+                ? null
+                : cachesRoot.resolve("github").resolve("preferred-mirror.json");
+        this.mirrors = List.copyOf(mirrors);
+        this.includeDirectOrigin = includeDirectOrigin;
+        this.speedTestWindowMs = speedTestWindowMs;
+    }
+
+    /// Builds the default HTTP client for mirror downloads.
+    private static HttpClient createHttpClient() {
+        return HttpClient.newBuilder()
                 .followRedirects(HttpClient.Redirect.NORMAL)
                 .connectTimeout(Duration.ofSeconds(8))
                 .proxy(ProxySelector.getDefault())
                 .build();
-        this.cacheFile = cachesRoot == null
-                ? null
-                : cachesRoot.resolve("github").resolve("preferred-mirror.json");
     }
 
-    /**
-     * Download {@code githubUrl} (a canonical {@code https://github.com/...}
-     * URL) into {@code target}, racing the mirror pool.
-     *
-     * @param expectedSize size hint for progress, or 0 if unknown
-     * @param progress     {@code (read, total)} callback; may be null
-     */
+    /// Downloads a canonical GitHub URL into `target`, racing the mirror pool.
+    ///
+    /// `expectedSize` is a size hint for progress, or `0` when unknown.
+    /// `progress` receives `(read, total)` and may be `null`.
     public void download(String githubUrl, Path target, long expectedSize,
-                         ProgressCallback progress) throws IOException {
+                         @Nullable ProgressCallback progress) throws IOException {
         if (githubUrl == null || githubUrl.isEmpty()) {
             throw new IOException("Missing source URL");
         }
-        Path parent = target.getParent();
+        @Nullable Path parent = target.getParent();
         if (parent != null) Files.createDirectories(parent);
 
         // Non-GitHub origins (alist mirror, mindustry.top static asset, …)
@@ -177,7 +194,7 @@ public final class MirrorDownloader {
         }
 
         // Retry loop: re-probe + re-race on failure, with exponential backoff.
-        IOException lastError = null;
+        @Nullable IOException lastError = null;
         for (int attempt = 0; attempt < MAX_RETRIES; attempt++) {
             if (attempt > 0) {
                 long backoffMs = 1000L << (attempt - 1); // 1s, 2s
@@ -196,12 +213,14 @@ public final class MirrorDownloader {
                 // 1. Probe + filter.
                 List<Probe> survivors = probeAll(githubUrl);
                 // Add direct origin so unrestricted networks aren't forced through a mirror.
-                Probe direct = probeOnce("direct", githubUrl);
-                if (direct != null) survivors.add(direct);
+                if (includeDirectOrigin) {
+                    @Nullable Probe direct = probeOnce("direct", githubUrl);
+                    if (direct != null) survivors.add(direct);
+                }
                 survivors.sort(Comparator.comparingLong(p -> p.latencyMs));
 
                 // Promote the cached preferred mirror to the front, if still valid.
-                String preferred = readPreferredMirror();
+                @Nullable String preferred = readPreferredMirror();
                 if (preferred != null) {
                     for (int i = 0; i < survivors.size(); i++) {
                         if (survivors.get(i).label.equals("mirror:" + preferred)) {
@@ -249,7 +268,7 @@ public final class MirrorDownloader {
                     // Move the winning temp file to the final target.
                     // On Windows, file may be briefly locked by antivirus — retry.
                     deleteWithRetry(target);
-                    Files.move(race.winnerTemp, target);
+                    Files.move(java.util.Objects.requireNonNull(race.winnerTemp), target);
                     // 3. Remember the winner so the next call gets a head start.
                     if (race.winnerLabel.startsWith("mirror:")) {
                         writePreferredMirror(race.winnerLabel.substring("mirror:".length()));
@@ -283,17 +302,18 @@ public final class MirrorDownloader {
     // Probing
     // ------------------------------------------------------------------
 
+    /// Probes all configured mirror bases for one GitHub URL.
     private List<Probe> probeAll(String githubUrl) {
-        List<CompletableFuture<Probe>> futures = new ArrayList<>(MIRRORS.size());
-        for (String base : MIRRORS) {
+        List<CompletableFuture<@Nullable Probe>> futures = new ArrayList<>(mirrors.size());
+        for (String base : mirrors) {
             String trimmed = base.replaceAll("/+$", "");
             String url = trimmed + "/" + githubUrl;
             futures.add(CompletableFuture.supplyAsync(() -> probeOnce("mirror:" + trimmed, url)));
         }
         List<Probe> out = new ArrayList<>();
-        for (CompletableFuture<Probe> f : futures) {
+        for (CompletableFuture<@Nullable Probe> f : futures) {
             try {
-                Probe p = f.get(PROBE_TIMEOUT.toMillis() + 1000, TimeUnit.MILLISECONDS);
+                @Nullable Probe p = f.get(PROBE_TIMEOUT.toMillis() + 1000, TimeUnit.MILLISECONDS);
                 if (p != null) out.add(p);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
@@ -305,7 +325,8 @@ public final class MirrorDownloader {
         return out;
     }
 
-    private Probe probeOnce(String label, String url) {
+    /// Probes one concrete URL and returns its latency when it is usable.
+    private @Nullable Probe probeOnce(String label, String url) {
         long start = System.currentTimeMillis();
         try {
             HttpRequest req = HttpRequest.newBuilder(URI.create(url))
@@ -333,8 +354,9 @@ public final class MirrorDownloader {
     // Race
     // ------------------------------------------------------------------
 
+    /// Races startup mirror streams and returns the first complete winner.
     private RaceResult doRace(List<Probe> startup, Path tmpDir, long expectedSize,
-                              ProgressCallback progress) throws IOException {
+                              @Nullable ProgressCallback progress) throws IOException {
         List<RaceState> states = new ArrayList<>();
         long base = System.nanoTime();
         for (int i = 0; i < startup.size(); i++) {
@@ -353,7 +375,7 @@ public final class MirrorDownloader {
         long raceStart = System.currentTimeMillis();
         // Speed-test window: report combined progress, then prune to top-K.
         try {
-            while (System.currentTimeMillis() - raceStart < SPEED_TEST_WINDOW_MS) {
+            while (System.currentTimeMillis() - raceStart < speedTestWindowMs) {
                 if (states.stream().anyMatch(s -> s.done)) break;
                 if (states.stream().allMatch(s -> s.failed || s.aborted)) break;
                 tracker.publish(states);
@@ -364,7 +386,7 @@ public final class MirrorDownloader {
         }
 
         // If something already finished, ship it.
-        RaceState earlyWinner = states.stream()
+        @Nullable RaceState earlyWinner = states.stream()
                 .filter(s -> s.done)
                 .min(Comparator.comparingLong(s -> s.finishedAt))
                 .orElse(null);
@@ -396,7 +418,7 @@ public final class MirrorDownloader {
         // Wait for the first survivor to finish.
         try {
             while (true) {
-                RaceState winner = keep.stream()
+                @Nullable RaceState winner = keep.stream()
                         .filter(s -> s.done)
                         .min(Comparator.comparingLong(x -> x.finishedAt))
                         .orElse(null);
@@ -409,7 +431,7 @@ public final class MirrorDownloader {
                 }
                 if (keep.stream().allMatch(s -> s.failed || s.aborted)) {
                     waitAll(tasks);
-                    Throwable err = keep.stream()
+                    @Nullable Throwable err = keep.stream()
                             .map(s -> s.error)
                             .filter(java.util.Objects::nonNull)
                             .findFirst().orElse(null);
@@ -430,6 +452,7 @@ public final class MirrorDownloader {
         }
     }
 
+    /// Downloads one racing candidate into its temp file.
     private void downloadOne(RaceState s) {
         try {
             HttpRequest req = HttpRequest.newBuilder(URI.create(s.probe.url))
@@ -451,6 +474,7 @@ public final class MirrorDownloader {
                 byte[] buf = new byte[64 * 1024];
                 int n;
                 while ((n = in.read(buf)) > 0) {
+                    FetchTask.recordDownloadedBytes(n);
                     if (s.aborted) throw new IOException("aborted");
                     out.write(buf, 0, n);
                     s.bytes.addAndGet(n);
@@ -469,6 +493,7 @@ public final class MirrorDownloader {
         }
     }
 
+    /// Returns the largest final-file progress across all racing streams.
     private static long maxBytes(List<RaceState> states) {
         long max = 0;
         for (RaceState s : states) {
@@ -478,11 +503,13 @@ public final class MirrorDownloader {
         return max;
     }
 
+    /// Estimates one racing stream's average bytes per second.
     private long speedBps(RaceState s) {
         long elapsedMs = Math.max(1, System.currentTimeMillis() - s.startedAt);
         return s.bytes.get() * 1000 / elapsedMs;
     }
 
+    /// Aborts every racing stream except the winner.
     private void abortLosers(List<RaceState> states, RaceState winner) {
         for (RaceState s : states) {
             if (s == winner) continue;
@@ -491,6 +518,7 @@ public final class MirrorDownloader {
         }
     }
 
+    /// Aborts every racing stream.
     private void abortAll(List<RaceState> states) {
         for (RaceState s : states) {
             s.aborted = true;
@@ -498,13 +526,15 @@ public final class MirrorDownloader {
         }
     }
 
+    /// Closes the active response body for one racing stream if present.
     private void closeQuietly(RaceState s) {
-        InputStream in = s.in;
+        @Nullable InputStream in = s.in;
         if (in != null) {
             try { in.close(); } catch (IOException ignored) {}
         }
     }
 
+    /// Waits briefly for racing tasks to observe aborts and close temp files.
     private void waitAll(Map<RaceState, CompletableFuture<Void>> tasks) {
         try {
             CompletableFuture.allOf(tasks.values().toArray(new CompletableFuture[0]))
@@ -519,14 +549,15 @@ public final class MirrorDownloader {
     // Cache
     // ------------------------------------------------------------------
 
-    private String readPreferredMirror() {
+    /// Reads the preferred mirror from disk if the cache entry is still valid.
+    private @Nullable String readPreferredMirror() {
         if (cacheFile == null || !Files.isRegularFile(cacheFile)) return null;
         try {
             String text = Files.readString(cacheFile, StandardCharsets.UTF_8);
             @SuppressWarnings("unchecked")
             Map<String, Object> obj = new Gson().fromJson(text, Map.class);
-            Object base = obj == null ? null : obj.get("base");
-            Object exp = obj == null ? null : obj.get("expiresAt");
+            @Nullable Object base = obj == null ? null : obj.get("base");
+            @Nullable Object exp = obj == null ? null : obj.get("expiresAt");
             if (!(base instanceof String) || !(exp instanceof Number)) return null;
             long expMs = ((Number) exp).longValue();
             if (expMs < Instant.now().toEpochMilli()) return null;
@@ -536,6 +567,7 @@ public final class MirrorDownloader {
         }
     }
 
+    /// Persists the winning mirror for later downloads.
     private void writePreferredMirror(String base) {
         if (cacheFile == null || base == null || base.isEmpty()) return;
         try {
@@ -551,10 +583,7 @@ public final class MirrorDownloader {
         }
     }
 
-    /**
-     * Delete a file with retry logic for Windows file-locking issues.
-     * Antivirus software may briefly lock newly downloaded files.
-     */
+    /// Deletes a file with retry logic for brief Windows file-locking issues.
     private static void deleteWithRetry(Path file) throws IOException {
         for (int i = 0; i < 5; i++) {
             try {
@@ -573,6 +602,7 @@ public final class MirrorDownloader {
         }
     }
 
+    /// Formats probe latency results for logging.
     private static String summary(List<Probe> probes) {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < probes.size(); i++) {
@@ -582,11 +612,8 @@ public final class MirrorDownloader {
         return sb.toString();
     }
 
-    /**
-     * Translate a technical {@link IOException} into a user-friendly
-     * Chinese message suitable for display in the launcher UI.
-     */
-    private static String friendlyMessage(IOException e) {
+    /// Translates a technical exception into a user-facing Chinese message.
+    private static String friendlyMessage(@Nullable IOException e) {
         if (e == null) {
             return "所有镜像源不可用，请稍后重试";
         }
@@ -596,7 +623,7 @@ public final class MirrorDownloader {
         if (e instanceof java.net.ConnectException) {
             return "网络连接失败，请检查网络设置";
         }
-        String msg = e.getMessage();
+        @Nullable String msg = e.getMessage();
         if (msg != null && msg.contains("No reachable mirrors")) {
             return "所有镜像源不可用，请稍后重试";
         }
@@ -607,10 +634,15 @@ public final class MirrorDownloader {
     // Internal types
     // ------------------------------------------------------------------
 
+    /// Probe result for one concrete download URL.
     private static final class Probe {
+        /// Human-readable source label used in logs.
         final String label;
+        /// Concrete URL that should be downloaded if this probe survives.
         final String url;
+        /// Probe latency in milliseconds.
         final long latencyMs;
+        /// Creates a probe result.
         Probe(String label, String url, long latencyMs) {
             this.label = label;
             this.url = url;
@@ -618,31 +650,50 @@ public final class MirrorDownloader {
         }
     }
 
+    /// Mutable state for one active racing download.
     private static final class RaceState {
+        /// Probe metadata for the stream.
         final Probe probe;
+        /// Temporary file written by this stream.
         final Path temp;
+        /// Bytes written to the temp file and eligible for final-file progress.
         final AtomicLong bytes = new AtomicLong();
+        /// Stream start time for speed ranking.
         final long startedAt = System.currentTimeMillis();
-        volatile InputStream in;
+        /// Active response body, if the request has reached body streaming.
+        volatile @Nullable InputStream in;
+        /// Whether this stream completed successfully.
         volatile boolean done;
+        /// Whether this stream failed without being intentionally aborted.
         volatile boolean failed;
+        /// Whether this stream should stop as soon as possible.
         volatile boolean aborted;
+        /// Completion timestamp used to pick the earliest winner.
         volatile long finishedAt;
-        volatile Throwable error;
+        /// Failure cause when `failed` is true.
+        volatile @Nullable Throwable error;
+        /// Creates racing state for one probe.
         RaceState(Probe probe, Path temp) {
             this.probe = probe;
             this.temp = temp;
         }
     }
 
+    /// Result returned after a mirror race ends.
     private static final class RaceResult {
+        /// Whether a complete winner was produced.
         final boolean success;
+        /// Label of the winning mirror or source.
         final String winnerLabel;
-        final Path winnerTemp;
-        final Throwable error;
+        /// Temporary file containing the winner payload, or `null` on failure.
+        final @Nullable Path winnerTemp;
+        /// Failure cause when no stream completed.
+        final @Nullable Throwable error;
+        /// All stream states for cleanup and diagnostics.
         final List<RaceState> allStates;
-        RaceResult(boolean success, String winnerLabel, Path winnerTemp,
-                   Throwable error, List<RaceState> allStates) {
+        /// Creates a race result.
+        RaceResult(boolean success, String winnerLabel, @Nullable Path winnerTemp,
+                   @Nullable Throwable error, List<RaceState> allStates) {
             this.success = success;
             this.winnerLabel = winnerLabel;
             this.winnerTemp = winnerTemp;
@@ -651,31 +702,32 @@ public final class MirrorDownloader {
         }
     }
 
+    /// Publishes final-file progress without counting duplicate racing bytes.
     private static final class ProgressTracker {
+        /// Expected final file size, or `0` when unknown.
         final long expectedSize;
-        final ProgressCallback progress;
-        long reportedBytes;
+        /// Optional progress callback.
+        final @Nullable ProgressCallback progress;
 
-        ProgressTracker(long expectedSize, ProgressCallback progress) {
+        /// Creates a tracker for one download race.
+        ProgressTracker(long expectedSize, @Nullable ProgressCallback progress) {
             this.expectedSize = expectedSize;
             this.progress = progress;
         }
 
+        /// Publishes the largest final-file progress currently available.
         void publish(List<RaceState> states) {
             report(maxBytes(states));
         }
 
+        /// Publishes final progress from the winning stream.
         void finish(RaceState winner) {
             report(winner.bytes.get());
         }
 
+        /// Sends a bounded progress callback.
         private void report(long bytes) {
             long effective = expectedSize > 0 ? Math.min(bytes, expectedSize) : bytes;
-            long delta = effective - reportedBytes;
-            if (delta > 0) {
-                determination.xenon.task.FetchTask.recordDownloadedBytes(delta);
-                reportedBytes = effective;
-            }
             if (progress != null) {
                 progress.onProgress(effective, expectedSize > 0 ? expectedSize : -1);
             }
@@ -686,11 +738,7 @@ public final class MirrorDownloader {
     // Direct (non-GitHub) path
     // ------------------------------------------------------------------
 
-    /**
-     * Heuristic: is {@code url} a github.com / api.github.com /
-     * raw.githubusercontent.com / codeload origin? If not, the mirror
-     * prefix list can't proxy it and we have to hit it directly.
-     */
+    /// Returns whether a URL can be wrapped by the GitHub mirror prefix list.
     private static boolean isGithubOrigin(String url) {
         return url.startsWith("https://github.com/")
                 || url.startsWith("http://github.com/")
@@ -699,9 +747,9 @@ public final class MirrorDownloader {
                 || url.startsWith("https://codeload.github.com/");
     }
 
-    /** Stream {@code url} to {@code tmp} with progress + global-speed reporting. */
+    /// Streams a non-GitHub URL directly to a temp file.
     private void downloadStream(String url, Path tmp, long expectedSize,
-                                ProgressCallback progress) throws IOException {
+                                @Nullable ProgressCallback progress) throws IOException {
         HttpRequest req = HttpRequest.newBuilder(URI.create(url))
                 .GET()
                 .timeout(Duration.ofMinutes(10))
@@ -731,9 +779,9 @@ public final class MirrorDownloader {
             long read = 0;
             int n;
             while ((n = in.read(buf)) > 0) {
+                FetchTask.recordDownloadedBytes(n);
                 out.write(buf, 0, n);
                 read += n;
-                determination.xenon.task.FetchTask.recordDownloadedBytes(n);
                 if (progress != null) {
                     progress.onProgress(read, total);
                 }

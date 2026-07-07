@@ -23,6 +23,7 @@ import determination.xenon.event.EventManager;
 import determination.xenon.util.*;
 import determination.xenon.util.io.*;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.NotNullByDefault;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.*;
@@ -46,6 +47,7 @@ import java.util.regex.Pattern;
 import static determination.xenon.util.Lang.threadPool;
 import static determination.xenon.util.logging.Logger.LOG;
 
+@NotNullByDefault
 public abstract class FetchTask<T> extends Task<T> {
 
     protected static final int DEFAULT_RETRY = 3;
@@ -87,7 +89,7 @@ public abstract class FetchTask<T> extends Task<T> {
         return getContext(null, false, null);
     }
 
-    protected abstract Context getContext(@Nullable HttpResponse<?> response, boolean checkETag, String bmclapiHash) throws IOException;
+    protected abstract Context getContext(@Nullable HttpResponse<?> response, boolean checkETag, @Nullable String bmclapiHash) throws IOException;
 
     @Override
     public void execute() throws Exception {
@@ -559,28 +561,26 @@ public abstract class FetchTask<T> extends Task<T> {
         }
     }
 
+    private static final long SPEED_SAMPLE_INTERVAL_MS = 500L;
+    private static final long SPEED_IDLE_RESET_NANOS = TimeUnit.SECONDS.toNanos(2L);
     private static final Timer timer = new Timer("DownloadSpeedRecorder", true);
     private static final AtomicLong downloadSpeed = new AtomicLong(0L);
-    private static final AtomicLong lastSpeedTickNanos = new AtomicLong(System.nanoTime());
+    private static final SpeedSampler speedSampler = new SpeedSampler(System.nanoTime());
     public static final EventManager<SpeedEvent> SPEED_EVENT = EventBus.EVENT_BUS.channel(SpeedEvent.class);
 
     static {
         timer.schedule(new TimerTask() {
             @Override
             public void run() {
-                long now = System.nanoTime();
-                long elapsedNanos = Math.max(1L, now - lastSpeedTickNanos.getAndSet(now));
                 long bytes = downloadSpeed.getAndSet(0);
-                long bytesPerSecond = bytes <= 0
-                        ? 0L
-                        : Math.round((double) bytes * 1_000_000_000D / elapsedNanos);
+                long bytesPerSecond = speedSampler.record(System.nanoTime(), bytes);
                 SPEED_EVENT.fireEvent(new SpeedEvent(SPEED_EVENT, bytesPerSecond));
             }
-        }, 500, 500);
+        }, SPEED_SAMPLE_INTERVAL_MS, SPEED_SAMPLE_INTERVAL_MS);
     }
 
     private static void updateDownloadSpeed(long speed) {
-        downloadSpeed.addAndGet(speed);
+        recordDownloadedBytes(speed);
     }
 
     /**
@@ -593,6 +593,64 @@ public abstract class FetchTask<T> extends Task<T> {
      */
     public static void recordDownloadedBytes(long bytes) {
         if (bytes > 0) downloadSpeed.addAndGet(bytes);
+    }
+
+    /// Rolling download-speed sampler used by the global speed event timer.
+    static final class SpeedSampler {
+        /// Recent timer samples, including zero-byte gaps inside the smoothing window.
+        private final ArrayDeque<SpeedSample> samples = new ArrayDeque<>();
+        /// Timestamp of the previous timer tick.
+        private long lastTickNanos;
+        /// Timestamp of the most recent positive byte sample, or `0` before any bytes arrive.
+        private long lastByteNanos;
+
+        /// Creates a sampler whose next sample is measured from `startNanos`.
+        SpeedSampler(long startNanos) {
+            this.lastTickNanos = startNanos;
+        }
+
+        /// Records one timer tick and returns the rolling average bytes per second.
+        synchronized long record(long nowNanos, long bytes) {
+            long elapsedNanos = Math.max(1L, nowNanos - lastTickNanos);
+            lastTickNanos = nowNanos;
+
+            if (bytes > 0) {
+                if (lastByteNanos == 0L || nowNanos - lastByteNanos >= SPEED_IDLE_RESET_NANOS) {
+                    samples.clear();
+                }
+                lastByteNanos = nowNanos;
+            }
+
+            samples.addLast(new SpeedSample(nowNanos, elapsedNanos, Math.max(0L, bytes)));
+            prune(nowNanos);
+
+            if (lastByteNanos == 0L || nowNanos - lastByteNanos >= SPEED_IDLE_RESET_NANOS) {
+                samples.clear();
+                return 0L;
+            }
+
+            long totalBytes = 0L;
+            long totalNanos = 0L;
+            for (SpeedSample sample : samples) {
+                totalBytes += sample.bytes();
+                totalNanos += sample.elapsedNanos();
+            }
+            return totalBytes <= 0L || totalNanos <= 0L
+                    ? 0L
+                    : Math.round((double) totalBytes * 1_000_000_000D / totalNanos);
+        }
+
+        /// Drops samples outside the idle reset window.
+        private void prune(long nowNanos) {
+            while (!samples.isEmpty()
+                    && nowNanos - samples.peekFirst().endNanos() >= SPEED_IDLE_RESET_NANOS) {
+                samples.removeFirst();
+            }
+        }
+    }
+
+    /// One timer interval captured by `SpeedSampler`.
+    private record SpeedSample(long endNanos, long elapsedNanos, long bytes) {
     }
 
     private static final class CounterInputStream extends FilterInputStream {
