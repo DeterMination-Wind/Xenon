@@ -57,6 +57,7 @@ import java.net.SocketTimeoutException;
 import java.net.URI;
 import java.nio.file.AccessDeniedException;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicReference;
@@ -71,6 +72,7 @@ import static determination.xenon.util.DataSizeUnit.MEGABYTES;
 import static determination.xenon.util.Lang.resolveException;
 import static determination.xenon.util.i18n.I18n.i18n;
 import static determination.xenon.util.logging.Logger.LOG;
+import static determination.xenon.util.logging.Logger.TIME_FORMATTER;
 import static determination.xenon.util.platform.Platform.SYSTEM_PLATFORM;
 
 public final class LauncherHelper {
@@ -954,7 +956,7 @@ public final class LauncherHelper {
         @Override
         public void onExit(int exitCode, ExitType exitType) {
             if (showLogs) {
-                logBuffer.add(new Log(String.format("[HMCL ProcessListener] Minecraft exit with code %d(0x%x), type is %s.", exitCode, exitCode, exitType), Log4jLevel.INFO));
+                logBuffer.add(new Log(String.format("[%s] [HMCL ProcessListener] Minecraft exit with code %d(0x%x), type is %s.", TIME_FORMATTER.format(Instant.now()), exitCode, exitCode, exitType), Log4jLevel.INFO));
                 submitLogThread.interrupt();
                 try {
                     submitLogThread.join();

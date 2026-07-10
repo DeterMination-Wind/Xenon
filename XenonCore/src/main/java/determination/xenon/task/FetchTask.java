@@ -34,7 +34,6 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Path;
-import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Semaphore;
@@ -333,7 +332,7 @@ public abstract class FetchTask<T> extends Task<T> {
 
                     do {
                         HttpRequest.Builder requestBuilder = HttpRequest.newBuilder(currentURI)
-                                .timeout(Duration.ofMillis(NetworkUtils.TIME_OUT))
+                                .timeout(NetworkUtils.TIMEOUT)
                                 .header("User-Agent", NetworkUtils.USER_AGENT);
                         headers.forEach(requestBuilder::header);
                         response = Holder.HTTP_CLIENT.send(requestBuilder.build(), BODY_HANDLER);
@@ -816,7 +815,7 @@ public abstract class FetchTask<T> extends Task<T> {
             boolean useHttp2 = !"false".equalsIgnoreCase(System.getProperty("hmcl.http2"));
 
             HTTP_CLIENT = HttpClient.newBuilder()
-                    .connectTimeout(Duration.ofMillis(NetworkUtils.TIME_OUT))
+                    .connectTimeout(NetworkUtils.TIMEOUT)
                     .version(useHttp2 ? HttpClient.Version.HTTP_2 : HttpClient.Version.HTTP_1_1)
                     .build();
         }

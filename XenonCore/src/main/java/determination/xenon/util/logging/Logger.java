@@ -67,7 +67,8 @@ public final class Logger {
     static final String PACKAGE_PREFIX = "determination.xenon.";
     static final String CLASS_NAME = Logger.class.getName();
 
-    private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("HH:mm:ss").withZone(ZoneId.systemDefault());
+    /// Formats logger timestamps and process lifecycle messages in local time.
+    public static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("HH:mm:ss").withZone(ZoneId.systemDefault());
 
     private final BlockingQueue<LogEvent> queue = new LinkedBlockingQueue<>();
     private final StringBuilder builder = new StringBuilder(512);

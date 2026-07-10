@@ -64,6 +64,8 @@ import static determination.xenon.util.logging.Logger.LOG;
  * @author huangyuhui
  */
 public final class LogWindow extends Stage {
+    /// CSS pseudo-class applied while the log window is kept above other windows.
+    private static final PseudoClass SELECTED = PseudoClass.getPseudoClass("selected");
 
     private static final Log4jLevel[] LEVELS = {Log4jLevel.FATAL, Log4jLevel.ERROR, Log4jLevel.WARN, Log4jLevel.INFO, Log4jLevel.DEBUG};
 
@@ -162,6 +164,11 @@ public final class LogWindow extends Stage {
         private final BooleanProperty autoScroll = new SimpleBooleanProperty();
         private final StringProperty[] buttonText = new StringProperty[LEVELS.length];
         private final BooleanProperty[] showLevel = new BooleanProperty[LEVELS.length];
+        /// Toggle button that controls whether this log window stays above other windows.
+        private final JFXButton btnAlwaysOnTop = FXUtils.newToggleButton4(SVG.KEEP, 20);
+
+        /// Outer log window stage controlled by this skin.
+        private final Stage stage = LogWindow.this;
         private final JFXComboBox<Integer> cboLines = new JFXComboBox<>();
         private final StackPane stackPane = new StackPane();
 
@@ -176,6 +183,12 @@ public final class LogWindow extends Stage {
                 buttonText[i] = new SimpleStringProperty();
                 showLevel[i] = new SimpleBooleanProperty(true);
             }
+
+            btnAlwaysOnTop.setOnAction(e -> stage.setAlwaysOnTop(!stage.isAlwaysOnTop()));
+            btnAlwaysOnTop.getStyleClass().add("always-on-top-button");
+            stage.alwaysOnTopProperty().addListener((observable, oldValue, newValue) -> {
+                btnAlwaysOnTop.pseudoClassStateChanged(SELECTED, newValue);
+            });
 
             cboLines.getItems().setAll(500, 2000, 5000, 10000);
             cboLines.setValue(Log.getLogLines());
@@ -280,7 +293,9 @@ public final class LogWindow extends Stage {
                     hBox.setAlignment(Pos.CENTER_LEFT);
 
                     Label label = new Label(i18n("logwindow.show_lines"));
-                    hBox.getChildren().setAll(label, control.cboLines);
+
+                    FXUtils.installFastTooltip(control.btnAlwaysOnTop, i18n("logwindow.always_on_top"));
+                    hBox.getChildren().setAll(control.btnAlwaysOnTop, label, control.cboLines);
 
                     borderPane.setLeft(hBox);
                 }

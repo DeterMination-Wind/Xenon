@@ -263,6 +263,8 @@ public class GameListPage extends DecoratorAnimatedPage implements DecoratorPage
 
                     toolbarPane.setContent(toolbarNormal, ContainerAnimations.FADE);
 
+                    FXUtils.setOverflowHidden(toolbarPane, 8);
+
                     root.getContent().add(toolbarPane);
                 }
 

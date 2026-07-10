@@ -2,6 +2,11 @@
 
 All notable changes to Xenon will be documented in this file.
 
+## [1.8.0] — 2026-07-10
+
+### Added
+- Update version root to 1.8.
+
 ## [0.1.0] — 2026-05-17
 
 The first public release. Forked from HMCL, Mindustry support layered on top.

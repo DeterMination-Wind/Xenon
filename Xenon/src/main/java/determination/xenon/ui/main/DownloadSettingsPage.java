@@ -115,7 +115,10 @@ public class DownloadSettingsPage extends StackPane {
 
                     JFXTextField threadsField = new JFXTextField();
                     FXUtils.setLimitWidth(threadsField, 60);
-                    FXUtils.bindInt(threadsField, config().downloadThreadsProperty());
+                    FXUtils.bind(threadsField, config().downloadThreadsProperty(), SafeStringConverter.fromInteger()
+                            .restrict(it -> it > 0)
+                            .fallbackTo(FetchTask.DEFAULT_CONCURRENCY)
+                            .asPredicate(Validator.addTo(threadsField)));
 
                     AtomicBoolean changedByTextField = new AtomicBoolean(false);
                     FXUtils.onChangeAndOperate(config().downloadThreadsProperty(), value -> {
