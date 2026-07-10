@@ -96,9 +96,9 @@ public final class MindustryModManagerTest {
         assertEquals("Fallback Mod", find(mods, "fallback.zip").getDisplayName());
     }
 
-    /// Neon-style no-comma Hjson should fall through to the valid JSON descriptor that follows it.
+    /// Neon-style comma-less Hjson should parse directly without requiring a JSON fallback.
     @Test
-    public void fallsBackFromNoCommaHjsonToJsonDescriptor(@TempDir Path tempDir) throws IOException {
+    public void parsesCommaLessHjsonDescriptor(@TempDir Path tempDir) throws IOException {
         Path modsDir = tempDir.resolve("mods");
         writeArchive(modsDir.resolve("neon.zip"),
                 "mod.hjson", """
@@ -107,20 +107,92 @@ public final class MindustryModManagerTest {
                         author: DeterMination-Wind
                         version: 1
                         description: Utility mod
-                        """,
-                "mod.json", """
-                        {
-                          "name": "neon",
-                          "displayName": "Neon / 氖",
-                          "author": "DeterMination-Wind",
-                          "version": "1",
-                          "description": "Utility mod"
-                        }
                         """);
 
         List<MindustryLocalMod> mods = new MindustryModManager(modsDir).scan();
 
         assertEquals("Neon / 氖", find(mods, "neon.zip").getDisplayName());
+    }
+
+    /// Full Hjson support includes comments, comma-less fields, and triple-quoted strings.
+    @Test
+    public void parsesTripleQuotedHjsonDescription(@TempDir Path tempDir) throws IOException {
+        Path modsDir = tempDir.resolve("mods");
+        writeArchive(modsDir.resolve("mod-tools.zip"),
+                "mod.hjson", """
+                        # Mindustry mod metadata
+                        name: mod-tools
+                        description: '''
+                        A mod that provides tools for modding.
+
+                        Version 1.5.6
+                        '''
+                        author: I hope...
+                        version: 1.5.6
+                        minGameVersion: "154"
+                        main: modtools.ModTools
+                        """);
+
+        MindustryLocalMod mod = find(new MindustryModManager(modsDir).scan(), "mod-tools.zip");
+
+        assertEquals("mod-tools", mod.getName());
+        assertTrue(mod.getDescription().contains("Version 1.5.6"));
+        assertEquals(154, mod.getMinGameVersion());
+    }
+
+    /// Arc accepts raw line breaks inside double-quoted metadata strings.
+    @Test
+    public void parsesArcStyleMultilineDoubleQuotedDescription(@TempDir Path tempDir)
+            throws IOException {
+        Path modsDir = tempDir.resolve("mods");
+        writeArchive(modsDir.resolve("hydrogen.zip"),
+                "mod.hjson", """
+                        displayName: Hydrogen
+                        name: hydrogen
+                        version: v3.0.2
+                        minGameVersion: 154
+                        java: true
+                        description: "
+                        Client-side QoL mod.
+
+                        Supports multiplayer games.
+                        "
+                        """);
+
+        MindustryLocalMod mod = find(new MindustryModManager(modsDir).scan(), "hydrogen.zip");
+
+        assertEquals("Hydrogen", mod.getDisplayName());
+        assertTrue(mod.getDescription().contains("Supports multiplayer games."));
+    }
+
+    /// GitHub-style archives may wrap the complete mod in one top-level directory.
+    @Test
+    public void parsesDescriptorInsideSingleWrapperDirectory(@TempDir Path tempDir) throws IOException {
+        Path modsDir = tempDir.resolve("mods");
+        writeArchive(modsDir.resolve("wrapped.zip"),
+                "wrapped-mod/mod.hjson", """
+                        name: wrapped
+                        displayName: Wrapped Mod
+                        version: 1
+                        """,
+                "wrapped-mod/scripts/main.js", "print('loaded')");
+
+        List<MindustryLocalMod> mods = new MindustryModManager(modsDir).scan();
+
+        assertEquals("Wrapped Mod", find(mods, "wrapped.zip").getDisplayName());
+    }
+
+    /// A nested library descriptor is not the archive's main mod descriptor.
+    @Test
+    public void ignoresDescriptorInArbitraryNestedDirectory(@TempDir Path tempDir) throws IOException {
+        Path modsDir = tempDir.resolve("mods");
+        writeArchive(modsDir.resolve("not-a-mod.zip"),
+                "libs/mod.hjson", "name: nested-library",
+                "README.md", "Not a Mindustry mod archive");
+
+        List<MindustryLocalMod> mods = new MindustryModManager(modsDir).scan();
+
+        assertTrue(mods.isEmpty());
     }
 
     /// Mindustry's settings.bin disabled flag disables a normal archive.

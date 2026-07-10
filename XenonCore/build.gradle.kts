@@ -16,6 +16,7 @@ dependencies {
     api(libs.kala.compress.tar)
     api(libs.simple.png.javafx)
     api(libs.gson)
+    implementation(libs.hjson)
     api(libs.tomlj)
     api(libs.xz)
     api(libs.lz4)

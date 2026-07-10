@@ -80,6 +80,7 @@ val runtimeCriticalClasses = listOf(
     "determination/xenon/mindustry/uuid/UuidGenerator.class",
     "determination/xenon/mindustry/uuid/UuidProfile.class",
     "determination/xenon/mindustry/uuid/UuidProfileManager.class",
+    "org/hjson/JsonValue.class",
     "determination/xenon/ui/account/AccountListItem.class",
     "determination/xenon/ui/account/AccountListPage.class",
     "com/posthog/server/PostHog.class",
