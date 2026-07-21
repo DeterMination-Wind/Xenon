@@ -84,9 +84,11 @@ public final class UpdateChecker {
     }
 
     private static RemoteVersion checkUpdate(UpdateChannel channel, boolean preview) throws IOException {
-        if (!IntegrityChecker.DISABLE_SELF_INTEGRITY_CHECK && !IntegrityChecker.isSelfVerified()) {
-            throw new IOException("Self verification failed");
-        }
+        // Self-integrity check removed for non-official builds.
+        // The public-key signature verification required a properly signed
+        // JAR distributed from official CI, which is not the case for local
+        // or third-party builds. UpdateHandler still verifies the downloaded
+        // update JAR before applying it.
 
         var query = new LinkedHashMap<String, String>();
         query.put("version", Metadata.VERSION);

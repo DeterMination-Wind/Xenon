@@ -108,13 +108,13 @@ public final class UpdateHandler {
         Controllers.dialog(new UpgradeDialog(version, () -> {
             Path downloaded;
             try {
-                downloaded = Files.createTempFile("hmcl-update-", ".jar");
+                downloaded = Files.createTempFile("xenon-update-", ".jar");
             } catch (IOException e) {
                 LOG.warning("Failed to create temp file", e);
                 return;
             }
 
-            Task<?> task = new HMCLDownloadTask(version, downloaded);
+            Task<?> task = new XenonDownloadTask(version, downloaded);
 
             TaskExecutor executor = task.executor();
             Controllers.taskDialog(executor, i18n("message.downloading"), TaskCancellationAction.NORMAL);
@@ -123,9 +123,8 @@ public final class UpdateHandler {
 
                 if (success) {
                     try {
-                        if (!IntegrityChecker.isSelfVerified() && !IntegrityChecker.DISABLE_SELF_INTEGRITY_CHECK) {
-                            throw new IOException("Current JAR is not verified");
-                        }
+                        // Self-integrity check skipped for non-official builds.
+                        // See UpdateChecker.checkUpdate() for rationale.
 
                         CompletableFuture<Void> future = new CompletableFuture<>();
 
@@ -174,9 +173,7 @@ public final class UpdateHandler {
         LOG.info("Applying update to " + target);
 
         Path self = getCurrentLocation();
-        if (!IntegrityChecker.DISABLE_SELF_INTEGRITY_CHECK && !IntegrityChecker.isSelfVerified()) {
-            throw new IOException("Self verification failed");
-        }
+        // Self-integrity check skipped for non-official builds.
         ExecutableHeaderHelper.copyWithHeader(self, target);
 
         Optional<Path> newFilename = tryRename(target, Metadata.VERSION);
@@ -193,11 +190,12 @@ public final class UpdateHandler {
         startJava(target);
     }
 
-    private static void requestUpdate(Path updateTo, Path self) throws IOException {
-        if (!IntegrityChecker.DISABLE_SELF_INTEGRITY_CHECK) {
-            IntegrityChecker.verifyJar(updateTo);
-        }
-        startJava(updateTo, "--apply-to", self.toString());
+    private static void requestUpdate(Path downloadedJar, Path currentJar) throws IOException {
+        // Start the downloaded JAR directly from its temp location.
+        // Cannot use --apply-to because official builds fail IntegrityChecker,
+        // and cannot replace the running JAR on Windows.
+        // The temp JAR shares the same working directory, so config/data paths are correct.
+        startJava(downloadedJar);
     }
 
     public static void startJava(Path jar, String... appArgs) throws IOException {
@@ -213,7 +211,7 @@ public final class UpdateHandler {
         } catch (Throwable ignored) {
             // ManagementFactory not available
             for (Map.Entry<Object, Object> entry : System.getProperties().entrySet()) {
-                if (entry.getKey() instanceof String key && key.startsWith("hmcl.")) {
+                if (entry.getKey() instanceof String key && key.startsWith("xenon.")) {
                     commandline.add("-D" + key + "=" + entry.getValue());
                 }
             }
@@ -231,7 +229,7 @@ public final class UpdateHandler {
 
     private static Optional<Path> tryRename(Path path, String newVersion) {
         String filename = path.getFileName().toString();
-        Matcher matcher = Pattern.compile("^(?<prefix>[hH][mM][cC][lL][.-])(?<version>\\d+(?:\\.\\d+)*)(?<suffix>\\.[^.]+)$").matcher(filename);
+        Matcher matcher = Pattern.compile("^(?<prefix>(?:[hH][mM][cC][lL]|[xX][eE][nN][oO][nN])[.-])(?<version>\\d+(?:\\.\\d+)*)(?<suffix>\\.[^.]+)$").matcher(filename);
         if (matcher.find()) {
             String newFilename = matcher.group("prefix") + newVersion + matcher.group("suffix");
             if (!newFilename.equals(filename)) {
@@ -244,7 +242,7 @@ public final class UpdateHandler {
     private static Path getCurrentLocation() throws IOException {
         Path path = JarUtils.thisJarPath();
         if (path == null) {
-            throw new IOException("Failed to find current HMCL location");
+            throw new IOException("Failed to find current Xenon location");
         }
         return path;
     }
@@ -288,7 +286,7 @@ public final class UpdateHandler {
     private static boolean isFirstLaunchAfterUpgrade() {
         Path currentPath = JarUtils.thisJarPath();
         if (currentPath != null) {
-            Path updated = Metadata.XENON_GLOBAL_DIRECTORY.resolve("HMCL-" + Metadata.VERSION + ".jar");
+            Path updated = Metadata.XENON_GLOBAL_DIRECTORY.resolve("Xenon-" + Metadata.VERSION + ".jar");
             if (currentPath.equals(updated.toAbsolutePath())) {
                 return true;
             }

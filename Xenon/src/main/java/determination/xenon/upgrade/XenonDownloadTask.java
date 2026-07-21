@@ -22,11 +22,11 @@ import determination.xenon.task.FileDownloadTask;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
-final class HMCLDownloadTask extends FileDownloadTask {
+final class XenonDownloadTask extends FileDownloadTask {
 
     private final RemoteVersion.Type archiveFormat;
 
-    public HMCLDownloadTask(RemoteVersion version, Path target) {
+    public XenonDownloadTask(RemoteVersion version, Path target) {
         super(version.url(), target, version.integrityCheck());
         archiveFormat = version.type();
     }

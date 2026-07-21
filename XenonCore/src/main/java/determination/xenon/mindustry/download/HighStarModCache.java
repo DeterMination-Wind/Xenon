@@ -24,7 +24,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Converts canonical GitHub release asset URLs into the 121 cache URL used
+ * Converts canonical GitHub release asset URLs into the mindustry.men cache URL used
  * for popular Mindustry mods.
  *
  * <p>The cache is only intended for release assets on {@code github.com};
@@ -33,18 +33,18 @@ import java.util.regex.Pattern;
  */
 @NotNullByDefault
 public final class HighStarModCache {
-    private static final String CACHE_PREFIX = "http://121.199.60.4/";
+    private static final String CACHE_PREFIX = "http://mindustry.men/";
     private static final Pattern GITHUB_RELEASE_ASSET = Pattern.compile(
             "^https?://github\\.com/([^/]+)/([^/]+)/releases/download/([^/]+)/([^?#]+)$");
 
     private HighStarModCache() {}
 
-    /// Returns whether a mod with the given star count should try the 121 cache before the normal downloader.
+    /// Returns whether a mod with the given star count should try the mindustry.men cache before the normal downloader.
     public static boolean shouldTryCacheFirst(int stars, @Nullable String githubReleaseAssetUrl) {
         return stars > 5 && toCacheUrl(githubReleaseAssetUrl) != null;
     }
 
-    /// Rewrites a canonical GitHub release asset URL into the public 121 cache URL, or returns `null` when unsupported.
+    /// Rewrites a canonical GitHub release asset URL into the public mindustry.men cache URL, or returns `null` when unsupported.
     public static @Nullable String toCacheUrl(@Nullable String githubReleaseAssetUrl) {
         if (githubReleaseAssetUrl == null || githubReleaseAssetUrl.isBlank()) {
             return null;

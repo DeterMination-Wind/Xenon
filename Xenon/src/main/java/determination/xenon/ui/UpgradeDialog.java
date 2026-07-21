@@ -28,15 +28,11 @@ import determination.xenon.task.Task;
 import determination.xenon.ui.construct.DialogCloseEvent;
 import determination.xenon.ui.construct.JFXHyperlink;
 import determination.xenon.upgrade.RemoteVersion;
-import determination.xenon.util.StringUtils;
-import determination.xenon.util.versioning.VersionNumber;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
-import org.jsoup.nodes.Node;
 
-import java.net.URL;
+import java.util.regex.Pattern;
 
-import static determination.xenon.Metadata.CHANGELOG_URL;
 import static determination.xenon.ui.FXUtils.onEscPressed;
 import static determination.xenon.util.i18n.I18n.i18n;
 import static determination.xenon.util.logging.Logger.LOG;
@@ -50,39 +46,20 @@ public final class UpgradeDialog extends JFXDialogLayout {
         setHeading(new Label(i18n("update.changelog")));
         setBody(new JFXSpinner());
 
-        String url = CHANGELOG_URL + remoteVersion.channel().channelName + ".html";
+        String releaseUrl = Metadata.DOWNLOAD_URL;
 
         Task.supplyAsync(Schedulers.io(), () -> {
-            VersionNumber targetVersion = VersionNumber.asVersion(remoteVersion.version());
-            VersionNumber currentVersion = VersionNumber.asVersion(Metadata.VERSION);
-            if (targetVersion.compareTo(currentVersion) <= 0)
-                // Downgrade update, no need to display changelog
+            String body = remoteVersion.body();
+            if (body == null || body.isBlank())
                 return null;
 
-            Document document = Jsoup.parse(new URL(url), 30 * 1000);
-            Node node = document.selectFirst("h1[data-version=\"%s\"]".formatted(targetVersion));
-
-            if (node == null || !"h1".equals(node.nodeName())) {
-                LOG.warning("Changelog not found");
-                return null;
-            }
-
+            String html = markdownToHtml(body);
+            Document document = Jsoup.parse(html);
             HTMLRenderer renderer = new HTMLRenderer(uri -> {
                 LOG.info("Open link: " + uri);
                 FXUtils.openLink(uri.toString());
             });
-
-            do {
-                if ("h1".equals(node.nodeName())) {
-                    String changelogVersion = node.attr("data-version");
-                    if (StringUtils.isBlank(changelogVersion) || currentVersion.compareTo(changelogVersion) >= 0) {
-                        break;
-                    }
-                }
-                renderer.appendNode(node);
-                node = node.nextSibling();
-            } while (node != null);
-
+            renderer.appendNode(document.body());
             renderer.mergeLineBreaks();
             return renderer.render();
         }).whenComplete(Schedulers.javafx(), (result, exception) -> {
@@ -92,18 +69,14 @@ public final class UpgradeDialog extends JFXDialogLayout {
                     scrollPane.setFitToWidth(true);
                     FXUtils.smoothScrolling(scrollPane);
                     setBody(scrollPane);
-                } else {
-                    setBody();
                 }
             } else {
-                LOG.warning("Failed to load update log, trying to open it in browser");
-                FXUtils.openLink(url);
-                setBody();
+                LOG.warning("Failed to render changelog", exception);
             }
         }).start();
 
         JFXHyperlink openInBrowser = new JFXHyperlink(i18n("web.view_in_browser"));
-        openInBrowser.setExternalLink(url);
+        openInBrowser.setExternalLink(releaseUrl);
 
         JFXButton updateButton = new JFXButton(i18n("update.accept"));
         updateButton.getStyleClass().add("dialog-accept");
@@ -115,5 +88,102 @@ public final class UpgradeDialog extends JFXDialogLayout {
 
         setActions(openInBrowser, updateButton, cancelButton);
         onEscPressed(this, cancelButton::fire);
+    }
+
+    private static String markdownToHtml(String markdown) {
+        StringBuilder html = new StringBuilder();
+        String[] lines = markdown.replace("\r\n", "\n").split("\n", -1);
+        boolean inCodeBlock = false;
+        boolean inList = false;
+
+        for (String line : lines) {
+            if (line.trim().startsWith("```")) {
+                if (inCodeBlock) {
+                    html.append("</code></pre>\n");
+                    inCodeBlock = false;
+                } else {
+                    html.append("<pre><code>");
+                    inCodeBlock = true;
+                }
+                continue;
+            }
+
+            if (inCodeBlock) {
+                html.append(escapeHtml(line)).append("\n");
+                continue;
+            }
+
+            if (line.trim().matches("^#{1,6}\\s+.*")) {
+                int level = 0;
+                while (level < line.length() && line.charAt(level) == '#') level++;
+                String content = line.trim().substring(level).trim();
+                closeList(html, inList); inList = false;
+                html.append("<h").append(level).append(">")
+                    .append(inlineMarkdown(content))
+                    .append("</h").append(level).append(">\n");
+                continue;
+            }
+
+            if (line.trim().isEmpty()) {
+                closeList(html, inList); inList = false;
+                html.append("\n");
+                continue;
+            }
+
+            if (line.trim().matches("^[-*+]\\s+.*")) {
+                if (!inList) {
+                    html.append("<ul>\n");
+                    inList = true;
+                }
+                html.append("<li>").append(inlineMarkdown(line.trim().substring(2).trim())).append("</li>\n");
+                continue;
+            }
+
+            if (line.trim().matches("^\\d+\\.\\s+.*")) {
+                if (!inList) {
+                    html.append("<ol>\n");
+                    inList = true;
+                }
+                String content = line.trim().replaceFirst("^\\d+\\.\\s*", "");
+                html.append("<li>").append(inlineMarkdown(content)).append("</li>\n");
+                continue;
+            }
+
+            closeList(html, inList); inList = false;
+
+            if (line.trim().startsWith("> ")) {
+                html.append("<blockquote><p>").append(inlineMarkdown(line.trim().substring(2))).append("</p></blockquote>\n");
+                continue;
+            }
+
+            if (line.trim().matches("^[-*_]{3,}$")) {
+                html.append("<hr/>\n");
+                continue;
+            }
+
+            html.append("<p>").append(inlineMarkdown(line)).append("</p>\n");
+        }
+
+        if (inList) html.append("</ul>\n");
+        if (inCodeBlock) html.append("</code></pre>\n");
+
+        return html.toString();
+    }
+
+    private static void closeList(StringBuilder html, boolean inList) {
+        if (inList) html.append("</ul>\n");
+    }
+
+    private static String inlineMarkdown(String text) {
+        text = text.replaceAll("`([^`]+)`", "<code>$1</code>");
+        text = text.replaceAll("\\*\\*(.+?)\\*\\*", "<b>$1</b>");
+        text = Pattern.compile("(?<!\\*)\\*(?!\\*)(.+?)(?<!\\*)\\*(?!\\*)").matcher(text).replaceAll("<i>$1</i>");
+        text = text.replaceAll("\\[([^\\]]+)\\]\\(([^)]+)\\)", "<a href=\"$2\">$1</a>");
+        text = text.replaceAll("~~(.+?)~~", "<del>$1</del>");
+        return text;
+    }
+
+    private static String escapeHtml(String text) {
+        return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     }
 }

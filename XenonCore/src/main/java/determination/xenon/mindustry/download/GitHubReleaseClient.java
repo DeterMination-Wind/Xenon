@@ -61,7 +61,7 @@ public final class GitHubReleaseClient {
 
     private static final String API_BASE = "https://api.github.com/";
     /** Cache proxy server — returns GitHub API v3 compatible responses. */
-    private static final String CACHE_API_BASE = "http://121.199.60.4/github/";
+    private static final String CACHE_API_BASE = "http://mindustry.men/github/";
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(5);
     private static final Duration READ_TIMEOUT = Duration.ofSeconds(5);
     /** Cap per-mirror retry budget to avoid stacking 5s × N mirrors of latency. */

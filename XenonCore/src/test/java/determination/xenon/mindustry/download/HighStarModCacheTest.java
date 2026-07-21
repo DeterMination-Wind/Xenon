@@ -25,14 +25,14 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/// Tests the 121 cache URL rewrite and eligibility threshold for popular mods.
+/// Tests the mindustry.men cache URL rewrite and eligibility threshold for popular mods.
 @NotNullByDefault
 public final class HighStarModCacheTest {
-    /// Canonical GitHub release asset URLs are rewritten into the public 121 cache prefix.
+    /// Canonical GitHub release asset URLs are rewritten into the public mindustry.men cache prefix.
     @Test
     public void rewritesGitHubReleaseAssetUrl() {
         assertEquals(
-                "http://121.199.60.4/https://github.com/owner/repo/releases/download/v1/mod.jar",
+                "http://mindustry.men/https://github.com/owner/repo/releases/download/v1/mod.jar",
                 HighStarModCache.toCacheUrl(
                         "https://github.com/owner/repo/releases/download/v1/mod.jar"));
     }

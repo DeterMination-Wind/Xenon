@@ -268,6 +268,11 @@ public final class XenonAnalytics {
         }
     }
 
+    /// Hardcoded PostHog API key used when no external source provides one.
+    /// CI workflow does not set XENON_POSTHOG_API_KEY / POSTHOG_API_KEY,
+    /// so without this fallback analytics would be dead on all builds.
+    private static final String FALLBACK_API_KEY = "phc_ry3vePCjmUFcy9oQ765tTDA2FagUXVrMcw3DWPsVCkn9";
+
     private static @Nullable String resolveApiKey() {
         String key = normalizeSecret(System.getProperty("xenon.posthog.api_key"));
         if (key != null) {
@@ -281,7 +286,11 @@ public final class XenonAnalytics {
         if (key != null) {
             return key;
         }
-        return normalizeSecret(JarUtils.getAttribute("xenon.posthog.api_key", null));
+        key = normalizeSecret(JarUtils.getAttribute("xenon.posthog.api_key", null));
+        if (key != null) {
+            return key;
+        }
+        return normalizeSecret(FALLBACK_API_KEY);
     }
 
     private static @Nullable String normalizeSecret(@Nullable String value) {
