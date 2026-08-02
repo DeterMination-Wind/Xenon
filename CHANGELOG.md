@@ -2,6 +2,10 @@
 
 All notable changes to Xenon will be documented in this file.
 
+## [1.9.0] — 2026-08-02
+
+See the [bilingual release notes](release-notes/v1.9.0.md) for the complete list of changes.
+
 ## [1.8.0] — 2026-07-10
 
 ### Added
@@ -75,3 +79,5 @@ The first public release. Forked from HMCL, Mindustry support layered on top.
 - Environment variables `HMCL_*` → `XENON_*`.
 
 [0.1.0]: https://github.com/DeterMination-Wind/Xenon/releases/tag/v0.1.0
+[1.8.0]: https://github.com/DeterMination-Wind/Xenon/releases/tag/v1.8.0
+[1.9.0]: https://github.com/DeterMination-Wind/Xenon/releases/tag/v1.9.0

@@ -19,6 +19,7 @@ package determination.xenon.mindustry.download;
 
 import com.google.gson.Gson;
 import determination.xenon.task.FetchTask;
+import determination.xenon.util.io.NetworkUtils;
 import determination.xenon.util.logging.Logger;
 import org.jetbrains.annotations.NotNullByDefault;
 import org.jetbrains.annotations.Nullable;
@@ -329,7 +330,7 @@ public final class MirrorDownloader {
     private @Nullable Probe probeOnce(String label, String url) {
         long start = System.currentTimeMillis();
         try {
-            HttpRequest req = HttpRequest.newBuilder(URI.create(url))
+            HttpRequest req = HttpRequest.newBuilder(NetworkUtils.resolvePlayMirrorIp(URI.create(url)))
                     .GET()
                     .timeout(PROBE_TIMEOUT)
                     .header("Range", "bytes=0-0")
@@ -455,7 +456,7 @@ public final class MirrorDownloader {
     /// Downloads one racing candidate into its temp file.
     private void downloadOne(RaceState s) {
         try {
-            HttpRequest req = HttpRequest.newBuilder(URI.create(s.probe.url))
+            HttpRequest req = HttpRequest.newBuilder(NetworkUtils.resolvePlayMirrorIp(URI.create(s.probe.url)))
                     .GET()
                     .timeout(Duration.ofMinutes(10))
                     .header("Accept", "application/octet-stream")
@@ -750,7 +751,7 @@ public final class MirrorDownloader {
     /// Streams a non-GitHub URL directly to a temp file.
     private void downloadStream(String url, Path tmp, long expectedSize,
                                 @Nullable ProgressCallback progress) throws IOException {
-        HttpRequest req = HttpRequest.newBuilder(URI.create(url))
+        HttpRequest req = HttpRequest.newBuilder(NetworkUtils.resolvePlayMirrorIp(URI.create(url)))
                 .GET()
                 .timeout(Duration.ofMinutes(10))
                 .header("Accept", "application/octet-stream")

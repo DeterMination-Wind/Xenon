@@ -45,6 +45,18 @@ public class NetworkUtilsTest {
     }
 
     @Test
+    public void testResolvePlayMirrorIpDoesNotRewriteHttps() {
+        URI https = URI.create("https://play.mindustry.men/github/repos/example");
+        assertEquals(https, resolvePlayMirrorIp(https));
+    }
+
+    @Test
+    public void testResolvePlayMirrorIpDoesNotRewriteOtherHosts() {
+        URI otherHost = URI.create("http://example.com/github/repos/example");
+        assertEquals(otherHost, resolvePlayMirrorIp(otherHost));
+    }
+
+    @Test
     public void testEncodeLocation() {
         assertEquals("https://github.com", encodeLocation("https://github.com"));
         assertEquals("https://github.com/HMCL-dev/HMCL/commits?author=Glavo", encodeLocation("https://github.com/HMCL-dev/HMCL/commits?author=Glavo"));

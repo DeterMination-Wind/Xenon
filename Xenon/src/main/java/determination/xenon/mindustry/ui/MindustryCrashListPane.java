@@ -54,6 +54,7 @@ import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.Unmodifiable;
 
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.format.DateTimeFormatter;
 import java.time.ZoneId;
@@ -96,7 +97,7 @@ public final class MindustryCrashListPane extends BorderPane {
         this.variant = variant == null ? VersionVariant.CUSTOM : variant;
         setPadding(new Insets(12));
 
-        Label title = new Label(i18n("xenon.mindustry.crash.title"));
+        Label title = new Label(i18n("xenon.mindustry.logs.title"));
         title.getStyleClass().add("title");
         Label hint = new Label(i18n("xenon.mindustry.crash.hint",
                 Metadata.QQ_GROUP, Metadata.GROUPS_URL));
@@ -105,13 +106,15 @@ public final class MindustryCrashListPane extends BorderPane {
         JFXButton refresh = FXUtils.newRaisedButton(i18n("button.refresh"));
         refresh.setOnAction(e -> reload());
         JFXButton openFolder = FXUtils.newRaisedButton(i18n("folder.logs"));
-        openFolder.setOnAction(e -> FXUtils.openFolder(dataDir.resolve("crashes")));
+        openFolder.setOnAction(e -> FXUtils.openFolder(dataDir));
+        JFXButton lastLogButton = FXUtils.newRaisedButton(i18n("xenon.mindustry.logs.last_log"));
+        lastLogButton.setOnAction(e -> openLastLog());
 
         search.setPromptText(i18n("xenon.mindustry.crash.search"));
         search.textProperty().addListener((obs, old, value) -> rebuildList());
         HBox.setHgrow(search, Priority.ALWAYS);
 
-        HBox toolbar = new HBox(8, refresh, openFolder);
+        HBox toolbar = new HBox(8, refresh, openFolder, lastLogButton);
         toolbar.setAlignment(Pos.CENTER_LEFT);
 
         VBox header = new VBox(6, title, hint, toolbar, search, status);
@@ -126,6 +129,17 @@ public final class MindustryCrashListPane extends BorderPane {
         setCenter(list);
 
         reload();
+    }
+
+    /// Opens the selected instance's always-current Mindustry log.
+    private void openLastLog() {
+        Path lastLog = dataDir.resolve("last_log.txt");
+        if (!Files.isRegularFile(lastLog)) {
+            LOG.warning("Mindustry last log does not exist: " + lastLog);
+            Controllers.showToast(i18n("xenon.mindustry.logs.last_log.missing"));
+            return;
+        }
+        FXUtils.openFile(lastLog);
     }
 
     /// Reloads crash report metadata from disk on the IO scheduler.

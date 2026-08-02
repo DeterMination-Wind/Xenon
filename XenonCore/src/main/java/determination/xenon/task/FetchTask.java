@@ -331,7 +331,8 @@ public abstract class FetchTask<T> extends Task<T> {
                     }
 
                     do {
-                        HttpRequest.Builder requestBuilder = HttpRequest.newBuilder(currentURI)
+                        URI requestURI = NetworkUtils.resolvePlayMirrorIp(currentURI);
+                        HttpRequest.Builder requestBuilder = HttpRequest.newBuilder(requestURI)
                                 .timeout(NetworkUtils.TIMEOUT)
                                 .header("User-Agent", NetworkUtils.USER_AGENT);
                         headers.forEach(requestBuilder::header);

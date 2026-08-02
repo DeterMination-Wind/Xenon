@@ -17,6 +17,7 @@
  */
 package determination.xenon.mindustry.download;
 
+import determination.xenon.util.io.NetworkUtils;
 import determination.xenon.util.logging.Logger;
 
 import java.net.URI;
@@ -71,8 +72,8 @@ public final class MirrorSelector {
      */
     private static final List<Mirror> CANDIDATES = List.of(
             // Domestic cache proxy for Chinese users — faster than direct GitHub access
-            new Mirror("cache-mindustry.men",
-                    "http://mindustry.men/github/", Strategy.PREFIX_FULL_URL, "http://mindustry.men/github/"),
+            new Mirror("cache-play.mindustry.men",
+                    "http://play.mindustry.men/github/", Strategy.PREFIX_FULL_URL, "http://play.mindustry.men/github/"),
             // gh.tinylake.top first — TinyLake's own proxy, the same one
             // mindustry.top/download links to. Empirically the most
             // reliable mirror for users in mainland China.
@@ -223,7 +224,7 @@ public final class MirrorSelector {
     private CompletableFuture<Mirror> probe(Mirror m) {
         HttpRequest req;
         try {
-            req = HttpRequest.newBuilder(URI.create(m.probeUrl))
+            req = HttpRequest.newBuilder(NetworkUtils.resolvePlayMirrorIp(URI.create(m.probeUrl)))
                     .method("HEAD", HttpRequest.BodyPublishers.noBody())
                     .timeout(PROBE_TIMEOUT)
                     .build();

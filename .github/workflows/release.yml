@@ -71,14 +71,24 @@ jobs:
           Copy-Item "Xenon/build/libs/Xenon-$version.jar" "release/Xenon-$version.jar"
           $exeSha = (Get-FileHash "release/Xenon-$version.exe" -Algorithm SHA256).Hash.ToLowerInvariant()
           $jarSha = (Get-FileHash "release/Xenon-$version.jar" -Algorithm SHA256).Hash.ToLowerInvariant()
-          @(
+          $releaseLines = @(
             "# Xenon $version"
+            ""
+          )
+          $notesPath = "release-notes/v$version.md"
+          if (Test-Path $notesPath) {
+            $releaseLines += Get-Content -Path $notesPath
+            $releaseLines += ""
+          }
+          $releaseLines += @(
+            "## Assets / 发布资产"
             ""
             "| Asset | SHA-256 |"
             "| --- | --- |"
             "| Xenon-$version.exe | ``$exeSha`` |"
             "| Xenon-$version.jar | ``$jarSha`` |"
-          ) | Set-Content -Path release/RELEASE_NOTE.md -Encoding UTF8
+          )
+          $releaseLines | Set-Content -Path release/RELEASE_NOTE.md -Encoding UTF8
 
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4

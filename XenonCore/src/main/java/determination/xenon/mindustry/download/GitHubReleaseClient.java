@@ -21,6 +21,7 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonDeserializer;
 import com.google.gson.reflect.TypeToken;
+import determination.xenon.util.io.NetworkUtils;
 import determination.xenon.util.logging.Logger;
 
 import java.io.IOException;
@@ -61,7 +62,7 @@ public final class GitHubReleaseClient {
 
     private static final String API_BASE = "https://api.github.com/";
     /** Cache proxy server — returns GitHub API v3 compatible responses. */
-    private static final String CACHE_API_BASE = "http://mindustry.men/github/";
+    private static final String CACHE_API_BASE = "http://play.mindustry.men/github/";
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(5);
     private static final Duration READ_TIMEOUT = Duration.ofSeconds(5);
     /** Cap per-mirror retry budget to avoid stacking 5s × N mirrors of latency. */
@@ -254,7 +255,7 @@ public final class GitHubReleaseClient {
         // 1. Try cache proxy
         String cacheUrl = CACHE_API_BASE + relativePath;
         try {
-            HttpRequest req = HttpRequest.newBuilder(URI.create(cacheUrl))
+            HttpRequest req = HttpRequest.newBuilder(NetworkUtils.resolvePlayMirrorIp(URI.create(cacheUrl)))
                     .GET()
                     .timeout(READ_TIMEOUT)
                     .header("Accept", "application/vnd.github+json")
@@ -337,7 +338,7 @@ public final class GitHubReleaseClient {
         String lastModified = meta.getProperty("lastModified");
 
         String mirroredUrl = mirror.wrap(apiUrl);
-        HttpRequest.Builder rb = HttpRequest.newBuilder(URI.create(mirroredUrl))
+        HttpRequest.Builder rb = HttpRequest.newBuilder(NetworkUtils.resolvePlayMirrorIp(URI.create(mirroredUrl)))
                 .GET()
                 .timeout(READ_TIMEOUT)
                 .header("Accept", "application/vnd.github+json")

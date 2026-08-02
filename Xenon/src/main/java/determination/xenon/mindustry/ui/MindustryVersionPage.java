@@ -86,7 +86,7 @@ public final class MindustryVersionPage extends DecoratorAnimatedPage implements
                 .addNavigationDrawerTab(tab, modTab, i18n("xenon.mindustry.modlist.title"), SVG.EXTENSION, SVG.EXTENSION_FILL)
                 .addNavigationDrawerTab(tab, saveTab, i18n("xenon.mindustry.save.title"), SVG.ARCHIVE, SVG.ARCHIVE_FILL)
                 .addNavigationDrawerTab(tab, schematicTab, i18n("xenon.mindustry.schematic.title"), SVG.SCHEMA, SVG.SCHEMA_FILL)
-                .addNavigationDrawerTab(tab, crashTab, i18n("xenon.mindustry.crash.title"), SVG.SCRIPT);
+                .addNavigationDrawerTab(tab, crashTab, i18n("xenon.mindustry.logs.title"), SVG.SCRIPT);
         VBox.setVgrow(sideBar, Priority.ALWAYS);
 
         AdvancedListBox toolbar = new AdvancedListBox()

@@ -23,6 +23,7 @@ import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.Unmodifiable;
 
 import java.io.IOException;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayDeque;
@@ -139,7 +140,8 @@ public final class MindustryClientRuntimeRegistry {
         }
 
         handles.remove(handle.id, handle);
-        emit(handle.listener, new Exited(handle.id, handle.pid(), exitCode, recentLines));
+        emit(handle.listener, new Exited(handle.id, handle.pid(), exitCode, recentLines,
+                handle.options.getDataDir()));
 
         RuntimeHandle replacement = new RuntimeHandle(handle.id, handle.options,
                 handle.listener, handle.stdout, handle.stderr);
@@ -190,7 +192,15 @@ public final class MindustryClientRuntimeRegistry {
     }
 
     /// Emitted once a process exits normally or with an error code.
-    public record Exited(String id, long pid, int exitCode, @Unmodifiable List<String> recentLines)
+    ///
+    /// The data directory is captured from the launch options so callers can
+    /// still open the correct log when an archive-backed runtime directory
+    /// was used for this launch.
+    public record Exited(String id,
+                         long pid,
+                         int exitCode,
+                         @Unmodifiable List<String> recentLines,
+                         Path dataDir)
             implements ClientEvent {
     }
 
@@ -297,7 +307,7 @@ public final class MindustryClientRuntimeRegistry {
                 }
                 registry.removeIfCurrent(id, this);
                 if (!staleTerminated) {
-                    emit(listener, new Exited(id, pid(), code, lines));
+                    emit(listener, new Exited(id, pid(), code, lines, options.getDataDir()));
                 }
             });
         }

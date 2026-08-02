@@ -53,6 +53,8 @@ public final class NetworkUtils {
     /// Millisecond representation of [#TIMEOUT] for URLConnection APIs.
     public static final int TIMEOUT_MILLIS = (int) TIMEOUT.toMillis();
 
+    private static final String MINDUSTRY_MIRROR_HOST = "play.mindustry.men";
+
     private NetworkUtils() {
     }
 
@@ -169,7 +171,11 @@ public final class NetworkUtils {
     public static URLConnection createConnection(WebURL url) throws IOException {
         URLConnection connection;
         try {
-            connection = url.toURL().openConnection();
+            URI originalUri = toURI(url.toString());
+            URI directUri = resolvePlayMirrorIp(originalUri);
+            connection = (directUri.equals(originalUri) ? url : WebURL.of(directUri))
+                    .toURL()
+                    .openConnection();
         } catch (IllegalArgumentException | MalformedURLException e) {
             throw new IOException(e);
         }
@@ -197,6 +203,60 @@ public final class NetworkUtils {
 
     public static HttpURLConnection createHttpConnection(URI url) throws IOException {
         return (HttpURLConnection) createConnection(url);
+    }
+
+    /**
+     * Replaces the HTTP authority of {@code play.mindustry.men} with the
+     * current IPv4 address returned by DNS. The lookup is intentionally
+     * performed for every request so address changes can take effect without
+     * restarting Xenon.
+     *
+     * <p>The original host is not added as a {@code Host} header: the mirror
+     * server serves the successful response on its IP authority, while the
+     * domain authority is currently rejected by the provider's block page.
+     * HTTPS URLs are left unchanged because connecting to an IP would require
+     * a certificate valid for that IP; Xenon's play mirror URLs are HTTP.</p>
+     *
+     * @param uri the request URI
+     * @return a URI with the DNS-resolved IP, or {@code uri} when the URI is
+     *         not a play mirror HTTP URL or DNS resolution fails
+     */
+    public static URI resolvePlayMirrorIp(URI uri) {
+        if (!"http".equalsIgnoreCase(uri.getScheme())
+                || !MINDUSTRY_MIRROR_HOST.equalsIgnoreCase(uri.getHost())) {
+            return uri;
+        }
+
+        @Nullable String ip = lookupPlayMirrorIp();
+        if (ip == null) {
+            return uri;
+        }
+
+        try {
+            URI direct = new URI(uri.getScheme(), uri.getUserInfo(), ip, uri.getPort(),
+                    uri.getRawPath(), uri.getRawQuery(), uri.getRawFragment());
+            LOG.trace("Using " + MINDUSTRY_MIRROR_HOST + " DNS IP " + ip
+                    + " for " + uri.getRawPath());
+            return direct;
+        } catch (URISyntaxException e) {
+            LOG.warning("Invalid DNS IP URI for " + uri, e);
+            return uri;
+        }
+    }
+
+    /** Queries the current play mirror IPv4 address through the system DNS resolver. */
+    private static @Nullable String lookupPlayMirrorIp() {
+        try {
+            for (InetAddress address : InetAddress.getAllByName(MINDUSTRY_MIRROR_HOST)) {
+                if (address instanceof Inet4Address) {
+                    return address.getHostAddress();
+                }
+            }
+            LOG.warning("DNS A record has no IPv4 address: " + MINDUSTRY_MIRROR_HOST);
+        } catch (UnknownHostException e) {
+            LOG.warning("Unable to resolve DNS A record " + MINDUSTRY_MIRROR_HOST, e);
+        }
+        return null;
     }
 
     private static void encodeCodePoint(StringBuilder builder, int codePoint) {
@@ -296,7 +356,9 @@ public final class NetworkUtils {
                     throw new IOException("Too much redirects");
                 }
 
-                HttpURLConnection redirected = (HttpURLConnection) new URL(conn.getURL(), encodeLocation(newURL))
+                URL redirectUrl = new URL(conn.getURL(), encodeLocation(newURL));
+                HttpURLConnection redirected = (HttpURLConnection) resolvePlayMirrorIp(URI.create(redirectUrl.toString()))
+                        .toURL()
                         .openConnection();
                 properties
                         .forEach((key, value) -> value.forEach(element -> redirected.addRequestProperty(key, element)));

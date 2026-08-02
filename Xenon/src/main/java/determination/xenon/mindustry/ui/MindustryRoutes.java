@@ -210,10 +210,14 @@ public final class MindustryRoutes {
                     + ", code=" + exited.exitCode());
             refreshOpenModPanes(exited.id());
             if (exited.exitCode() != 0) {
-                Platform.runLater(() -> Controllers.dialog(
-                        i18n("xenon.mindustry.launch.exited_abnormally", exited.exitCode())
-                                + formatRecentLines(exited.recentLines()),
-                        i18n("message.error"), MessageDialogPane.MessageType.ERROR));
+                Path lastLog = exited.dataDir().resolve("last_log.txt");
+                Platform.runLater(() -> Controllers.dialog(new MessageDialogPane.Builder(
+                                i18n("xenon.mindustry.launch.exited_abnormally", exited.exitCode())
+                                        + formatRecentLines(exited.recentLines()),
+                                i18n("message.error"), MessageDialogPane.MessageType.ERROR)
+                        .addAction(i18n("xenon.mindustry.launch.open_log"), () -> openLastLog(lastLog))
+                        .ok(null)
+                        .build()));
             }
         } else if (event instanceof MindustryClientRuntimeRegistry.WindowlessProcessTerminated terminated) {
             LOG.warning("Terminated windowless Mindustry process: id=" + terminated.id()
@@ -259,6 +263,16 @@ public final class MindustryRoutes {
             builder.append('\n').append(recentLines.get(i));
         }
         return builder.toString();
+    }
+
+    /// Opens the log written by the Mindustry process that just exited.
+    private static void openLastLog(Path lastLog) {
+        if (!Files.isRegularFile(lastLog)) {
+            LOG.warning("Mindustry last log does not exist: " + lastLog);
+            Controllers.showToast(i18n("xenon.mindustry.logs.last_log.missing"));
+            return;
+        }
+        FXUtils.openFile(lastLog);
     }
 
     /** Confirm + delete a Mindustry version (clears its data dir as well). */

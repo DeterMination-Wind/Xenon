@@ -628,6 +628,28 @@ public final class FXUtils {
         });
     }
 
+    /// Opens a file with the operating system's default application.
+    public static void openFile(Path file) {
+        if (file.getFileSystem() != FileSystems.getDefault()) {
+            LOG.warning("Cannot open file as the file system is not supported: " + file);
+            return;
+        }
+
+        String path = FileUtils.getAbsolutePath(file);
+        thread(() -> {
+            try {
+                java.awt.Desktop desktop = java.awt.Desktop.getDesktop();
+                if (!desktop.isSupported(java.awt.Desktop.Action.OPEN)) {
+                    LOG.warning("The platform does not support opening files: " + path);
+                    return;
+                }
+                desktop.open(file.toFile());
+            } catch (Throwable e) {
+                LOG.error("Unable to open " + path + " by java.awt.Desktop.getDesktop()::open", e);
+            }
+        });
+    }
+
     public static void showFileInExplorer(Path file) {
         String path = file.toAbsolutePath().toString();
 
