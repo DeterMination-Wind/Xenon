@@ -8,7 +8,7 @@
 
 [中文](#中文) | [English](#english)
 
-Xenon 是基于 HMCL 框架的 Mindustry 启动器。统一管理 3 个客户端变体、Mod、存档、服务端与 ScriptAgent，无需手动配置 Java 参数和数据目录。
+Xenon 是基于 HMCL 框架的 Mindustry 启动器。统一管理 5 个客户端变体、Mod、存档、服务端与 ScriptAgent，无需手动配置 Java 参数和数据目录。
 
 ---
 
@@ -23,10 +23,13 @@ Xenon 是一款跨平台 Mindustry 启动器，基于 [HMCL](https://github.com/
 - **游戏下载镜像加速** — 自动测速选择最快 GitHub 镜像，国内也能满速下载
 - **Mod 管理** — 向导式安装社区 Mod，自动归入对应实例的 `mods/` 目录
 - **UUID 管理器** — 替代账户系统，为每个 UUID 绑定昵称，启动时自动注入
-- **3 种客户端变体** — Vanilla / Bleeding-Edge / MindustryX，各自独立数据目录，并存互不干扰
+- **5 种客户端变体** — Vanilla / Bleeding-Edge / MindustryX / CN-ARC / Foo Client，各自独立数据目录，并存互不干扰
+- **Steam Mindustry 集成** — 自动发现 Windows Steam 已安装的 Mindustry（含自定义库目录），可直接启动与管理
 - **导入本地 Jar** — 拖入 `MindustryX-Desktop.jar` 即可自动识别版本与 Java 需求
 - **存档与蓝图管理** — 解析 `.msav`、`.msch` 文件，支持导入/导出/分享码
-- **崩溃日志分析** — 自动扫描崩溃日志，识别 Mod 冲突并跳转对应 Issue 模板
+- **日志查看器** — 侧栏“日志”入口，崩溃退出时可直接打开本次实例的 `last_log.txt`；自动扫描崩溃日志，识别 Mod 冲突并跳转对应 Issue 模板
+- **mindustry.top 地图浏览器** — 内置 [mindustry.top](https://mindustry.top) 地图仓库浏览与安装
+- **PostHog 遥测** — 可选匿名统计启动器进程用量与崩溃，隐私友好，可关闭
 - **服务端管理** — 多实例并发、实时控制台、自动重启、端口检测、配置编辑、地图池管理
 - **ScriptAgent 集成** — 一键安装与管理 [ScriptAgent4Mindustry](https://github.com/way-zer/ScriptAgent4Mindustry) 模块
 
@@ -86,10 +89,13 @@ Xenon is a cross-platform Mindustry launcher forked from [HMCL](https://github.c
 - **GitHub mirror accelerator** — Auto-picks fastest mirror for China downloads
 - **Mod management** — Wizard-based community mod installation per instance
 - **UUID manager** — Bind nicknames to UUIDs, injected at launch
-- **3 client variants** — Vanilla, Bleeding-Edge, MindustryX, side by side with isolated data directories
+- **5 client variants** — Vanilla, Bleeding-Edge, MindustryX, CN-ARC, Foo Client, side by side with isolated data directories
+- **Steam Mindustry integration** — Auto-discovers Windows Steam Mindustry installs (incl. custom library folders) for launch and management
 - **Import local jars** — Drag & drop to auto-detect variant and Java requirements
 - **Save & schematic management** — `.msav` / `.msch` parsing with import, export and share code
-- **Crash analyzer** — Scan crash logs, highlight mod frames, link to issue templates
+- **Log viewer** — "Logs" sidebar entry; crash-exit dialogs open the instance's `last_log.txt`; crash analyzer highlights mod frames and links to issue templates
+- **mindustry.top map browser** — Browse and install maps from the [mindustry.top](https://mindustry.top) repository
+- **PostHog telemetry** — Optional anonymous process-usage and crash statistics, privacy-friendly
 - **Server management** — Multi-instance, live console, auto-restart, config editor, map pool
 - **ScriptAgent integration** — One-click [ScriptAgent4Mindustry](https://github.com/way-zer/ScriptAgent4Mindustry) setup with hot-reload
 

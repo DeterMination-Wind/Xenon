@@ -1,77 +1,66 @@
-<!-- #BEGIN BLOCK -->
-<!-- #PROPERTY NAME=TITLE -->
-<div align="center">
-    <img src="/HMCL/src/main/resources/assets/img/icon@8x.png" alt="HMCL Logo" width="64"/>
-</div>
+<h1 align="center">Xenon — A Mindustry Launcher</h1>
 
-<h1 align="center">Hello Minecraft! Launcher</h1>
-<!-- #END BLOCK -->
-
-<!-- #BEGIN BLOCK -->
-<!-- #PROPERTY NAME=BADGES -->
 <div align="center">
 
-[![GitHub](https://img.shields.io/badge/GitHub-repo-blue?style=flat-square&logo=github)](https://github.com/HMCL-dev/HMCL)
-[![CNB](https://img.shields.io/badge/CNB-mirror-ff6200?style=flat-square&logo=cloudnativebuild)](https://cnb.cool/HMCL-dev/HMCL)
-[![Gitee](https://img.shields.io/badge/Gitee-mirror-c71d23?style=flat-square&logo=gitee)](https://gitee.com/huanghongxun/HMCL)
-
-[![QQ Group](https://img.shields.io/badge/QQ-gray?style=flat-square&logo=qq&logoColor=ffffff)](https://docs.hmcl.net/groups.html)
-[![Discord](https://img.shields.io/badge/Discord-gray?style=flat-square&logo=discord)](https://discord.gg/jVvC7HfM6U)
-[![Bilibili](https://img.shields.io/badge/Bilibili-gray?style=flat-square&logo=bilibili)](https://space.bilibili.com/20314891)
+[![GitHub](https://img.shields.io/badge/GitHub-repo-blue?style=flat-square&logo=github)](https://github.com/DeterMination-Wind/Xenon)
+[![Bilibili](https://img.shields.io/badge/Bilibili-gray?style=flat-square&logo=bilibili)](https://space.bilibili.com/1433776051)
 
 </div>
-<!-- #END BLOCK -->
 
 ---
 
-<!-- #BEGIN LANGUAGE_SWITCHER -->
-**English** (**Standard**, [uʍoᗡ ǝpᴉsd∩](README_en_Qabs.md)) | 中文 ([简体](README_zh.md), [繁體](README_zh_Hant.md), [文言](README_lzh.md)) | [日本語](README_ja.md) | [español](README_es.md) | [русский](README_ru.md) | [українська](README_uk.md)
-<!-- #END LANGUAGE_SWITCHER -->
+**English** | 中文
 
 ## Introduction
 
-HMCL is an open-source, cross-platform Minecraft launcher that supports Mod Management, Game Customizing, ModLoader Installing (Forge, NeoForge, Cleanroom, Fabric, Legacy Fabric, Quilt, LiteLoader, and OptiFine), Modpack Creating, UI Customization, and more.
+Xenon is an open-source, cross-platform Mindustry launcher forked from [HMCL](https://github.com/HMCL-dev/HMCL). It keeps HMCL's JavaFX UI framework and replaces the Minecraft-specific backends with Mindustry equivalents, so you never have to configure Java arguments or data directories by hand.
 
-HMCL has amazing cross-platform capabilities. Not only does it run on different operating systems like Windows, Linux, macOS, and FreeBSD, but it also supports various CPU architectures such as x86, ARM, RISC-V, MIPS, and LoongArch. You can easily enjoy Minecraft across different platforms through HMCL.
+Xenon manages 5 Mindustry-desktop client variants — Vanilla, Bleeding-Edge, MindustryX, CN-ARC and Foo Client — plus mods, saves, servers and ScriptAgent, each with its own isolated data directory.
 
-For systems and CPU architectures supported by HMCL, please refer to [this table](PLATFORM.md).
+## Key Features
 
-## Download
+- **GitHub mirror accelerator** — auto-picks the fastest mirror for China downloads
+- **5 client variants** — Vanilla / Bleeding-Edge / MindustryX / CN-ARC / Foo Client, side by side
+- **Steam Mindustry integration** — auto-discovers Windows Steam installs (incl. custom library folders)
+- **mindustry.top map browser** — browse and install maps from the [mindustry.top](https://mindustry.top) repository
+- **PostHog telemetry** — optional anonymous process-usage and crash statistics
+- **Log viewer** — "Logs" sidebar entry; crash-exit dialogs open the instance's `last_log.txt`
+- **Mod management** — wizard-based community mod installation per instance
+- **UUID manager** — bind nicknames to UUIDs, injected at launch
+- **Save & schematic management** — `.msav` / `.msch` parsing with import, export and share code
+- **Crash analyzer** — scan crash logs, highlight mod frames, link to issue templates
+- **Server management** — multi-instance, live console, auto-restart, config editor, map pool
+- **ScriptAgent integration** — one-click [ScriptAgent4Mindustry](https://github.com/way-zer/ScriptAgent4Mindustry) setup with hot-reload
 
-You can download HMCL from the following sources:
+## Quick Start
 
-- [HMCL Official Website](https://hmcl.huangyuhui.net/download)
-- [GitHub Release](https://github.com/HMCL-dev/HMCL/releases)
-- [CNB Release](https://cnb.cool/HMCL-dev/HMCL/-/releases)
+1. Download the [latest release](https://github.com/DeterMination-Wind/Xenon/releases) and unzip
+2. Run `Xenon.bat` (Windows) or `Xenon.sh` (Linux/macOS)
+3. Sidebar → "Install Mindustry" → pick a variant → install
+4. Sidebar → "Mindustry Versions" → Launch
 
-## Contributing
+If Java 17+ is missing, the launcher will download it automatically.
 
-HMCL is a community-driven open-source project, and everyone is welcome to contribute code or provide suggestions.
+## Build
 
-You can contribute to HMCL development in the following ways:
+```bash
+./gradlew :Xenon:shadowJar          # fat jar
+./gradlew :Xenon:packagePortable    # portable zip
+./gradlew :Xenon:packageAll         # platform native installers
+```
 
-- Report bugs or request features by [creating an issue](https://github.com/HMCL-dev/HMCL/issues/new/choose) on GitHub.
-- Contribute code by forking the repository on GitHub and [submitting a pull request](https://github.com/HMCL-dev/HMCL/compare).
+Requires JDK 17+.
 
-Before contributing, please read the [Contributing Guide](./Contributing.md), which includes the following:
+## Contact
 
-- [How to build and run HMCL from source](./Contributing.md#build-hmcl)
-- [Adjusting HMCL behavior using debug options](./Contributing.md#debug-options)
+- [Bilibili](https://space.bilibili.com/1433776051)
+- QQ Group: `188709300`
+- [GitHub Issues](https://github.com/DeterMination-Wind/Xenon/issues)
 
-## Contributors
+## Credits
 
-Since 2015, more than 120 contributors have participated in HMCL. Thank you for your hard work!
-
-[![Contributors](https://contrib.rocks/image?repo=HMCL-dev/HMCL)](https://github.com/HMCL-dev/HMCL/graphs/contributors)
+Special thanks to [Wayzer / TinyLake](https://github.com/way-zer) (ScriptAgent & MindustryX), [DeterMination](https://github.com/DeterMination-Wind) (mirror hosting), [休闲 (Xiuxian)](https://alist.mindustry.ltd/Github/MindustryX) (China mirror for MindustryX), [爱看番的年兽sama](https://space.bilibili.com/433674920) (default background), the [HMCL team](https://github.com/HMCL-dev/HMCL) (UI framework), [Anuken](https://github.com/Anuken) (Mindustry), and all [contributors](https://github.com/DeterMination-Wind/Xenon/graphs/contributors).
 
 ## License
 
-The software is distributed under [GPLv3](https://www.gnu.org/licenses/gpl-3.0.html) license with the following additional terms:
-
-### Additional terms under GPLv3 Section 7
-
-1. When you distribute a modified version of the software, you must change the software name or the version number in a reasonable way in order to distinguish it from the original version. (Under [GPLv3, 7(c)](https://github.com/HMCL-dev/HMCL/blob/11820e31a85d8989e41d97476712b07e7094b190/LICENSE#L372-L374))
-
-   The software name and the version number can be edited [here](https://github.com/HMCL-dev/HMCL/blob/86529c6f15b3be54ed8d89ece47566cf57f43eb7/HMCL/src/main/java/org/jackhuang/hmcl/Metadata.java#L36-L38).
-
-2. You must not remove the copyright declaration displayed in the software. (Under [GPLv3, 7(b)](https://github.com/HMCL-dev/HMCL/blob/11820e31a85d8989e41d97476712b07e7094b190/LICENSE#L368-L370))
+GPLv3 (following HMCL). See [LICENSE](../LICENSE).
