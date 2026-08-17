@@ -2,6 +2,13 @@
 
 All notable changes to Xenon will be documented in this file.
 
+## [1.10.0] — 2026-08-17
+
+### Fixed
+- Launching a game could crash with a `NullPointerException` when no usable Java runtime could be resolved. The launcher now falls back to its own Java environment, or shows a clear error message instead of crashing.
+
+See the [bilingual release notes](release-notes/v1.10.0.md) for details.
+
 ## [1.9.0] — 2026-08-02
 
 See the [bilingual release notes](release-notes/v1.9.0.md) for the complete list of changes.
