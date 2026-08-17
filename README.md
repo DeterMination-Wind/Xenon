@@ -29,7 +29,6 @@ Xenon 是一款跨平台 Mindustry 启动器，基于 [HMCL](https://github.com/
 - **存档与蓝图管理** — 解析 `.msav`、`.msch` 文件，支持导入/导出/分享码
 - **日志查看器** — 侧栏“日志”入口，崩溃退出时可直接打开本次实例的 `last_log.txt`；自动扫描崩溃日志，识别 Mod 冲突并跳转对应 Issue 模板
 - **mindustry.top 地图浏览器** — 内置 [mindustry.top](https://mindustry.top) 地图仓库浏览与安装
-- **PostHog 遥测** — 可选匿名统计启动器进程用量与崩溃，隐私友好，可关闭
 - **服务端管理** — 多实例并发、实时控制台、自动重启、端口检测、配置编辑、地图池管理
 - **ScriptAgent 集成** — 一键安装与管理 [ScriptAgent4Mindustry](https://github.com/way-zer/ScriptAgent4Mindustry) 模块
 
@@ -95,7 +94,6 @@ Xenon is a cross-platform Mindustry launcher forked from [HMCL](https://github.c
 - **Save & schematic management** — `.msav` / `.msch` parsing with import, export and share code
 - **Log viewer** — "Logs" sidebar entry; crash-exit dialogs open the instance's `last_log.txt`; crash analyzer highlights mod frames and links to issue templates
 - **mindustry.top map browser** — Browse and install maps from the [mindustry.top](https://mindustry.top) repository
-- **PostHog telemetry** — Optional anonymous process-usage and crash statistics, privacy-friendly
 - **Server management** — Multi-instance, live console, auto-restart, config editor, map pool
 - **ScriptAgent integration** — One-click [ScriptAgent4Mindustry](https://github.com/way-zer/ScriptAgent4Mindustry) setup with hot-reload
 
