@@ -132,25 +132,48 @@ public final class JavaRuntime implements Comparable<JavaRuntime> {
     public static final int CURRENT_VERSION;
     public static final boolean CURRENT_JIT_ENABLED;
 
+    /**
+     * The Java runtime the launcher itself is running on, or {@code null}
+     * if it cannot be located on demand.
+     *
+     * <p>When the class-load-time probe ({@link #CURRENT_JAVA}) missed the
+     * executable (e.g. cloud-placeholder files or lazily mounted drives hid
+     * it at that moment), this retries the probe, so callers can still fall
+     * back to the launcher's own JVM later in the session.</p>
+     */
     public static JavaRuntime getDefault() {
-        return CURRENT_JAVA;
+        JavaRuntime current = CURRENT_JAVA;
+        if (current != null) {
+            return current;
+        }
+
+        Path executable = detectCurrentExecutable();
+        return executable != null ? JavaRuntime.of(executable, JavaInfo.CURRENT_ENVIRONMENT, false) : null;
+    }
+
+    /**
+     * Locate the current JVM's executable under {@code java.home}, or
+     * {@code null} when the runtime image does not expose a regular
+     * executable file.
+     */
+    private static Path detectCurrentExecutable() {
+        String javaHome = System.getProperty("java.home");
+        if (javaHome == null) {
+            return null;
+        }
+
+        Path executable = Paths.get(javaHome, "bin", OperatingSystem.CURRENT_OS.getJavaExecutable());
+        try {
+            executable = executable.toRealPath();
+        } catch (IOException ignored) {
+            // Keep the unresolved path; the regular-file check below still applies.
+        }
+
+        return Files.isRegularFile(executable) ? executable : null;
     }
 
     static {
-        String javaHome = System.getProperty("java.home");
-        Path executable = null;
-        if (javaHome != null) {
-            executable = Paths.get(javaHome, "bin", OperatingSystem.CURRENT_OS.getJavaExecutable());
-            try {
-                executable = executable.toRealPath();
-            } catch (IOException ignored) {
-            }
-
-            if (!Files.isRegularFile(executable)) {
-                executable = null;
-            }
-        }
-
+        Path executable = detectCurrentExecutable();
         CURRENT_JAVA = executable != null ? JavaRuntime.of(executable, JavaInfo.CURRENT_ENVIRONMENT, false) : null;
         CURRENT_VERSION = JavaInfo.CURRENT_ENVIRONMENT.getParsedVersion();
 

@@ -157,7 +157,7 @@ public final class LauncherHelper {
 
         TaskExecutor executor = checkGameState(profile, setting, version.get())
                 .thenComposeAsync(java -> {
-                    javaVersionRef.set(Objects.requireNonNull(java));
+                    javaVersionRef.set(Objects.requireNonNull(java, "checkGameState must not complete with a null Java runtime"));
                     version.set(NativePatcher.patchNative(repository, version.get(), gameVersion.orElse(null), java, setting, javaArguments));
                     if (setting.isNotCheckGame())
                         return null;
@@ -397,7 +397,29 @@ public final class LauncherHelper {
         });
         Task<JavaRuntime> task;
         if (setting.isNotCheckJVM()) {
-            task = getJavaTask.thenApplyAsync(java -> Lang.requireNonNullElse(java, JavaRuntime.getDefault()));
+            task = getJavaTask.thenComposeAsync(java -> {
+                if (java != null) {
+                    return Task.completed(java);
+                }
+
+                JavaRuntime defaultJava = JavaRuntime.getDefault();
+                if (defaultJava != null) {
+                    return Task.completed(defaultJava);
+                }
+
+                // No configured Java and no usable launcher runtime: fail
+                // with a readable message instead of completing with null.
+                CompletableFuture<JavaRuntime> future = new CompletableFuture<>();
+                Task<JavaRuntime> result = Task.fromCompletableFuture(future);
+                Runnable breakAction = () -> future.completeExceptionally(new CancellationException("Launch operation was cancelled by user"));
+                FXUtils.runInFX(() -> Controllers.dialog(
+                        i18n("launch.invalid_java"),
+                        i18n("message.error"),
+                        MessageType.ERROR,
+                        breakAction
+                ));
+                return result;
+            });
         } else if (setting.getJavaVersionType() == JavaVersionType.AUTO || setting.getJavaVersionType() == JavaVersionType.VERSION) {
             task = getJavaTask.thenComposeAsync(Schedulers.javafx(), java -> {
                 if (java != null) {
@@ -458,13 +480,27 @@ public final class LauncherHelper {
                                 } else {
                                     LOG.warning("Failed to download java", exception);
                                     Controllers.confirm(i18n("launch.failed.no_accepted_java"), i18n("message.warning"), MessageType.WARNING,
-                                            () -> future.complete(JavaRuntime.getDefault()),
+                                            () -> {
+                                                JavaRuntime defaultJava = JavaRuntime.getDefault();
+                                                if (defaultJava != null) {
+                                                    future.complete(defaultJava);
+                                                } else {
+                                                    Controllers.dialog(i18n("launch.invalid_java"), i18n("message.error"), MessageType.ERROR, breakAction);
+                                                }
+                                            },
                                             breakAction);
                                 }
                             }, Schedulers.javafx());
                 } else {
                     Controllers.confirm(i18n("launch.failed.no_accepted_java"), i18n("message.warning"), MessageType.WARNING,
-                            () -> future.complete(JavaRuntime.getDefault()),
+                            () -> {
+                                JavaRuntime defaultJava = JavaRuntime.getDefault();
+                                if (defaultJava != null) {
+                                    future.complete(defaultJava);
+                                } else {
+                                    Controllers.dialog(i18n("launch.invalid_java"), i18n("message.error"), MessageType.ERROR, breakAction);
+                                }
+                            },
                             breakAction);
                 }
 
