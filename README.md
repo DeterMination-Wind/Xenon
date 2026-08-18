@@ -18,6 +18,8 @@
 
 Xenon 是一款面向 Mindustry 玩家和服主的跨平台桌面启动器与实例管理器。它把游戏安装、版本切换、Mod、存档、蓝图和服务器维护集中到一个入口中，让不同游戏环境彼此独立，却不需要手动整理 Java、启动参数和数据目录。
 
+**面向中国大陆用户：** Xenon 接入 MDTbbs 提供的 Mindustry 原版端国内下载镜像，优先改善原版资源的下载体验；镜像不可用时会自动回退到其他来源。
+
 Xenon 源自 [HMCL](https://github.com/HMCL-dev/HMCL)，并围绕 Mindustry 的实际使用方式重新组织。无论你是在多个客户端之间切换、维护不同的 Mod 组合，还是管理一台服务器，都可以从同一个地方开始。
 
 ### 为什么使用 Xenon？
@@ -73,7 +75,7 @@ Mod、地图、蓝图和存档都可以围绕具体实例整理、备份和导�
 
 ### 致谢
 
-特别感谢 [Wayzer / TinyLake](https://github.com/way-zer)（ScriptAgent 与 MindustryX）、[DeterMination](https://github.com/DeterMination-Wind)（镜像与维护服务）、[休闲 / Xiuxian](https://alist.mindustry.ltd/Github/MindustryX)（MindustryX 镜像）、[爱看番的年兽sama](https://space.bilibili.com/433674920)（默认背景图）、[HMCL 团队](https://github.com/HMCL-dev/HMCL)（项目基础）、[Anuken](https://github.com/Anuken)（Mindustry）以及所有 [GitHub 贡献者](https://github.com/DeterMination-Wind/Xenon/graphs/contributors)。
+特别感谢 [Wayzer / TinyLake](https://github.com/way-zer)（ScriptAgent 与 MindustryX）、[DeterMination](https://github.com/DeterMination-Wind)（镜像与维护服务）、[MDTbbs](https://mdtbbs.cn/)（Mindustry 原版端国内下载镜像）、[休闲 / Xiuxian](https://alist.mindustry.ltd/Github/MindustryX)（MindustryX 镜像）、[爱看番的年兽sama](https://space.bilibili.com/433674920)（默认背景图）、[HMCL 团队](https://github.com/HMCL-dev/HMCL)（项目基础）、[Anuken](https://github.com/Anuken)（Mindustry）以及所有 [GitHub 贡献者](https://github.com/DeterMination-Wind/Xenon/graphs/contributors)。
 
 ### License
 
@@ -87,6 +89,8 @@ GPLv3（沿用 HMCL）。详见 [LICENSE](LICENSE)。
 
 Xenon is a cross-platform desktop launcher and instance manager for Mindustry players and server owners. It brings installation, version switching, mod management, saves, schematics, and server maintenance into one place, so different game environments stay separate without requiring you to manage Java, launch arguments, or data directories by hand.
 
+**For users in mainland China:** Xenon connects to the MDTbbs domestic mirror for original Mindustry builds, prioritizing a smoother download experience for original game resources and falling back to other sources when needed.
+
 Xenon is based on [HMCL](https://github.com/HMCL-dev/HMCL), but its workflow is organized around the way Mindustry is actually played and hosted. Whether you switch between several clients, maintain different mod setups, or run a server, Xenon gives you one place to manage them.
 
 ### Why Xenon?
@@ -97,7 +101,7 @@ Official, testing, and community clients can live side by side. Each instance ke
 
 #### Let the launcher handle installation
 
-Xenon can install Mindustry directly, discover an existing Steam installation, or import a local build. It helps prepare Java and data directories, uses available download sources for different network conditions, and falls back automatically when a source is unavailable.
+Xenon can install Mindustry directly, discover an existing Steam installation, or import a local build. It helps prepare Java and data directories and uses available download sources for different network conditions, with automatic fallback when a source is unavailable.
 
 #### Keep game content with its instance
 
@@ -142,7 +146,7 @@ Requires JDK 17+.
 
 ### Credits
 
-Special thanks to [Wayzer / TinyLake](https://github.com/way-zer) (ScriptAgent and MindustryX), [DeterMination](https://github.com/DeterMination-Wind) (mirrors and maintenance), [Xiuxian / 休闲](https://alist.mindustry.ltd/Github/MindustryX) (MindustryX mirror), [爱看番的年兽sama](https://space.bilibili.com/433674920) (default background), the [HMCL team](https://github.com/HMCL-dev/HMCL) (project foundation), [Anuken](https://github.com/Anuken) (Mindustry), and all [GitHub contributors](https://github.com/DeterMination-Wind/Xenon/graphs/contributors).
+Special thanks to [Wayzer / TinyLake](https://github.com/way-zer) (ScriptAgent and MindustryX), [DeterMination](https://github.com/DeterMination-Wind) (mirrors and maintenance), [MDTbbs](https://mdtbbs.cn/) (domestic mirror for original Mindustry builds), [Xiuxian / 休闲](https://alist.mindustry.ltd/Github/MindustryX) (MindustryX mirror), [爱看番的年兽sama](https://space.bilibili.com/433674920) (default background), the [HMCL team](https://github.com/HMCL-dev/HMCL) (project foundation), [Anuken](https://github.com/Anuken) (Mindustry), and all [GitHub contributors](https://github.com/DeterMination-Wind/Xenon/graphs/contributors).
 
 ### License
 
