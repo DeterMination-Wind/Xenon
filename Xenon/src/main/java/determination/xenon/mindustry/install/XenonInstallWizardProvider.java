@@ -134,7 +134,9 @@ public final class XenonInstallWizardProvider implements WizardProvider {
                     + "variant=" + variant + ", remote=" + remote + ", id=" + id + ", policy=" + policy);
         }
 
-        XenonGameRepository repo = MindustryImportFlow.repository();
+        determination.xenon.setting.Profile profile =
+                determination.xenon.setting.Profiles.getSelectedProfile();
+        XenonGameRepository repo = MindustryImportFlow.repository(profile);
         Path versionRoot = repo.getVersionRoot(id);
         Path jar = versionRoot.resolve(id + ".jar");
         MindustryRemoteVersion.Artifact artifact = remote.getArtifactFor(OperatingSystem.CURRENT_OS);
@@ -213,16 +215,14 @@ public final class XenonInstallWizardProvider implements WizardProvider {
         // installJar and preloadStage run in parallel off prepareDir;
         // whenComplete fires after both branches finish.
         return Task.allOf(installJar, preloadStage)
-                .whenComplete(any -> {
+                .whenComplete(Schedulers.javafx(), exception -> {
                     // Kick the HMCL versions listener so MainPage / sidebar
                     // re-runs its merge of HMCL + XenonGameRepository and the
                     // newly installed Mindustry instance shows up immediately
                     // (without it the launch button stays in "no game" state
                     // until the user navigates somewhere that refreshes).
-                    determination.xenon.setting.Profile p =
-                            determination.xenon.setting.Profiles.getSelectedProfile();
-                    if (p != null) {
-                        p.getRepository().refreshVersionsAsync().start();
+                    if (exception == null && profile != null) {
+                        repo.get(id).ifPresent(version -> MindustryImportFlow.selectVersion(profile, version));
                     }
                 })
                 .setName(i18n("xenon.install.task.title"));
@@ -244,7 +244,7 @@ public final class XenonInstallWizardProvider implements WizardProvider {
             if (candidate.getBuild() != remote.getBuild()) continue;
             if (!Objects.equals(candidate.getBuildType(), remote.getBuildType())) continue;
 
-            Path root = repo.getVersionRoot(candidate.getId());
+            Path root = repo.getVersionRoot(candidate);
             Path candidateJar = candidate.resolveJar(root);
             if (Files.isRegularFile(candidateJar) && FileUtils.size(candidateJar) > 0) {
                 return candidateJar;

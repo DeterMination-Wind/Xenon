@@ -26,6 +26,8 @@ import determination.xenon.mindustry.MindustryVersion;
 import determination.xenon.mindustry.XenonGameRepository;
 import determination.xenon.mindustry.XenonLauncher;
 import determination.xenon.mindustry.modpack.XenonModpackPacker;
+import determination.xenon.setting.Profile;
+import determination.xenon.setting.Profiles;
 import determination.xenon.task.FetchTask;
 import determination.xenon.task.Schedulers;
 import determination.xenon.task.Task;
@@ -70,34 +72,32 @@ public final class MindustryRoutes {
     private MindustryRoutes() {}
 
     /**
-     * True iff {@code id} matches a Mindustry version registered in the
-     * shared {@link XenonGameRepository}. Falls back to a disk check so
-     * we still recognise the id during the small window between
-     * {@code XenonGameRepository.save} writing the manifest and the
-     * FX-thread refresh seeing it (which is exactly when the user
-     * lands on the version-management page from the install wizard).
+     * True iff {@code id} matches a Mindustry version visible from the
+     * currently selected Profile. The Profile-scoped lookup refreshes the
+     * selected versions root, so a newly saved manifest is recognized before
+     * the HMCL-facing list event arrives.
      *
      * <p>The disk fallback accepts both manifest layouts the launcher
      * has used historically: {@code <id>/version.json} (current) and
      * {@code <id>/<id>.json} (older Xenon installs).</p>
      */
     public static boolean isMindustry(@Nullable String id) {
-        if (id == null || id.isBlank()) return false;
-        XenonGameRepository repo = MindustryImportFlow.repository();
-        if (repo.has(id)) return true;
-        Path versionRoot = repo.getVersionRoot(id);
-        Path canonical = versionRoot.resolve("version.json");
-        Path legacy = versionRoot.resolve(id + ".json");
-        if (Files.isRegularFile(canonical) || Files.isRegularFile(legacy)) {
-            repo.refresh();
-            return repo.has(id);
-        }
-        return false;
+        return isMindustry(Profiles.getSelectedProfile(), id);
     }
 
+    /** Tests whether an id belongs to the supplied Profile's Mindustry repository. */
+    public static boolean isMindustry(@Nullable Profile profile, @Nullable String id) {
+        return get(profile, id).isPresent();
+    }
+
+    /** Resolves an id from the currently selected Profile. */
     public static Optional<MindustryVersion> get(@Nullable String id) {
-        if (id == null) return Optional.empty();
-        return MindustryImportFlow.repository().get(id);
+        return get(Profiles.getSelectedProfile(), id);
+    }
+
+    /** Resolves an id without confusing duplicate ids in another Profile. */
+    public static Optional<MindustryVersion> get(@Nullable Profile profile, @Nullable String id) {
+        return MindustryImportFlow.findVersion(profile, id);
     }
 
     /** Export one Mindustry instance as a .xenon zip containing the game jar and data files. */
@@ -117,7 +117,7 @@ public final class MindustryRoutes {
         Task<Path> exportTask = new Task<Path>() {
             @Override
             public void execute() throws Exception {
-                XenonModpackPacker.pack(MindustryImportFlow.repository(), version, output,
+                XenonModpackPacker.pack(MindustryImportFlow.repositoryForVersion(version), version, output,
                         new XenonModpackPacker.ExportMonitor() {
                             private long lastWritten;
 
@@ -183,7 +183,7 @@ public final class MindustryRoutes {
         String id = version.getId();
         Schedulers.io().execute(() -> {
             try {
-                XenonGameRepository repo = MindustryImportFlow.repository();
+                XenonGameRepository repo = MindustryImportFlow.repositoryForVersion(version);
                 LaunchOptions opts = MindustryLaunchService.buildLaunchOptions(repo, version,
                         determination.xenon.mindustry.CurrentPlayerProfile.current());
                 MindustryClientRuntimeRegistry.shared().launch(id, opts, MindustryRoutes::onClientEvent,
@@ -281,7 +281,7 @@ public final class MindustryRoutes {
         confirm.getStyleClass().add("dialog-error");
         confirm.setOnAction(e -> Schedulers.io().execute(() -> {
             try {
-                MindustryImportFlow.repository().delete(version.getId());
+                MindustryImportFlow.repositoryForVersion(version).delete(version.getId());
                 Platform.runLater(() -> Controllers.showToast(i18n("message.success")));
             } catch (Throwable ex) {
                 LOG.warning("Failed to delete Mindustry version " + version.getId(), ex);

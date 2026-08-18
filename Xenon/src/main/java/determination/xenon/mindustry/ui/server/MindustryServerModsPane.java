@@ -26,6 +26,7 @@ import determination.xenon.mindustry.server.ServerInstance;
 import determination.xenon.mindustry.server.ServerInstanceManager;
 import determination.xenon.mindustry.server.ServerModsBridge;
 import determination.xenon.mindustry.ui.MindustryModListPane;
+import determination.xenon.setting.Profiles;
 import determination.xenon.task.Schedulers;
 import determination.xenon.ui.Controllers;
 import determination.xenon.ui.FXUtils;
@@ -79,9 +80,8 @@ public final class MindustryServerModsPane extends BorderPane {
     }
 
     private void reloadClientVersions() {
-        XenonGameRepository repository = MindustryImportFlow.repository();
-        repository.refresh();
-        clientBox.getItems().setAll(repository.all());
+        clientBox.getItems().setAll(
+                MindustryImportFlow.visibleVersions(Profiles.getSelectedProfile()));
         if (!clientBox.getItems().isEmpty()) {
             clientBox.getSelectionModel().select(0);
         }
@@ -108,8 +108,8 @@ public final class MindustryServerModsPane extends BorderPane {
                     i18n("message.warning"), MessageDialogPane.MessageType.WARNING);
             return;
         }
-        XenonGameRepository repository = MindustryImportFlow.repository();
-        java.nio.file.Path versionRoot = repository.getVersionRoot(selected.getId());
+        XenonGameRepository repository = MindustryImportFlow.repositoryForVersion(selected);
+        java.nio.file.Path versionRoot = repository.getVersionRoot(selected);
         Schedulers.io().execute(() -> {
             try {
                 ServerModsBridge.syncFromClient(instance, manager, selected, versionRoot);

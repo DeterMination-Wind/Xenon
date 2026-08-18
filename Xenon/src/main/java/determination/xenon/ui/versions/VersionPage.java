@@ -131,11 +131,11 @@ public class VersionPage extends DecoratorAnimatedPage implements DecoratorPage 
         // If this id is a Mindustry instance, the HMCL VersionPage has the
         // wrong tabs (Installer / ModListPage with "install a modloader"
         // hint / MC test-launch). Detour to the Mindustry page and bail.
-        if (determination.xenon.mindustry.ui.MindustryRoutes.isMindustry(version)) {
+        if (determination.xenon.mindustry.ui.MindustryRoutes.isMindustry(profile, version)) {
             String captured = version;
             Platform.runLater(() -> {
                 fireEvent(new PageCloseEvent());
-                determination.xenon.mindustry.ui.MindustryRoutes.get(captured)
+                determination.xenon.mindustry.ui.MindustryRoutes.get(profile, captured)
                         .ifPresent(determination.xenon.mindustry.ui.MindustryRoutes::openVersionPage);
             });
             return;
@@ -170,10 +170,10 @@ public class VersionPage extends DecoratorAnimatedPage implements DecoratorPage 
         // wrong for them. Detour to the Mindustry page on the very next
         // FX tick.
         String currentId = getVersion();
-        if (determination.xenon.mindustry.ui.MindustryRoutes.isMindustry(currentId)) {
+        if (determination.xenon.mindustry.ui.MindustryRoutes.isMindustry(getProfile(), currentId)) {
             Platform.runLater(() -> {
                 fireEvent(new PageCloseEvent());
-                determination.xenon.mindustry.ui.MindustryRoutes.get(currentId)
+                determination.xenon.mindustry.ui.MindustryRoutes.get(getProfile(), currentId)
                         .ifPresent(determination.xenon.mindustry.ui.MindustryRoutes::openVersionPage);
             });
             return;

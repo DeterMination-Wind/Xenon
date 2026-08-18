@@ -250,9 +250,8 @@ public final class MindustryMapBrowserPane extends BorderPane implements PageAwa
     }
 
     private void refreshTargetVersions() {
-        XenonGameRepository xrepo = MindustryImportFlow.repository();
-        xrepo.refresh();
-        List<MindustryVersion> versions = new ArrayList<>(xrepo.all());
+        List<MindustryVersion> versions = new ArrayList<>(
+                MindustryImportFlow.visibleVersions(Profiles.getSelectedProfile()));
         versions.sort(Comparator.comparing(MindustryVersion::getName, String.CASE_INSENSITIVE_ORDER));
 
         MindustryVersion previous = targetVersion.getSelectionModel().getSelectedItem();
@@ -601,8 +600,8 @@ public final class MindustryMapBrowserPane extends BorderPane implements PageAwa
             return;
         }
 
-        XenonGameRepository xrepo = MindustryImportFlow.repository();
-        Path versionRoot = xrepo.getVersionRoot(target.getId());
+        XenonGameRepository xrepo = MindustryImportFlow.repositoryForVersion(target);
+        Path versionRoot = xrepo.getVersionRoot(target);
         Path mapsDir = target.resolveDataDir(versionRoot).resolve("maps");
         Path defaultTarget = mapsDir.resolve(map.suggestedFileName());
 

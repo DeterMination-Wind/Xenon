@@ -68,8 +68,8 @@ public final class MindustryVersionPage extends DecoratorAnimatedPage implements
 
     public MindustryVersionPage(MindustryVersion version) {
         this.version = version;
-        XenonGameRepository repo = MindustryImportFlow.repository();
-        this.versionRoot = repo.getVersionRoot(version.getId());
+        XenonGameRepository repo = MindustryImportFlow.repositoryForVersion(version);
+        this.versionRoot = repo.getVersionRoot(version);
         this.workingDirectory = version.resolveWorkingDirectory(versionRoot);
         this.dataDir = version.resolveDataDir(versionRoot);
 
@@ -135,7 +135,7 @@ public final class MindustryVersionPage extends DecoratorAnimatedPage implements
         confirm.getStyleClass().add("dialog-error");
         confirm.setOnAction(e -> Schedulers.io().execute(() -> {
             try {
-                MindustryImportFlow.repository().delete(version.getId());
+                MindustryImportFlow.repositoryForVersion(version).delete(version.getId());
                 Platform.runLater(() -> {
                     Controllers.showToast(i18n("message.success"));
                     fireEvent(new determination.xenon.ui.construct.PageCloseEvent());

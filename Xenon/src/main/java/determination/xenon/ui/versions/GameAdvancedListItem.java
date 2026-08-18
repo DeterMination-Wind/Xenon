@@ -59,7 +59,7 @@ public class GameAdvancedListItem extends AdvancedListItem {
         // Mindustry instances live outside HMCL's repo — check the Xenon
         // repo first so a Mindustry-only profile doesn't show "no game".
         if (version != null
-                && determination.xenon.mindustry.ui.MindustryRoutes.isMindustry(version)) {
+                && determination.xenon.mindustry.ui.MindustryRoutes.isMindustry(profile, version)) {
             setTitle(i18n("version.manage.manage"));
             setSubtitle(version);
             // No per-version Mindustry icon yet — keep the default art.

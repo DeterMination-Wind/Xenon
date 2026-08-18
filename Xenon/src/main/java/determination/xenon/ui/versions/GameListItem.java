@@ -30,7 +30,7 @@ public class GameListItem extends GameItem {
 
     public GameListItem(Profile profile, String id) {
         super(profile, id);
-        this.isMindustry = MindustryRoutes.isMindustry(id);
+        this.isMindustry = MindustryRoutes.isMindustry(profile, id);
         // HMCL's isModpack() crashes on a Mindustry id since it isn't in the
         // HMCL repository; gate it.
         this.isModpack = !isMindustry && profile.getRepository().isModpack(id);

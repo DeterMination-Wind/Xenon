@@ -32,6 +32,7 @@ import determination.xenon.mindustry.mod.GitHubDirectInstaller;
 import determination.xenon.mindustry.mod.MindustryModManager;
 import determination.xenon.mindustry.mod.MindustryModsIndexRepository;
 import determination.xenon.mindustry.mod.MindustryRemoteMod;
+import determination.xenon.setting.Profiles;
 import determination.xenon.task.Schedulers;
 import determination.xenon.task.Task;
 import determination.xenon.task.TaskExecutor;
@@ -196,9 +197,8 @@ public final class MindustryModBrowserPane extends BorderPane implements PageAwa
     // ------------------------------------------------------------------
 
     private void refreshTargetVersions() {
-        XenonGameRepository xrepo = MindustryImportFlow.repository();
-        xrepo.refresh();
-        List<MindustryVersion> versions = new ArrayList<>(xrepo.all());
+        List<MindustryVersion> versions = new ArrayList<>(
+                MindustryImportFlow.visibleVersions(Profiles.getSelectedProfile()));
         // Preserve the user's selection across reloads (selectFirst() only
         // when nothing was selected before — otherwise re-pick by id).
         MindustryVersion previous = targetVersion.getSelectionModel().getSelectedItem();
@@ -381,9 +381,8 @@ public final class MindustryModBrowserPane extends BorderPane implements PageAwa
                     i18n("message.error"), MessageDialogPane.MessageType.ERROR);
             return;
         }
-        XenonGameRepository xrepo = MindustryImportFlow.repository();
-        xrepo.refresh();
-        List<MindustryVersion> instances = new ArrayList<>(xrepo.all());
+        List<MindustryVersion> instances = new ArrayList<>(
+                MindustryImportFlow.visibleVersions(Profiles.getSelectedProfile()));
         if (instances.isEmpty()) {
             Controllers.dialog(i18n("xenon.mindustry.mod.browser.target.none"),
                     i18n("message.error"), MessageDialogPane.MessageType.WARNING);
@@ -537,8 +536,8 @@ public final class MindustryModBrowserPane extends BorderPane implements PageAwa
 
         // Resolve target dirs eagerly — they don't need a Task wrapper and
         // we want any IO failure here to surface synchronously.
-        XenonGameRepository xrepo = MindustryImportFlow.repository();
-        Path versionRoot = xrepo.getVersionRoot(target.getId());
+        XenonGameRepository xrepo = MindustryImportFlow.repositoryForVersion(target);
+        Path versionRoot = xrepo.getVersionRoot(target);
         Path dataDir = target.resolveDataDir(versionRoot);
         Path modsDir = dataDir.resolve("mods");
 

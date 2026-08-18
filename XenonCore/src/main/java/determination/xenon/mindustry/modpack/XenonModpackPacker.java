@@ -79,7 +79,7 @@ public final class XenonModpackPacker {
                                             MindustryVersion version,
                                             Path zipFile,
                                             ExportMonitor monitor) throws IOException {
-        Path versionRoot = repo.getVersionRoot(version.getId());
+        Path versionRoot = repo.getVersionRoot(version);
         Path dataDir = version.resolveDataDir(versionRoot);
 
         XenonModpackManifest manifest = new XenonModpackManifest();

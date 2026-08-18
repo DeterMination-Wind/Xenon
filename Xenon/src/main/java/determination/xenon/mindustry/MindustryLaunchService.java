@@ -129,7 +129,7 @@ public final class MindustryLaunchService {
     public static LaunchOptions buildLaunchOptions(XenonGameRepository repo,
                                                    MindustryVersion version,
                                                    UuidProfile playerProfile) throws IOException, InterruptedException {
-        Path versionRoot = repo.getVersionRoot(version.getId());
+        Path versionRoot = repo.getVersionRoot(version);
         Path jar = version.resolveJar(versionRoot);
         if (!Files.isRegularFile(jar)) {
             throw new IOException("Mindustry jar missing: " + jar);

@@ -86,7 +86,10 @@ public final class IsolationPage extends VBox implements WizardPage {
                 idField.requestFocus();
                 return;
             }
-            if (MindustryImportFlow.repository().has(id)
+            determination.xenon.mindustry.XenonGameRepository repository =
+                    MindustryImportFlow.currentRepository();
+            repository.refresh();
+            if (repository.has(id)
                     && Boolean.FALSE.equals(controller.getSettings().get(WizardKeys.OVERRIDE_EXISTING))) {
                 idField.requestFocus();
                 return;

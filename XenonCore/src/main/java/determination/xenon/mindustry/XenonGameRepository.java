@@ -19,8 +19,12 @@ package determination.xenon.mindustry;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import determination.xenon.util.io.FileUtils;
 import determination.xenon.util.logging.Logger;
+import determination.xenon.util.platform.OperatingSystem;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -39,9 +43,10 @@ import java.util.Optional;
  * On-disk registry of Mindustry client versions installed under
  * {@code <config>/versions/<vid>/}.
  *
- * <p>Each subdirectory must contain a {@code version.json} that
- * deserialises into a {@link MindustryVersion}; the directory name and
- * the {@code id} field must match (the id wins on conflict).</p>
+ * <p>Each subdirectory normally contains a {@code version.json} that
+ * deserialises into a {@link MindustryVersion}; older global installs may
+ * still use {@code <id>/<id>.json}. Minecraft manifests are ignored by
+ * checking for Mindustry-specific fields before deserialisation.</p>
  *
  * <p>This is intentionally <em>parallel to</em> HMCL's
  * {@code HMCLGameRepository} rather than replacing it — the HMCL UI keeps
@@ -56,7 +61,7 @@ public final class XenonGameRepository {
     private final Map<String, MindustryVersion> versions = new LinkedHashMap<>();
 
     public XenonGameRepository(Path versionsRoot) {
-        this.versionsRoot = versionsRoot;
+        this.versionsRoot = versionsRoot.toAbsolutePath().normalize();
     }
 
     public Path getVersionsRoot() {
@@ -87,11 +92,15 @@ public final class XenonGameRepository {
                 }
                 try {
                     String text = Files.readString(json);
+                    if (!isMindustryManifest(text)) {
+                        continue;
+                    }
                     MindustryVersion v = GSON.fromJson(text, MindustryVersion.class);
                     if (v == null) continue;
                     if (v.getId() == null || v.getId().isBlank()) {
                         v.setId(dirName);
                     }
+                    v.setRepositoryRoot(versionsRoot);
                     versions.put(v.getId(), v);
                 } catch (Exception ex) {
                     Logger.LOG.warning("Failed to load Mindustry version " + dirName + ": " + ex);
@@ -103,7 +112,11 @@ public final class XenonGameRepository {
     }
 
     public synchronized boolean has(String id) {
-        return versions.containsKey(id);
+        if (versions.containsKey(id)) {
+            return true;
+        }
+        return OperatingSystem.CURRENT_OS == OperatingSystem.WINDOWS
+                && versions.keySet().stream().anyMatch(existing -> existing.equalsIgnoreCase(id));
     }
 
     public synchronized Optional<MindustryVersion> get(String id) {
@@ -122,16 +135,29 @@ public final class XenonGameRepository {
         return versionsRoot.resolve(id);
     }
 
+    /**
+     * Resolve a version using its owning repository marker when available.
+     * This keeps instances loaded from another cached repository on their own
+     * disk root even if a caller also has a current-profile repository.
+     */
+    public Path getVersionRoot(MindustryVersion version) {
+        if (version == null || version.getId() == null || version.getId().isBlank()) {
+            throw new IllegalArgumentException("Mindustry version id must be set");
+        }
+        Path ownerRoot = version.getRepositoryRoot();
+        return (ownerRoot == null ? versionsRoot : ownerRoot).resolve(version.getId());
+    }
+
     public Path getDataDir(String id) throws VersionNotFoundException {
         MindustryVersion v = versions.get(id);
         if (v == null) throw new VersionNotFoundException(id);
-        return v.resolveDataDir(getVersionRoot(id));
+        return v.resolveDataDir(getVersionRoot(v));
     }
 
     public Path getJar(String id) throws VersionNotFoundException {
         MindustryVersion v = versions.get(id);
         if (v == null) throw new VersionNotFoundException(id);
-        return v.resolveJar(getVersionRoot(id));
+        return v.resolveJar(getVersionRoot(v));
     }
 
     /**
@@ -142,7 +168,8 @@ public final class XenonGameRepository {
         if (version.getId() == null || version.getId().isBlank()) {
             throw new IllegalArgumentException("Mindustry version id must be set");
         }
-        Path root = getVersionRoot(version.getId());
+        version.setRepositoryRoot(versionsRoot);
+        Path root = getVersionRoot(version);
         Files.createDirectories(root);
         Path json = root.resolve(VERSION_JSON);
         Files.writeString(json, GSON.toJson(version), StandardCharsets.UTF_8);
@@ -163,6 +190,25 @@ public final class XenonGameRepository {
 
     public synchronized List<String> ids() {
         return new ArrayList<>(versions.keySet());
+    }
+
+    /** Returns whether a manifest contains Mindustry-specific metadata. */
+    private static boolean isMindustryManifest(String text) {
+        try {
+            JsonElement element = JsonParser.parseString(text);
+            if (!element.isJsonObject()) {
+                return false;
+            }
+            JsonObject object = element.getAsJsonObject();
+            return object.has("jarPath")
+                    || object.has("variant")
+                    || object.has("buildType")
+                    || object.has("dataDirPolicy")
+                    || object.has("javaReq")
+                    || object.has("workingDirectory");
+        } catch (RuntimeException ignored) {
+            return false;
+        }
     }
 
     /** Thrown when a caller asks for a Mindustry version id that isn't installed. */

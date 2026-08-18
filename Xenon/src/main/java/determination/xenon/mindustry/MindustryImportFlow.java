@@ -38,7 +38,9 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -60,21 +62,55 @@ public final class MindustryImportFlow {
     private MindustryImportFlow() {
     }
 
-    /** Cached repo so multiple flow invocations share the in-memory list. */
-    private static volatile XenonGameRepository sharedRepo;
+    /** Cached repositories keyed by their normalized versions root. */
+    private static final Map<Path, XenonGameRepository> REPOSITORIES = new LinkedHashMap<>();
 
-    /** Lazily created shared repository rooted at {@code <config>/versions}. */
+    /** Returns the repository rooted at Xenon's global versions directory. */
     public static synchronized XenonGameRepository repository() {
-        XenonGameRepository repo = sharedRepo;
+        return repositoryAt(Metadata.getVersionsDirectory());
+    }
+
+    /** Returns the repository belonging to {@code profile}'s game directory. */
+    public static synchronized XenonGameRepository repository(@Nullable Profile profile) {
+        return repositoryAt(versionsRoot(profile));
+    }
+
+    /** Returns the repository that owns an already loaded Mindustry instance. */
+    public static synchronized XenonGameRepository repositoryForVersion(MindustryVersion version) {
+        Path ownerRoot = version == null ? null : version.getRepositoryRoot();
+        return ownerRoot == null ? repository() : repositoryAt(ownerRoot);
+    }
+
+    /** Returns the repository for the currently selected Profile, or global Home storage during bootstrap. */
+    public static XenonGameRepository currentRepository() {
+        return repository(Profiles.getSelectedProfile());
+    }
+
+    /** Returns the on-disk versions root selected by a Profile. */
+    public static Path versionsRoot(@Nullable Profile profile) {
+        if (profile == null || isGlobalProfile(profile)) {
+            return Metadata.getVersionsDirectory();
+        }
+        return profile.getGameDir().toAbsolutePath().normalize().resolve("versions");
+    }
+
+    /** True when a Profile points at Xenon's global Home directory. */
+    public static boolean isGlobalProfile(@Nullable Profile profile) {
+        return profile != null && samePath(profile.getGameDir(), Metadata.XENON_GLOBAL_DIRECTORY);
+    }
+
+    private static XenonGameRepository repositoryAt(Path root) {
+        Path normalizedRoot = root.toAbsolutePath().normalize();
+        XenonGameRepository repo = REPOSITORIES.get(normalizedRoot);
         if (repo == null) {
-            repo = new XenonGameRepository(Metadata.getVersionsDirectory());
+            repo = new XenonGameRepository(normalizedRoot);
             try {
-                Files.createDirectories(Metadata.getVersionsDirectory());
+                Files.createDirectories(normalizedRoot);
             } catch (Exception ignored) {
-                // Will surface again at scan/save; nothing to do here.
+                // The repository will report the failure again when it scans or saves.
             }
             repo.refresh();
-            sharedRepo = repo;
+            REPOSITORIES.put(normalizedRoot, repo);
         }
         return repo;
     }
@@ -100,45 +136,71 @@ public final class MindustryImportFlow {
         if (profile == null) {
             return Optional.empty();
         }
-        return syncExternalInstallation(profile.getGameDir());
+        return syncExternalInstallation(profile, profile.getGameDir());
     }
 
     /**
      * Mindustry instances that should be visible for {@code profile}'s current
      * game directory.
      *
-     * <p>The registry is still stored globally for compatibility, but the UI
-     * must not show every registered Mindustry instance for every profile. A
-     * version is visible when the selected game directory is Xenon's global
-     * game root, or when the version's jar / working directory / data directory
-     * belongs to the selected game directory.</p>
+     * <p>Normal Profiles read their own {@code <gameDir>/versions} root. The
+     * Home Profile reads Xenon's global root, and an existing global external
+     * registration is included for compatibility without moving its files.</p>
      */
     public static List<MindustryVersion> visibleVersions(Profile profile) {
         if (profile == null) {
             return List.of();
         }
-        syncProfileGameDirectory(profile);
-
-        XenonGameRepository repo = repository();
+        XenonGameRepository repo = repository(profile);
         repo.refresh();
-        Path profileDir = normalize(profile.getGameDir());
-        if (samePath(profileDir, Metadata.XENON_GLOBAL_DIRECTORY)
-                || samePath(profileDir, repo.getVersionsRoot())) {
+        if (isGlobalProfile(profile)) {
             return new ArrayList<>(repo.all());
         }
 
         List<MindustryVersion> visible = new ArrayList<>();
         for (MindustryVersion version : repo.all()) {
-            String id = version.getId();
-            if (id == null || id.isBlank()) {
-                continue;
-            }
-            Path versionRoot = repo.getVersionRoot(id);
-            if (belongsToProfile(version, versionRoot, profileDir)) {
-                visible.add(version);
-            }
+            visible.add(version);
         }
+
+        // Existing Steam/external registrations may still live in the global
+        // repository. Keep exposing those records without moving their files.
+        syncProfileGameDirectory(profile).ifPresent(external -> {
+            String id = external.getId();
+            if (id != null && visible.stream().noneMatch(version -> id.equals(version.getId()))) {
+                visible.add(external);
+            }
+        });
         return visible;
+    }
+
+    /** Finds an instance visible from a Profile without resolving another Profile's duplicate id. */
+    public static Optional<MindustryVersion> findVersion(@Nullable Profile profile, @Nullable String id) {
+        if (id == null || id.isBlank()) {
+            return Optional.empty();
+        }
+        if (profile == null) {
+            XenonGameRepository global = repository();
+            global.refresh();
+            return global.get(id);
+        }
+        return visibleVersions(profile).stream()
+                .filter(version -> id.equals(version.getId()))
+                .findFirst();
+    }
+
+    /** Resolves the actual {@code versions/<id>} directory for an instance. */
+    public static Path versionRoot(MindustryVersion version) {
+        XenonGameRepository repo = repositoryForVersion(version);
+        return repo.getVersionRoot(version);
+    }
+
+    /** Selects an imported instance and refreshes the HMCL-facing version list. */
+    public static void selectVersion(Profile profile, MindustryVersion version) {
+        if (profile == null || version == null || version.getId() == null) {
+            return;
+        }
+        profile.setSelectedVersion(version.getId());
+        profile.getRepository().refreshVersionsAsync().start();
     }
 
     /**
@@ -146,17 +208,34 @@ public final class MindustryImportFlow {
      * Repeated calls are idempotent for the same jar/data/working directory.
      */
     public static Optional<MindustryVersion> syncExternalInstallation(Path directory) {
+        return syncExternalInstallation(null, directory);
+    }
+
+    /** Register an external installation using a Profile-scoped repository when possible. */
+    public static Optional<MindustryVersion> syncExternalInstallation(
+            @Nullable Profile profile, Path directory) {
         Optional<DiscoveredInstallation> discovered = MindustryInstallationDiscovery.discover(directory);
         if (discovered.isEmpty()) {
             return Optional.empty();
         }
 
         try {
-            XenonGameRepository repo = repository();
+            XenonGameRepository repo = repository(profile);
             repo.refresh();
             MindustryVersion existing = findExistingExternalInstall(repo, discovered.get());
             if (existing != null) {
                 return Optional.of(existing);
+            }
+
+            // Do not migrate an existing global registration when a Profile
+            // starts using its own versions directory.
+            if (profile != null && !isGlobalProfile(profile)) {
+                XenonGameRepository global = repository();
+                global.refresh();
+                existing = findExistingExternalInstall(global, discovered.get());
+                if (existing != null) {
+                    return Optional.of(existing);
+                }
             }
 
             MindustryVersion version = toVersion(repo, discovered.get());
@@ -189,7 +268,8 @@ public final class MindustryImportFlow {
                 return;
             }
 
-            XenonGameRepository repo = repository();
+            Profile profile = Profiles.getSelectedProfile();
+            XenonGameRepository repo = repository(profile);
             repo.refresh();
             if (repo.has(trimmed)) {
                 handler.reject(i18n("xenon.mindustry.import.id.duplicate"));
@@ -201,10 +281,8 @@ public final class MindustryImportFlow {
                             XenonModpackInstaller.install(repo, file, trimmed))
                     .whenComplete(Schedulers.javafx(), (version, exception) -> {
                         if (exception == null && version != null) {
-                            Profile profile = Profiles.getSelectedProfile();
                             if (profile != null) {
-                                profile.setSelectedVersion(version.getId());
-                                profile.getRepository().refreshVersionsAsync().start();
+                                selectVersion(profile, version);
                             }
                             Controllers.showToast(i18n("message.success"));
                         } else if (exception != null) {
@@ -249,21 +327,31 @@ public final class MindustryImportFlow {
                 handler.reject(i18n("xenon.mindustry.import.id.invalid"));
                 return;
             }
-            XenonGameRepository repo = repository();
+            Profile profile = Profiles.getSelectedProfile();
+            XenonGameRepository repo = repository(profile);
+            repo.refresh();
             if (repo.has(trimmed)) {
                 handler.reject(i18n("xenon.mindustry.import.id.duplicate"));
                 return;
             }
             handler.resolve();
-            doImportAndLaunch(repo, file, trimmed);
+            doImportAndLaunch(profile, repo, file, trimmed);
         }, suggested);
     }
 
-    private static void doImportAndLaunch(XenonGameRepository repo, Path jar, String id) {
+    private static void doImportAndLaunch(@Nullable Profile profile,
+                                          XenonGameRepository repo,
+                                          Path jar,
+                                          String id) {
         Schedulers.io().execute(() -> {
             try {
                 MindustryVersion version = MindustryLaunchService.importLocalJar(repo, jar, id, null);
-                MindustryRoutes.launch(version);
+                Schedulers.javafx().execute(() -> {
+                    if (profile != null) {
+                        selectVersion(profile, version);
+                    }
+                    MindustryRoutes.launch(version);
+                });
             } catch (Throwable ex) {
                 LOG.warning("Mindustry import/launch failed", ex);
                 Schedulers.javafx().execute(() -> Controllers.dialog(
@@ -317,7 +405,7 @@ public final class MindustryImportFlow {
             if (id == null || id.isBlank()) {
                 continue;
             }
-            Path versionRoot = repo.getVersionRoot(id);
+            Path versionRoot = repo.getVersionRoot(version);
             if (samePath(version.resolveJar(versionRoot), installation.getJar())
                     && samePath(version.resolveDataDir(versionRoot), installation.getDataDir())
                     && samePath(version.resolveWorkingDirectory(versionRoot), installation.getWorkingDirectory())) {
@@ -329,20 +417,6 @@ public final class MindustryImportFlow {
 
     private static boolean samePath(Path left, Path right) {
         return Objects.equals(normalize(left), normalize(right));
-    }
-
-    private static boolean belongsToProfile(MindustryVersion version, Path versionRoot, Path profileDir) {
-        Path jar = normalize(version.resolveJar(versionRoot));
-        Path workingDirectory = normalize(version.resolveWorkingDirectory(versionRoot));
-        Path dataDir = normalize(version.resolveDataDir(versionRoot));
-        return samePath(workingDirectory, profileDir)
-                || samePath(dataDir, profileDir)
-                || isInside(jar, profileDir)
-                || isInside(dataDir, profileDir);
-    }
-
-    private static boolean isInside(Path child, Path parent) {
-        return child.startsWith(parent);
     }
 
     private static Path normalize(Path path) {

@@ -74,8 +74,8 @@ public final class Versions {
     }
 
     public static void deleteVersion(Profile profile, String version) {
-        if (MindustryRoutes.isMindustry(version)) {
-            MindustryRoutes.get(version).ifPresent(MindustryRoutes::deleteVersion);
+        if (MindustryRoutes.isMindustry(profile, version)) {
+            MindustryRoutes.get(profile, version).ifPresent(MindustryRoutes::deleteVersion);
             return;
         }
         boolean isIndependent = profile.getVersionSetting(version).getGameDirType() == GameDirectoryType.VERSION_FOLDER;
@@ -119,18 +119,18 @@ public final class Versions {
     }
 
     public static void exportVersion(Profile profile, String version) {
-        if (MindustryRoutes.isMindustry(version)) {
-            MindustryRoutes.get(version).ifPresent(MindustryRoutes::exportModpack);
+        if (MindustryRoutes.isMindustry(profile, version)) {
+            MindustryRoutes.get(profile, version).ifPresent(MindustryRoutes::exportModpack);
             return;
         }
         Controllers.showToast(i18n("modpack.unsupported"));
     }
 
     public static void openFolder(Profile profile, String version) {
-        if (MindustryRoutes.isMindustry(version)) {
-            MindustryRoutes.get(version).ifPresent(v ->
+        if (MindustryRoutes.isMindustry(profile, version)) {
+            MindustryRoutes.get(profile, version).ifPresent(v ->
                     FXUtils.openFolder(v.resolveWorkingDirectory(
-                            determination.xenon.mindustry.MindustryImportFlow.repository().getVersionRoot(v.getId()))));
+                            determination.xenon.mindustry.MindustryImportFlow.versionRoot(v))));
             return;
         }
         FXUtils.openFolder(profile.getRepository().getRunDirectory(version));
@@ -269,8 +269,8 @@ public final class Versions {
 
     @SafeVarargs
     public static void launch(Profile profile, String id, Consumer<LauncherHelper>... injecters) {
-        if (MindustryRoutes.isMindustry(id)) {
-            MindustryRoutes.get(id).ifPresent(MindustryRoutes::launch);
+        if (MindustryRoutes.isMindustry(profile, id)) {
+            MindustryRoutes.get(profile, id).ifPresent(MindustryRoutes::launch);
             return;
         }
         if (!checkVersionForLaunching(profile, id))
@@ -285,8 +285,8 @@ public final class Versions {
     }
 
     public static void testGame(Profile profile, String id) {
-        if (MindustryRoutes.isMindustry(id)) {
-            MindustryRoutes.get(id).ifPresent(MindustryRoutes::launch);
+        if (MindustryRoutes.isMindustry(profile, id)) {
+            MindustryRoutes.get(profile, id).ifPresent(MindustryRoutes::launch);
             return;
         }
         launch(profile, id, LauncherHelper::setTestMode);
@@ -354,8 +354,8 @@ public final class Versions {
     }
 
     public static void modifyGameSettings(Profile profile, String version) {
-        if (MindustryRoutes.isMindustry(version)) {
-            MindustryRoutes.get(version).ifPresent(MindustryRoutes::openVersionPage);
+        if (MindustryRoutes.isMindustry(profile, version)) {
+            MindustryRoutes.get(profile, version).ifPresent(MindustryRoutes::openVersionPage);
             return;
         }
         Controllers.getVersionPage().setVersion(version, profile);

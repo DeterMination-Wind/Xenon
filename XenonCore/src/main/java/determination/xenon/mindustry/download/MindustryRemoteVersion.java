@@ -63,9 +63,13 @@ public final class MindustryRemoteVersion {
         }
 
         public String getPlatform() { return platform; }
+
         public String getDownloadUrl() { return downloadUrl; }
+
         public long getSize() { return size; }
+
         public String getFileName() { return fileName; }
+
         public boolean isArchive() { return archive; }
     }
 

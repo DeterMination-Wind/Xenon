@@ -77,6 +77,9 @@ public final class MindustryVersion {
     /** Optional file name under {@code save-archives/} to use as the launch data archive. */
     private @Nullable String launchSaveFile;
 
+    /** Runtime-only versions root that owns this instance; Gson never persists it. */
+    private transient @Nullable Path repositoryRoot;
+
     /** Resolve the actual jar file given this version's root directory. */
     public Path resolveJar(Path versionRoot) {
         Objects.requireNonNull(versionRoot, "versionRoot");
@@ -202,4 +205,22 @@ public final class MindustryVersion {
     public @Nullable String getLaunchSaveFile() { return launchSaveFile; }
 
     public void setLaunchSaveFile(@Nullable String launchSaveFile) { this.launchSaveFile = launchSaveFile; }
+
+    /**
+     * Returns the runtime-only versions root that loaded or saved this instance.
+     *
+     * @return the owning repository root, or {@code null} for a new detached instance
+     */
+    public @Nullable Path getRepositoryRoot() { return repositoryRoot; }
+
+    /**
+     * Associates this instance with the repository root that owns it.
+     *
+     * @param repositoryRoot the owning root, or {@code null} to detach it
+     */
+    public void setRepositoryRoot(@Nullable Path repositoryRoot) {
+        this.repositoryRoot = repositoryRoot == null
+                ? null
+                : repositoryRoot.toAbsolutePath().normalize();
+    }
 }

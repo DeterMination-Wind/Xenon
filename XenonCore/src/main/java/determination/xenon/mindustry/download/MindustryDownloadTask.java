@@ -89,11 +89,11 @@ public final class MindustryDownloadTask extends Task<Void> {
     }
 
     private void updateDownloadProgress(long read, long total) {
-            // updateProgress requires read <= total > 0; bail if total is unknown.
-            if (total > 0 && read >= 0) {
-                long capped = Math.min(read, total);
-                updateProgress(capped, total);
-            }
+        // updateProgress requires read <= total > 0; bail if total is unknown.
+        if (total > 0 && read >= 0) {
+            long capped = Math.min(read, total);
+            updateProgress(capped, total);
+        }
     }
 
     private static void extractMindustryJar(Path zip, Path target) throws IOException {

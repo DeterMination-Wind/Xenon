@@ -78,8 +78,8 @@ public class GameItem {
 
         // Mindustry instances bypass the HMCL repository entirely — those
         // calls would crash on a Mindustry id since it isn't an HMCL Version.
-        if (MindustryRoutes.isMindustry(id)) {
-            MindustryVersion v = MindustryRoutes.get(id).orElse(null);
+        if (MindustryRoutes.isMindustry(profile, id)) {
+            MindustryVersion v = MindustryRoutes.get(profile, id).orElse(null);
             title.set(v != null ? v.getName() : id);
             if (v != null) {
                 StringBuilder sub = new StringBuilder();
