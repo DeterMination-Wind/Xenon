@@ -225,8 +225,10 @@ public final class XenonVersionsPage extends VBox implements WizardPage, Refresh
             // other variants keep the asset file as the actionable label.
             String fileName = item.getFileName();
             twoLine.setTitle(item.getVariant() == VersionVariant.MINDUSTRY_X
+                    || fileName.isBlank()
+                    || "MDTbbs desktop archive".equals(fileName)
                     ? item.getDisplayVersion()
-                    : fileName.isEmpty() ? item.getDisplayVersion() : fileName);
+                    : fileName);
 
             // Subtitle = "tag · size · published".
             StringBuilder sub = new StringBuilder();

@@ -2,6 +2,15 @@
 
 All notable changes to Xenon will be documented in this file.
 
+## [1.11.0] — 2026-08-18
+
+### Added
+- Mainland China users now receive the original Mindustry builds from the MDTbbs mirror by default, with Windows, Linux, and macOS archive support.
+- Mindustry archives can use bounded HTTP range-based segmented downloads, with an automatic single-stream fallback when the mirror does not support ranges.
+- MDTbbs downloads include a `?reques=Xenon+<version>` attribution parameter.
+
+See the [bilingual release notes](release-notes/v1.11.0.md) for details.
+
 ## [1.10.0] — 2026-08-17
 
 ### Fixed
@@ -88,3 +97,4 @@ The first public release. Forked from HMCL, Mindustry support layered on top.
 [0.1.0]: https://github.com/DeterMination-Wind/Xenon/releases/tag/v0.1.0
 [1.8.0]: https://github.com/DeterMination-Wind/Xenon/releases/tag/v1.8.0
 [1.9.0]: https://github.com/DeterMination-Wind/Xenon/releases/tag/v1.9.0
+[1.11.0]: https://github.com/DeterMination-Wind/Xenon/releases/tag/v1.11.0

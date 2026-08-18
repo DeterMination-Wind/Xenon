@@ -17,9 +17,16 @@
  */
 package determination.xenon.mindustry.download;
 
+import kala.compress.archivers.zip.ZipArchiveEntry;
+import kala.compress.archivers.zip.ZipArchiveReader;
 import determination.xenon.task.Task;
+import determination.xenon.util.io.CompressingUtils;
+import determination.xenon.util.logging.Logger;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 
 /**
  * HMCL-{@link Task} adapter around {@link MirrorDownloader}.
@@ -34,29 +41,77 @@ public final class MindustryDownloadTask extends Task<Void> {
     private final Path target;
     private final long expectedSize;
     private final Path cachesRoot;
+    private final boolean archive;
 
     /**
-     * @param sourceUrl    canonical {@code https://github.com/.../releases/download/...} URL
+     * @param sourceUrl    direct jar URL, or a platform zip URL when {@code archive} is true
      * @param target       destination file
      * @param expectedSize size hint for progress, or 0 if unknown
      * @param cachesRoot   launcher caches dir (used for the preferred-mirror cache)
      */
     public MindustryDownloadTask(String sourceUrl, Path target, long expectedSize, Path cachesRoot) {
+        this(sourceUrl, target, expectedSize, cachesRoot, false);
+    }
+
+    /** Creates a download task, optionally extracting {@code Mindustry.jar} from a zip. */
+    public MindustryDownloadTask(String sourceUrl, Path target, long expectedSize,
+                                 Path cachesRoot, boolean archive) {
         this.sourceUrl = sourceUrl;
         this.target = target;
         this.expectedSize = expectedSize;
         this.cachesRoot = cachesRoot;
+        this.archive = archive;
         setName(target.getFileName().toString());
     }
 
     @Override
     public void execute() throws Exception {
-        new MirrorDownloader(cachesRoot).download(sourceUrl, target, expectedSize, (read, total) -> {
+        if (!archive) {
+            new MirrorDownloader(cachesRoot).download(sourceUrl, target, expectedSize, this::updateDownloadProgress);
+            return;
+        }
+
+        Path parent = target.getParent();
+        if (parent == null) throw new IOException("Mindustry target has no parent: " + target);
+        Path staging = parent.resolve("_xenon_mindustry_archive");
+        Files.createDirectories(staging);
+        Path zip = staging.resolve(target.getFileName() + ".zip");
+        try {
+            new MdtbbsSegmentedDownloader().download(sourceUrl, zip, expectedSize,
+                    this::updateDownloadProgress);
+            extractMindustryJar(zip, target);
+            Files.createDirectories(target.getParent());
+            Logger.LOG.info("Extracted Mindustry.jar from " + sourceUrl);
+        } finally {
+            Files.deleteIfExists(zip);
+            Files.deleteIfExists(staging);
+        }
+    }
+
+    private void updateDownloadProgress(long read, long total) {
             // updateProgress requires read <= total > 0; bail if total is unknown.
             if (total > 0 && read >= 0) {
                 long capped = Math.min(read, total);
                 updateProgress(capped, total);
             }
-        });
+    }
+
+    private static void extractMindustryJar(Path zip, Path target) throws IOException {
+        try (ZipArchiveReader reader = CompressingUtils.openZipFileWithPossibleEncoding(
+                zip, java.nio.charset.StandardCharsets.UTF_8)) {
+            for (ZipArchiveEntry entry : reader.getEntries()) {
+                if (entry.isDirectory()) continue;
+                String name = entry.getName().replace('\\', '/');
+                int slash = name.lastIndexOf('/');
+                if (!"mindustry.jar".equalsIgnoreCase(slash >= 0
+                        ? name.substring(slash + 1) : name)) continue;
+                Files.createDirectories(target.getParent());
+                try (var input = reader.getInputStream(entry)) {
+                    Files.copy(input, target, StandardCopyOption.REPLACE_EXISTING);
+                }
+                return;
+            }
+        }
+        throw new IOException("MDTbbs archive does not contain Mindustry.jar");
     }
 }

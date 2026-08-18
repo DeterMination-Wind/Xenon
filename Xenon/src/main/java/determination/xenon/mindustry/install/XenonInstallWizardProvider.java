@@ -35,6 +35,7 @@ import determination.xenon.ui.wizard.WizardController;
 import determination.xenon.ui.wizard.WizardProvider;
 import determination.xenon.util.SettingsMap;
 import determination.xenon.util.io.FileUtils;
+import determination.xenon.util.platform.OperatingSystem;
 import javafx.scene.Node;
 
 import java.io.IOException;
@@ -136,6 +137,11 @@ public final class XenonInstallWizardProvider implements WizardProvider {
         XenonGameRepository repo = MindustryImportFlow.repository();
         Path versionRoot = repo.getVersionRoot(id);
         Path jar = versionRoot.resolve(id + ".jar");
+        MindustryRemoteVersion.Artifact artifact = remote.getArtifactFor(OperatingSystem.CURRENT_OS);
+        if (artifact == null) {
+            throw new IllegalStateException("No Mindustry client artifact for "
+                    + OperatingSystem.CURRENT_OS.getCheckedName());
+        }
 
         // Stage 1: prepare the version directory and look for a matching
         // already-installed client jar before touching the network.
@@ -147,8 +153,8 @@ public final class XenonInstallWizardProvider implements WizardProvider {
         // Stage 2: download the jar via HMCL's Task pipeline so TaskListPane
         // shows a real progress bar + the per-second speed indicator.
         MindustryDownloadTask download = new MindustryDownloadTask(
-                remote.getDownloadUrl(), jar, remote.getSize(),
-                MindustryImportFlow.cachesDirectory());
+                artifact.getDownloadUrl(), jar, artifact.getSize(),
+                MindustryImportFlow.cachesDirectory(), artifact.isArchive());
         download.setName(i18n("xenon.install.task.download", id));
 
         Task<Void> installJar = prepareDir.thenComposeAsync(Schedulers.io(), reusableJar -> {

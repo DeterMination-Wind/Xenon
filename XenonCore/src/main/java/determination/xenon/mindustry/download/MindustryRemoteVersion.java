@@ -19,8 +19,13 @@ package determination.xenon.mindustry.download;
 
 import determination.xenon.mindustry.MindustryVersionDisplay;
 import determination.xenon.mindustry.VersionVariant;
+import determination.xenon.util.platform.OperatingSystem;
+import org.jetbrains.annotations.Nullable;
 
 import java.time.Instant;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -38,6 +43,31 @@ public final class MindustryRemoteVersion {
     private final long size;
     private final String tagName;
     private final String fileName;
+    private final Map<String, Artifact> artifacts;
+
+    /** One platform-specific downloadable artifact. */
+    public static final class Artifact {
+        private final String platform;
+        private final String downloadUrl;
+        private final long size;
+        private final String fileName;
+        private final boolean archive;
+
+        public Artifact(String platform, String downloadUrl, long size,
+                        String fileName, boolean archive) {
+            this.platform = platform == null ? "universal" : platform;
+            this.downloadUrl = Objects.requireNonNull(downloadUrl, "downloadUrl");
+            this.size = Math.max(0, size);
+            this.fileName = fileName == null ? "" : fileName;
+            this.archive = archive;
+        }
+
+        public String getPlatform() { return platform; }
+        public String getDownloadUrl() { return downloadUrl; }
+        public long getSize() { return size; }
+        public String getFileName() { return fileName; }
+        public boolean isArchive() { return archive; }
+    }
 
     /**
      * Full constructor — preferred for new code.
@@ -59,6 +89,20 @@ public final class MindustryRemoteVersion {
                                   long size,
                                   String tagName,
                                   String fileName) {
+        this(build, buildType, variant, downloadUrl, publishedAt, size, tagName, fileName,
+                Collections.emptyMap());
+    }
+
+    /** Full constructor with platform-specific artifacts. */
+    public MindustryRemoteVersion(int build,
+                                  String buildType,
+                                  VersionVariant variant,
+                                  String downloadUrl,
+                                  Instant publishedAt,
+                                  long size,
+                                  String tagName,
+                                  String fileName,
+                                  Map<String, Artifact> artifacts) {
         this.build = build;
         this.buildType = buildType == null ? "" : buildType;
         this.variant = Objects.requireNonNull(variant, "variant");
@@ -67,6 +111,8 @@ public final class MindustryRemoteVersion {
         this.size = Math.max(0, size);
         this.tagName = tagName == null ? "" : tagName;
         this.fileName = fileName == null ? "" : fileName;
+        this.artifacts = artifacts == null ? Collections.emptyMap()
+                : Collections.unmodifiableMap(new LinkedHashMap<>(artifacts));
     }
 
     /** Backward-compatible constructor — older callers without tag / file name. */
@@ -94,6 +140,21 @@ public final class MindustryRemoteVersion {
     public String getTagName() { return tagName; }
 
     public String getFileName() { return fileName; }
+
+    /**
+     * Selects the artifact for the current operating system. Legacy GitHub
+     * rows without a platform map are exposed as one universal jar artifact.
+     */
+    public @Nullable Artifact getArtifactFor(OperatingSystem os) {
+        if (artifacts != null && !artifacts.isEmpty()) {
+            String key = os == OperatingSystem.FREEBSD ? "linux"
+                    : os.getCheckedName();
+            Artifact selected = artifacts.get(key);
+            if (selected != null) return selected;
+            return artifacts.get("universal");
+        }
+        return new Artifact("universal", downloadUrl, size, fileName, false);
+    }
 
     /** Best-effort human-readable identifier: tag if present, else "build N". */
     public String getDisplayVersion() {

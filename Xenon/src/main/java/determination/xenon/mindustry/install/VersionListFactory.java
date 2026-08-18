@@ -17,6 +17,7 @@
  */
 package determination.xenon.mindustry.install;
 
+import determination.xenon.Metadata;
 import determination.xenon.mindustry.VersionVariant;
 import determination.xenon.mindustry.download.BeVersionList;
 import determination.xenon.mindustry.download.CnArcVersionList;
@@ -24,7 +25,9 @@ import determination.xenon.mindustry.download.FooVersionList;
 import determination.xenon.mindustry.download.GitHubReleaseClient;
 import determination.xenon.mindustry.download.MindustryVersionList;
 import determination.xenon.mindustry.download.MindustryXVersionList;
+import determination.xenon.mindustry.download.MdtbbsVersionList;
 import determination.xenon.mindustry.download.VanillaVersionList;
+import determination.xenon.util.i18n.LocaleUtils;
 
 /**
  * Maps {@link VersionVariant} → its {@link MindustryVersionList}
@@ -38,7 +41,9 @@ public final class VersionListFactory {
     public static MindustryVersionList listFor(VersionVariant variant, GitHubReleaseClient client) {
         switch (variant) {
             case VANILLA:
-                return new VanillaVersionList(client);
+                return LocaleUtils.IS_CHINA_MAINLAND
+                        ? new MdtbbsVersionList(client, Metadata.VERSION)
+                        : new VanillaVersionList(client);
             case BE:
                 return new BeVersionList(client);
             case MINDUSTRY_X:
