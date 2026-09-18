@@ -368,7 +368,9 @@ val packageWindowsAppImage by tasks.registering(JPackageTask::class) {
         if (!System.getProperty("os.name").lowercase().contains("win"))
             throw GradleException("packageWindowsAppImage requires running on Windows")
         if (dest.exists()) {
-            dest.deleteRecursively()
+            dest.walkBottomUp().forEach { it.setWritable(true) }
+            if (dest.exists() && !dest.deleteRecursively())
+                throw GradleException("Failed to clean old windows app-image: $dest")
         }
         dest.mkdirs()
         val args = commonJPackageArgs(shadowJarFile.get().asFile.name, dest)
