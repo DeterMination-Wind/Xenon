@@ -113,7 +113,7 @@ public final class Profiles {
             Platform.runLater(() -> {
                 profiles.addAll(current, home);
                 steamMindustry.ifPresent(root -> Schedulers.io().execute(() ->
-                        MindustryImportFlow.syncExternalInstallation(root)
+                        MindustryImportFlow.syncExternalInstallation(current, root)
                                 .ifPresent(version -> Platform.runLater(() ->
                                         current.setSelectedVersion(version.getId())))));
             });

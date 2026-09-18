@@ -23,9 +23,12 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -114,5 +117,117 @@ public final class MindustryProfileRepositoryTest {
         assertEquals("legacy-mindustry", loaded.getId());
         assertTrue(repository.has("legacy-mindustry"));
         assertFalse(repository.has("1.20.1"));
+    }
+
+    /// Renaming an instance moves the directory and rewrites its manifest.
+    @Test
+    public void renamesInstanceAndRewritesManifest(@TempDir Path tempDir) throws IOException {
+        Path gameDir = tempDir.resolve("game");
+        Profile profile = new Profile("Rename", gameDir);
+        Path sourceJar = tempDir.resolve("mindustry-build-158.jar");
+        Files.write(sourceJar, "jar-content".getBytes(StandardCharsets.UTF_8));
+
+        XenonGameRepository repository = MindustryImportFlow.repository(profile);
+        MindustryVersion version = MindustryLaunchService.importLocalJar(repository, sourceJar, "old-id", null);
+        Path oldRoot = repository.getVersionRoot(version);
+        // Simulate the <id>.json copy HMCL's Minecraft scan used to create.
+        Files.copy(oldRoot.resolve("version.json"), oldRoot.resolve("old-id.json"));
+
+        assertTrue(repository.renameVersion("old-id", "new-id"));
+
+        Path newRoot = gameDir.resolve("versions/new-id");
+        assertFalse(Files.exists(gameDir.resolve("versions/old-id")));
+        assertTrue(Files.isRegularFile(newRoot.resolve("version.json")));
+        assertTrue(Files.isRegularFile(newRoot.resolve("new-id.jar")));
+        assertFalse(Files.exists(newRoot.resolve("old-id.jar")));
+        assertFalse(Files.exists(newRoot.resolve("old-id.json")));
+        assertFalse(repository.has("old-id"));
+
+        MindustryVersion renamed = repository.get("new-id").orElseThrow();
+        assertEquals("new-id", renamed.getName());
+        assertEquals("new-id.jar", renamed.getJarPath());
+        assertTrue(Files.isRegularFile(renamed.resolveJar(newRoot)));
+        assertEquals(newRoot.resolve(".data").toAbsolutePath().normalize(),
+                renamed.resolveDataDir(newRoot));
+    }
+
+    /// Invalid or already used target ids leave the instance untouched.
+    @Test
+    public void rejectsInvalidRenameTargets(@TempDir Path tempDir) throws IOException {
+        Path gameDir = tempDir.resolve("game");
+        Profile profile = new Profile("Rename", gameDir);
+        Path sourceJar = tempDir.resolve("mindustry-build-158.jar");
+        Files.write(sourceJar, "jar-content".getBytes(StandardCharsets.UTF_8));
+
+        XenonGameRepository repository = MindustryImportFlow.repository(profile);
+        MindustryLaunchService.importLocalJar(repository, sourceJar, "first", null);
+        MindustryLaunchService.importLocalJar(repository, sourceJar, "second", null);
+
+        assertFalse(repository.renameVersion("first", "second"));
+        assertFalse(repository.renameVersion("first", "bad/id"));
+        assertFalse(repository.renameVersion("first", ""));
+
+        assertTrue(repository.has("first"));
+        assertTrue(Files.isDirectory(gameDir.resolve("versions/first")));
+        assertTrue(Files.isRegularFile(gameDir.resolve("versions/first/first.jar")));
+    }
+
+    /// A manifest left behind by the old rename path is repaired from the directory name.
+    @Test
+    public void adoptsDirectoryNameWhenManifestIdIsStale(@TempDir Path tempDir) throws IOException {
+        Path versionsRoot = tempDir.resolve("versions");
+        Path instanceDir = versionsRoot.resolve("renamed-instance");
+        Files.createDirectories(instanceDir);
+        Files.write(instanceDir.resolve("renamed-instance.jar"), "jar-content".getBytes(StandardCharsets.UTF_8));
+        Files.writeString(instanceDir.resolve("version.json"), """
+                {
+                  "id": "old-id",
+                  "name": "old-id",
+                  "variant": "MINDUSTRY_X",
+                  "build": 35,
+                  "jarPath": "old-id.jar",
+                  "dataDirPolicy": "ISOLATED"
+                }
+                """, StandardCharsets.UTF_8);
+
+        XenonGameRepository repository = new XenonGameRepository(versionsRoot);
+        repository.refresh();
+
+        assertFalse(repository.has("old-id"));
+        MindustryVersion repaired = repository.get("renamed-instance").orElseThrow();
+        assertEquals("renamed-instance", repaired.getName());
+        assertEquals("renamed-instance.jar", repaired.getJarPath());
+        assertTrue(Files.isRegularFile(repaired.resolveJar(repository.getVersionRoot(repaired))));
+    }
+
+    /// An external installation found in a custom game folder is registered there,
+    /// never in the shared home repository, and is isolated from AppData.
+    @Test
+    public void registersExternalInstallInProfileRepository(@TempDir Path tempDir) throws IOException {
+        Path install = tempDir.resolve("MyMindustry");
+        writeJar(install.resolve("Mindustry.jar"), """
+                build=159
+                type=official
+                """);
+        Path gameDir = tempDir.resolve("custom-game-folder");
+        Profile profile = new Profile("Custom", gameDir);
+
+        MindustryVersion version = MindustryImportFlow.syncExternalInstallation(profile, install).orElseThrow();
+
+        Path versionRoot = gameDir.resolve("versions").resolve(version.getId());
+        assertTrue(Files.isRegularFile(versionRoot.resolve("version.json")));
+        assertEquals(DataDirectoryPolicy.ISOLATED, version.getDataDirPolicy());
+        assertEquals(versionRoot.resolve(".data").toAbsolutePath().normalize(),
+                version.resolveDataDir(MindustryImportFlow.versionRoot(version)));
+    }
+
+    private static void writeJar(Path jar, String versionProperties) throws IOException {
+        Files.createDirectories(jar.getParent());
+        try (OutputStream out = Files.newOutputStream(jar);
+             ZipOutputStream zip = new ZipOutputStream(out)) {
+            zip.putNextEntry(new ZipEntry("version.properties"));
+            zip.write(versionProperties.getBytes(StandardCharsets.UTF_8));
+            zip.closeEntry();
+        }
     }
 }

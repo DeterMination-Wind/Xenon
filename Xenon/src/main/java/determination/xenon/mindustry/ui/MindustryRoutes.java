@@ -34,6 +34,7 @@ import determination.xenon.task.Task;
 import determination.xenon.ui.Controllers;
 import determination.xenon.ui.FXUtils;
 import determination.xenon.ui.construct.MessageDialogPane;
+import determination.xenon.ui.construct.Validator;
 import determination.xenon.util.TaskCancellationAction;
 import determination.xenon.util.io.FileUtils;
 import javafx.application.Platform;
@@ -41,12 +42,14 @@ import javafx.stage.FileChooser;
 import org.jetbrains.annotations.NotNullByDefault;
 import org.jetbrains.annotations.Nullable;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
@@ -157,6 +160,91 @@ public final class MindustryRoutes {
     /** Open the per-version Mindustry management page. */
     public static void openVersionPage(MindustryVersion version) {
         Controllers.navigate(new MindustryVersionPage(version));
+    }
+
+    /**
+     * Renames one Mindustry instance after asking for a new id.
+     *
+     * <p>Mindustry instances share {@code <gameDir>/versions} with HMCL's
+     * Minecraft repository, but HMCL's rename only understands
+     * {@code <id>.json}/{@code <id>.jar} and would leave {@code version.json}
+     * pointing at the previous id and jar. The move is therefore performed on
+     * the owning {@link XenonGameRepository}, which rewrites the manifest.</p>
+     *
+     * @param profile the Profile that owns the instance
+     * @param id the current instance id
+     * @return a future completed with the new instance id
+     */
+    public static CompletableFuture<String> renameVersion(Profile profile, String id) {
+        Optional<MindustryVersion> found = get(profile, id);
+        if (profile == null || found.isEmpty()) {
+            CompletableFuture<String> failed = new CompletableFuture<>();
+            failed.completeExceptionally(new IllegalArgumentException("Mindustry instance not found: " + id));
+            return failed;
+        }
+
+        MindustryVersion version = found.get();
+        String currentId = version.getId() == null || version.getId().isBlank() ? id : version.getId();
+        XenonGameRepository repo = MindustryImportFlow.repositoryForVersion(version);
+        repo.refresh();
+
+        return Controllers.prompt(i18n("version.manage.rename.message"), (input, handler) -> {
+            String targetId = input == null ? "" : input.trim();
+            if (!XenonGameRepository.isValidId(targetId)) {
+                handler.reject(i18n("install.new_game.malformed"));
+                return;
+            }
+            if (targetId.equals(currentId)) {
+                handler.resolve();
+                return;
+            }
+            if (!targetId.equalsIgnoreCase(currentId) && repo.has(targetId)) {
+                handler.reject(i18n("install.new_game.already_exists"));
+                return;
+            }
+            if (profile.getRepository().versionIdConflicts(targetId)) {
+                handler.reject(i18n("install.new_game.already_exists"));
+                return;
+            }
+            handler.resolve();
+
+            Task<?> rename = Task.supplyAsync(Schedulers.io(), () -> {
+                if (!repo.renameVersion(currentId, targetId)) {
+                    throw new IOException("Unable to rename Mindustry instance " + currentId);
+                }
+                return targetId;
+            }).setName(i18n("version.manage.rename"));
+
+            rename.whenComplete(Schedulers.javafx(), (result, exception) -> {
+                if (exception != null) {
+                    LOG.warning("Failed to rename Mindustry instance " + currentId + " to " + targetId, exception);
+                    Controllers.dialog(i18n("version.manage.rename.fail"),
+                            i18n("message.error"), MessageDialogPane.MessageType.ERROR);
+                    return;
+                }
+                moveModPaneRefreshListeners(currentId, targetId);
+                profile.setSelectedVersion(targetId);
+                profile.getRepository().refreshVersionsAsync().start();
+                Controllers.showToast(i18n("message.success"));
+            }).start();
+        }, currentId,
+                new Validator(i18n("install.new_game.malformed"), XenonGameRepository::isValidId),
+                new Validator(i18n("install.new_game.already_exists"), name -> name != null
+                        && (name.equals(currentId) || !repo.has(name))));
+    }
+
+    /** Moves the mod pane refresh callbacks when an instance id changes. */
+    private static void moveModPaneRefreshListeners(String from, String to) {
+        if (from.equals(to)) {
+            return;
+        }
+        CopyOnWriteArrayList<Runnable> listeners = MOD_PANE_REFRESH_LISTENERS.remove(from);
+        if (listeners != null && !listeners.isEmpty()) {
+            MOD_PANE_REFRESH_LISTENERS.merge(to, listeners, (existing, moved) -> {
+                existing.addAllAbsent(moved);
+                return existing;
+            });
+        }
     }
 
     /** Register a visible mod pane refresh callback for one Mindustry instance id. */

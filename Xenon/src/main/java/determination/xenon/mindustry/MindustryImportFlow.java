@@ -78,7 +78,13 @@ public final class MindustryImportFlow {
     /** Returns the repository that owns an already loaded Mindustry instance. */
     public static synchronized XenonGameRepository repositoryForVersion(MindustryVersion version) {
         Path ownerRoot = version == null ? null : version.getRepositoryRoot();
-        return ownerRoot == null ? repository() : repositoryAt(ownerRoot);
+        if (ownerRoot != null) {
+            return repositoryAt(ownerRoot);
+        }
+        // Detached instances (for example the one the installer just built)
+        // belong to the selected Profile. Falling back to the shared Home
+        // repository here used to pull profile instances back into %APPDATA%.
+        return repository(Profiles.getSelectedProfile());
     }
 
     /** Returns the repository for the currently selected Profile, or global Home storage during bootstrap. */
@@ -219,6 +225,9 @@ public final class MindustryImportFlow {
             return Optional.empty();
         }
 
+        // The Profile owns its instances: register the external installation in
+        // the Profile's own versions directory instead of reusing (or creating)
+        // a shared Home registration below %APPDATA%.
         try {
             XenonGameRepository repo = repository(profile);
             repo.refresh();
@@ -227,21 +236,33 @@ public final class MindustryImportFlow {
                 return Optional.of(existing);
             }
 
-            // Do not migrate an existing global registration when a Profile
-            // starts using its own versions directory.
-            if (profile != null && !isGlobalProfile(profile)) {
-                XenonGameRepository global = repository();
-                global.refresh();
-                existing = findExistingExternalInstall(global, discovered.get());
-                if (existing != null) {
-                    return Optional.of(existing);
-                }
-            }
-
             MindustryVersion version = toVersion(repo, discovered.get());
             repo.save(version);
             LOG.info("Registered external Mindustry install " + discovered.get().getRoot()
-                    + " as " + version.getId());
+                    + " as " + version.getId() + " in " + repo.getVersionsRoot());
+            return Optional.of(version);
+        } catch (Throwable ex) {
+            LOG.warning("Failed to register external Mindustry install " + discovered.get().getRoot()
+                    + " in the Profile repository", ex);
+        }
+
+        // The Profile's versions directory may be read-only, for example when
+        // the Profile points at a Steam installation below Program Files. Keep
+        // the instance usable by falling back to the shared Home repository.
+        if (profile == null || isGlobalProfile(profile)) {
+            return Optional.empty();
+        }
+        try {
+            XenonGameRepository global = repository();
+            global.refresh();
+            MindustryVersion existing = findExistingExternalInstall(global, discovered.get());
+            if (existing != null) {
+                return Optional.of(existing);
+            }
+            MindustryVersion version = toVersion(global, discovered.get());
+            global.save(version);
+            LOG.info("Registered external Mindustry install " + discovered.get().getRoot()
+                    + " in the shared home repository as " + version.getId());
             return Optional.of(version);
         } catch (Throwable ex) {
             LOG.warning("Failed to register external Mindustry install " + directory, ex);
@@ -376,8 +397,20 @@ public final class MindustryImportFlow {
             version.setJavaHome(installation.getJavaHome().toString());
         }
         version.setWorkingDirectory(installation.getWorkingDirectory().toString());
-        version.setDataDirPolicy(DataDirectoryPolicy.CUSTOM);
-        version.setCustomDataDir(installation.getDataDir().toString());
+        if (installation.hasEmbeddedDataDir()) {
+            // Steam and portable installs keep saves, mods and maps inside the
+            // game folder, so reuse that directory to keep existing data visible.
+            version.setDataDirPolicy(DataDirectoryPolicy.CUSTOM);
+            version.setCustomDataDir(installation.getDataDir().toString());
+        } else {
+            // Otherwise the discovered directory is Mindustry's per-user default
+            // (%APPDATA%/Mindustry on Windows). Binding an imported instance to
+            // it would pull the instance back into AppData, so isolate it like
+            // every other Xenon instance; users who explicitly want the shared
+            // data can pick the global policy while installing.
+            version.setDataDirPolicy(DataDirectoryPolicy.ISOLATED);
+            version.setCustomDataDir(null);
+        }
         if (!installation.getJvmArgs().isEmpty()) {
             version.setJvmArgs(String.join(" ", installation.getJvmArgs()));
         }
@@ -400,19 +433,28 @@ public final class MindustryImportFlow {
     private static @Nullable MindustryVersion findExistingExternalInstall(
             XenonGameRepository repo,
             DiscoveredInstallation installation) {
+        MindustryVersion sameInstallFallback = null;
         for (MindustryVersion version : repo.all()) {
             String id = version.getId();
             if (id == null || id.isBlank()) {
                 continue;
             }
             Path versionRoot = repo.getVersionRoot(version);
-            if (samePath(version.resolveJar(versionRoot), installation.getJar())
-                    && samePath(version.resolveDataDir(versionRoot), installation.getDataDir())
-                    && samePath(version.resolveWorkingDirectory(versionRoot), installation.getWorkingDirectory())) {
+            if (!samePath(version.resolveJar(versionRoot), installation.getJar())
+                    || !samePath(version.resolveWorkingDirectory(versionRoot), installation.getWorkingDirectory())) {
+                continue;
+            }
+            if (samePath(version.resolveDataDir(versionRoot), installation.getDataDir())) {
                 return version;
             }
+            // Older Xenon releases bound external installs to Mindustry's
+            // per-user data directory. Still recognize them as the same
+            // installation so importing does not create duplicate entries.
+            if (sameInstallFallback == null) {
+                sameInstallFallback = version;
+            }
         }
-        return null;
+        return sameInstallFallback;
     }
 
     private static boolean samePath(Path left, Path right) {

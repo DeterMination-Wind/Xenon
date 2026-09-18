@@ -22,6 +22,7 @@ import determination.xenon.download.MaintainTask;
 import determination.xenon.download.game.VersionJsonSaveTask;
 import determination.xenon.event.*;
 import determination.xenon.game.tlauncher.TLauncherVersion;
+import determination.xenon.mindustry.XenonGameRepository;
 import determination.xenon.mod.ModManager;
 import determination.xenon.mod.ModpackConfiguration;
 import determination.xenon.task.Task;
@@ -294,6 +295,15 @@ public class DefaultGameRepository implements GameRepository {
             try (Stream<Path> stream = Files.list(versionsDir)) {
                 stream.parallel().filter(Files::isDirectory).flatMap(dir -> {
                     String id = FileUtils.getName(dir);
+
+                    // Mindustry instances share <gameDir>/versions with this
+                    // repository but are not Minecraft versions. Without this
+                    // guard the scan below renames their version.json to
+                    // <id>.json and breaks the Xenon instance.
+                    if (XenonGameRepository.isMindustryVersionDirectory(dir)) {
+                        return Stream.empty();
+                    }
+
                     Path json = dir.resolve(id + ".json");
 
                     // If user renamed the json file by mistake or created the json file in a wrong name,

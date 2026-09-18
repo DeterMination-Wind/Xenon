@@ -17,6 +17,7 @@
  */
 package determination.xenon.mindustry;
 
+import determination.xenon.util.io.FileUtils;
 import org.jetbrains.annotations.NotNullByDefault;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -30,6 +31,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /// Tests discovery of existing desktop Mindustry installations.
@@ -105,6 +107,35 @@ public final class MindustryInstallationDiscoveryTest {
 
         assertTrue(candidates.contains(library.resolve("steamapps/common/Mindustry")
                 .toAbsolutePath().normalize()));
+    }
+
+    /// A Steam install resolves its data root before the first launch created it.
+    @Test
+    public void keepsSteamDataRootInsideInstallBeforeFirstLaunch(@TempDir Path tempDir) throws IOException {
+        Path install = createSteamInstall(tempDir.resolve("Mindustry"));
+        FileUtils.deleteDirectory(install.resolve("saves"));
+
+        MindustryInstallationDiscovery.DiscoveredInstallation discovered =
+                MindustryInstallationDiscovery.discover(install).orElseThrow();
+
+        assertEquals(install.resolve("saves").toAbsolutePath().normalize(), discovered.getDataDir());
+        assertTrue(discovered.hasEmbeddedDataDir());
+    }
+
+    /// A plain jar folder is reported as non-embedded so callers can isolate it.
+    @Test
+    public void reportsJarOnlyFolderAsNonEmbedded(@TempDir Path tempDir) throws IOException {
+        Path install = tempDir.resolve("MyMindustry");
+        writeJar(install.resolve("Mindustry.jar"), """
+                build=159
+                type=official
+                """);
+
+        MindustryInstallationDiscovery.DiscoveredInstallation discovered =
+                MindustryInstallationDiscovery.discover(install).orElseThrow();
+
+        assertFalse(discovered.hasEmbeddedDataDir());
+        assertEquals(MindustryVersion.defaultMindustryDataDir(), discovered.getDataDir());
     }
 
     private static Path createSteamInstall(Path install) throws IOException {

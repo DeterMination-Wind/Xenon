@@ -97,6 +97,9 @@ public final class Versions {
     }
 
     public static CompletableFuture<String> renameVersion(Profile profile, String version) {
+        if (MindustryRoutes.isMindustry(profile, version)) {
+            return MindustryRoutes.renameVersion(profile, version);
+        }
         return Controllers.prompt(i18n("version.manage.rename.message"), (newName, handler) -> {
             if (newName.equals(version)) {
                 handler.resolve();

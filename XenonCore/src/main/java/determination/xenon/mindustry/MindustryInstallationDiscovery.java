@@ -88,6 +88,7 @@ public final class MindustryInstallationDiscovery {
         }
 
         Path dataDir = findDataDir(root);
+        boolean embeddedDataDir = isInside(root, dataDir);
         boolean steam = isSteamInstall(root, dataDir);
         BuildMetadata buildMetadata = readBuildMetadata(jar.get());
         @Nullable Path javaHome = findJavaHome(root, launcherConfig.orElse(null)).orElse(null);
@@ -101,6 +102,7 @@ public final class MindustryInstallationDiscovery {
                 javaHome,
                 dataDir,
                 root,
+                embeddedDataDir,
                 buildMetadata.variant(),
                 buildMetadata.build(),
                 buildMetadata.buildType(),
@@ -294,18 +296,34 @@ public final class MindustryInstallationDiscovery {
         return List.copyOf(args);
     }
 
+    /**
+     * Data directory of an existing installation. Steam and portable builds
+     * keep their complete data root (saves, mods, maps, ...) inside the
+     * install folder, so {@code <root>/saves} wins even before the first
+     * launch created it. Launcher-wrapped builds instead use Mindustry's
+     * per-user default; callers that must not share that global directory
+     * decide so through {@link DiscoveredInstallation#hasEmbeddedDataDir()}.
+     */
     private static Path findDataDir(Path root) {
-        Path steamDataDir = root.resolve("saves").toAbsolutePath().normalize();
-        if (Files.isDirectory(steamDataDir)) {
-            return steamDataDir;
+        Path embeddedDataDir = root.resolve("saves").toAbsolutePath().normalize();
+        if (Files.isDirectory(embeddedDataDir) || hasSteamMarkers(root)) {
+            return embeddedDataDir;
         }
         return MindustryVersion.defaultMindustryDataDir();
     }
 
     private static boolean isSteamInstall(Path root, Path dataDir) {
+        return hasSteamMarkers(root) || Files.isRegularFile(dataDir.resolve("steam_autocloud.vdf"));
+    }
+
+    private static boolean hasSteamMarkers(Path root) {
         return Files.isRegularFile(root.resolve("steam_api64.dll"))
-                || Files.isRegularFile(root.resolve("steam_appid.txt"))
-                || Files.isRegularFile(dataDir.resolve("steam_autocloud.vdf"));
+                || Files.isRegularFile(root.resolve("steam_appid.txt"));
+    }
+
+    /** True when {@code candidate} is {@code root} or lives below it. */
+    private static boolean isInside(Path root, Path candidate) {
+        return candidate.toAbsolutePath().normalize().startsWith(root.toAbsolutePath().normalize());
     }
 
     private static BuildMetadata readBuildMetadata(Path jar) {
@@ -498,6 +516,7 @@ public final class MindustryInstallationDiscovery {
         private final @Nullable Path javaHome;
         private final Path dataDir;
         private final Path workingDirectory;
+        private final boolean embeddedDataDir;
         private final VersionVariant variant;
         private final int build;
         private final String buildType;
@@ -511,6 +530,7 @@ public final class MindustryInstallationDiscovery {
                                       @Nullable Path javaHome,
                                       Path dataDir,
                                       Path workingDirectory,
+                                      boolean embeddedDataDir,
                                       VersionVariant variant,
                                       int build,
                                       String buildType,
@@ -522,6 +542,7 @@ public final class MindustryInstallationDiscovery {
             this.javaHome = javaHome;
             this.dataDir = dataDir;
             this.workingDirectory = workingDirectory;
+            this.embeddedDataDir = embeddedDataDir;
             this.variant = variant;
             this.build = build;
             this.buildType = buildType;
@@ -548,6 +569,13 @@ public final class MindustryInstallationDiscovery {
 
         /** Process working directory to use when launching this jar. */
         public Path getWorkingDirectory() { return workingDirectory; }
+
+        /**
+         * Whether {@link #getDataDir()} lives inside the installation folder.
+         * Steam and portable builds keep saves, mods and maps there; other
+         * installs only expose Mindustry's per-user default directory.
+         */
+        public boolean hasEmbeddedDataDir() { return embeddedDataDir; }
 
         /** Detected Mindustry variant. */
         public VersionVariant getVariant() { return variant; }
