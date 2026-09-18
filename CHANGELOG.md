@@ -2,6 +2,16 @@
 
 All notable changes to Xenon will be documented in this file.
 
+## [1.12.0] — 2026-09-18
+
+### Fixed
+- Mindustry instances are now stored in the selected game folder (Profile) instead of falling back to the shared `%APPDATA%/Xenon` repository, so a custom folder actually owns the instances imported into it.
+- Imported external installations only reuse their data directory when it lives inside the installation folder (Steam/portable); otherwise the instance is isolated instead of silently binding to `%APPDATA%/Mindustry`.
+- Renaming an instance moves the directory, rewrites `version.json` and renames the jar; the manifest no longer keeps the old id/jar path, and instances broken that way are repaired automatically.
+- HMCL's Minecraft version scan no longer renames Mindustry `version.json` files to `<id>.json`.
+
+See the [bilingual release notes](release-notes/v1.12.0.md) for details.
+
 ## [1.11.0] — 2026-08-18
 
 ### Added
@@ -98,3 +108,4 @@ The first public release. Forked from HMCL, Mindustry support layered on top.
 [1.8.0]: https://github.com/DeterMination-Wind/Xenon/releases/tag/v1.8.0
 [1.9.0]: https://github.com/DeterMination-Wind/Xenon/releases/tag/v1.9.0
 [1.11.0]: https://github.com/DeterMination-Wind/Xenon/releases/tag/v1.11.0
+[1.12.0]: https://github.com/DeterMination-Wind/Xenon/releases/tag/v1.12.0
