@@ -9,19 +9,19 @@
  */
 package determination.xenon.mindustry.download;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import determination.xenon.mindustry.VersionVariant;
 import determination.xenon.util.logging.Logger;
 import org.jetbrains.annotations.NotNullByDefault;
-import org.jsoup.Jsoup;
-import org.jsoup.nodes.Document;
-import org.jsoup.nodes.Element;
+import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.net.ProxySelector;
 import java.net.URI;
-import java.net.URLDecoder;
-import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -31,53 +31,44 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
-/** Version source backed by the public MDTbbs Mindustry/v8 directory. */
+/**
+ * Vanilla version source backed by the MDT File manifest.
+ *
+ * <p>See <a href="https://mdtbbs.cn/posts/186">像素工厂文件站 API</a>.
+ * The launcher reads known fields and ignores anything it does not
+ * understand. Download URLs come from {@code download_url}; they are
+ * resolved against the manifest origin and are not invented from the
+ * site's directory layout.</p>
+ */
 @NotNullByDefault
 public final class MdtbbsVersionList extends MindustryVersionList {
-    private static final String CATEGORY_URL = "https://file.mdtbbs.cn/category/Mindustry/v8";
-    private static final String FILE_BASE = "https://d.file.mdtbbs.cn/d";
-    private static final Pattern BUILD = Pattern.compile(
-            "build-([0-9]+(?:\\.[0-9]+)*)-(stable|prerelease)");
-    private static final Pattern SIZE = Pattern.compile(
-            "([0-9]+(?:\\.[0-9]+)?)\\s*(B|KB|MB|GB)", Pattern.CASE_INSENSITIVE);
+    static final String MANIFEST_URL =
+            "https://file.mdtbbs.cn/api/v1/mindustry/manifest.json";
 
-    private final String categoryUrl;
-    private final String fileBase;
+    private final String manifestUrl;
     private final String clientVersion;
     private final HttpClient http;
 
     public MdtbbsVersionList(GitHubReleaseClient fallbackClient) {
-        this(fallbackClient, "@develop@", CATEGORY_URL, FILE_BASE, HttpClient.newBuilder()
-                .followRedirects(HttpClient.Redirect.NORMAL)
-                .connectTimeout(Duration.ofSeconds(8))
-                .proxy(ProxySelector.getDefault())
-                .build());
+        this(fallbackClient, "@develop@");
     }
 
     /** Creates the MDTbbs source with the launcher version used for attribution. */
     public MdtbbsVersionList(GitHubReleaseClient fallbackClient, String clientVersion) {
-        this(fallbackClient, clientVersion, CATEGORY_URL, FILE_BASE, HttpClient.newBuilder()
+        this(fallbackClient, clientVersion, MANIFEST_URL, HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1)
                 .followRedirects(HttpClient.Redirect.NORMAL)
-                .connectTimeout(Duration.ofSeconds(8))
+                .connectTimeout(Duration.ofSeconds(10))
                 .proxy(ProxySelector.getDefault())
                 .build());
     }
 
-    MdtbbsVersionList(GitHubReleaseClient fallbackClient, String categoryUrl,
-                      String fileBase, HttpClient http) {
-        this(fallbackClient, "@develop@", categoryUrl, fileBase, http);
-    }
-
     MdtbbsVersionList(GitHubReleaseClient fallbackClient, String clientVersion,
-                      String categoryUrl, String fileBase, HttpClient http) {
+                      String manifestUrl, HttpClient http) {
         super(VersionVariant.VANILLA, fallbackClient);
-        this.categoryUrl = categoryUrl;
-        this.fileBase = fileBase;
+        this.manifestUrl = manifestUrl;
         this.clientVersion = clientVersion == null || clientVersion.isBlank()
                 ? "@develop@" : clientVersion;
         this.http = http;
@@ -86,24 +77,23 @@ public final class MdtbbsVersionList extends MindustryVersionList {
     @Override
     public List<MindustryRemoteVersion> refresh() throws IOException {
         try {
-            Document index = fetch(categoryUrl);
+            JsonObject root = fetchManifest();
+            JsonObject game = selectGame(root);
+            if (game == null) throw new IOException("MDTbbs manifest has no Mindustry game");
+            JsonArray releases = array(game, "releases");
             List<MindustryRemoteVersion> result = new ArrayList<>();
-            for (Element link : index.select("a[href]")) {
-                String href = link.attr("href");
-                Matcher matcher = BUILD.matcher(href);
-                if (!matcher.find()) continue;
-
-                String buildPage = href.startsWith("http")
-                        ? href : originOf(categoryUrl) + href;
-                MindustryRemoteVersion version = parseBuildPage(
-                        matcher.group(1), matcher.group(2), buildPage);
-                if (version != null) result.add(version);
+            if (releases != null) {
+                for (JsonElement element : releases) {
+                    if (element == null || !element.isJsonObject()) continue;
+                    MindustryRemoteVersion version = parseRelease(element.getAsJsonObject());
+                    if (version != null) result.add(version);
+                }
             }
             result.sort(Comparator.comparing(MdtbbsVersionList::numericVersion)
                     .thenComparing(MindustryRemoteVersion::getTagName)
                     .reversed());
             if (!result.isEmpty()) return result;
-            throw new IOException("MDTbbs returned no Mindustry builds");
+            throw new IOException("MDTbbs manifest returned no Mindustry builds");
         } catch (IOException | RuntimeException e) {
             Logger.LOG.warning("MDTbbs version feed failed (" + e.getMessage()
                     + "); falling back to GitHub");
@@ -111,85 +101,117 @@ public final class MdtbbsVersionList extends MindustryVersionList {
         }
     }
 
-    private MindustryRemoteVersion parseBuildPage(String version, String channel,
-                                                   String pageUrl) throws IOException {
-        Document page = fetch(pageUrl);
-        Map<String, MindustryRemoteVersion.Artifact> artifacts = new LinkedHashMap<>();
-        for (Element link : page.select("a.term-file[href]")) {
-            String href = link.attr("href");
-            String name = decodeName(href);
-            String platform = platformFor(name);
-            if (platform == null) continue;
+    private @Nullable MindustryRemoteVersion parseRelease(JsonObject release) {
+        String tag = text(release, "tag");
+        if (tag == null || tag.isBlank()) return null;
+        JsonArray assets = array(release, "assets");
+        if (assets == null) return null;
 
-            String directUrl = fileBase + (href.startsWith("/") ? href : "/" + href)
-                    + "?reques=" + URLEncoder.encode("Xenon " + clientVersion,
-                    StandardCharsets.UTF_8);
-            long size = parseSize(link.select(".size").text());
-            artifacts.put(platform, new MindustryRemoteVersion.Artifact(
-                    platform, directUrl, size, name, true));
+        JsonObject chosen = null;
+        for (JsonElement element : assets) {
+            if (element == null || !element.isJsonObject()) continue;
+            JsonObject asset = element.getAsJsonObject();
+            if (!isDesktopJar(asset)) continue;
+            if (chosen == null || prefer(asset, chosen)) chosen = asset;
         }
-        if (artifacts.isEmpty()) return null;
+        if (chosen == null) return null;
 
-        int build = parseBuildNumber(version);
-        String tag = "v" + version;
-        MindustryRemoteVersion.Artifact preferred = artifacts.get("windows");
-        if (preferred == null) preferred = artifacts.values().iterator().next();
-        return new MindustryRemoteVersion(build,
-                "stable".equals(channel) ? "stable" : "be",
-                VersionVariant.VANILLA,
-                preferred.getDownloadUrl(), null, preferred.getSize(), tag,
-                "MDTbbs desktop archive", artifacts);
+        String relative = text(chosen, "download_url");
+        if (relative == null || relative.isBlank()) return null;
+        String downloadUrl = resolve(manifestUrl, relative);
+        String fileName = text(chosen, "file_name");
+        if (fileName == null || fileName.isBlank()) fileName = "Mindustry.jar";
+        long size = chosen.has("size") && chosen.get("size").isJsonPrimitive()
+                ? chosen.get("size").getAsLong() : 0L;
+        String repo = text(release, "source_repository");
+        if (repo == null) repo = "Anuken/Mindustry";
+        String fallback = "https://github.com/" + repo + "/releases/download/"
+                + tag + "/" + fileName;
+
+        String channel = text(release, "channel");
+        String buildType = "stable".equals(channel) ? "stable"
+                : (channel == null || channel.isBlank() ? "stable" : channel);
+        String version = tag.replaceFirst("^[vV]", "");
+        Map<String, MindustryRemoteVersion.Artifact> artifacts = new LinkedHashMap<>();
+        MindustryRemoteVersion.Artifact artifact = new MindustryRemoteVersion.Artifact(
+                "universal", downloadUrl, size, fileName, false, fallback);
+        artifacts.put("universal", artifact);
+        return new MindustryRemoteVersion(parseBuildNumber(version),
+                buildType, VersionVariant.VANILLA, downloadUrl, null, size, tag,
+                fileName, artifacts);
     }
 
-    private Document fetch(String url) throws IOException {
-        HttpRequest request = HttpRequest.newBuilder(URI.create(url))
+    private JsonObject fetchManifest() throws IOException {
+        HttpRequest request = HttpRequest.newBuilder(URI.create(manifestUrl))
+                .version(HttpClient.Version.HTTP_1_1)
                 .GET()
                 .timeout(Duration.ofSeconds(15))
-                .header("User-Agent", "Xenon-Launcher")
+                .header("User-Agent", "Xenon-Launcher/" + clientVersion)
+                .header("Accept", "application/json")
                 .build();
         try {
             HttpResponse<String> response = http.send(request,
                     HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             if (response.statusCode() / 100 != 2) {
-                throw new IOException("HTTP " + response.statusCode() + " for " + url);
+                throw new IOException("HTTP " + response.statusCode() + " for " + manifestUrl);
             }
-            return Jsoup.parse(response.body(), url);
+            JsonElement parsed = JsonParser.parseString(response.body());
+            if (!parsed.isJsonObject()) throw new IOException("MDTbbs manifest is not a JSON object");
+            return parsed.getAsJsonObject();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new IOException("Interrupted fetching " + url, e);
+            throw new IOException("Interrupted fetching " + manifestUrl, e);
         }
     }
 
-    private static String decodeName(String href) {
-        int slash = href.lastIndexOf('/');
-        String raw = slash >= 0 ? href.substring(slash + 1) : href;
-        return URLDecoder.decode(raw, StandardCharsets.UTF_8);
+    private static @Nullable JsonObject selectGame(JsonObject root) {
+        JsonArray games = array(root, "games");
+        if (games == null) return null;
+        JsonObject first = null;
+        for (JsonElement element : games) {
+            if (element == null || !element.isJsonObject()) continue;
+            JsonObject game = element.getAsJsonObject();
+            if (first == null) first = game;
+            if ("mindustry".equals(text(game, "id"))) return game;
+        }
+        return first;
     }
 
-    private static String originOf(String url) {
-        URI uri = URI.create(url);
-        return uri.getScheme() + "://" + uri.getAuthority();
+    private static boolean isDesktopJar(JsonObject asset) {
+        String name = text(asset, "file_name");
+        if (name == null || !"Mindustry.jar".equalsIgnoreCase(name)) return false;
+        String type = text(asset, "type");
+        String platform = text(asset, "platform");
+        if (type == null && platform == null) return true;
+        return "desktop".equals(type) || "desktop".equals(platform);
     }
 
-    private static String platformFor(String fileName) {
-        String lower = fileName.toLowerCase(Locale.ROOT);
-        if (lower.equals("mindustry-windows-64-bit.zip")) return "windows";
-        if (lower.equals("mindustry-linux-64-bit.zip")) return "linux";
-        if (lower.equals("mindustry-macos.zip")) return "macos";
-        return null;
+    /** Prefer the {@code /v8/} copy when the manifest lists the same jar twice. */
+    private static boolean prefer(JsonObject candidate, JsonObject current) {
+        String candidateUrl = text(candidate, "download_url");
+        String currentUrl = text(current, "download_url");
+        boolean candidateV8 = candidateUrl != null && candidateUrl.contains("/v8/");
+        boolean currentV8 = currentUrl != null && currentUrl.contains("/v8/");
+        return candidateV8 && !currentV8;
     }
 
-    private static long parseSize(String text) {
-        Matcher matcher = SIZE.matcher(text == null ? "" : text);
-        if (!matcher.find()) return 0;
-        BigDecimal value = new BigDecimal(matcher.group(1));
-        long multiplier = switch (matcher.group(2).toUpperCase(Locale.ROOT)) {
-            case "GB" -> 1024L * 1024 * 1024;
-            case "MB" -> 1024L * 1024;
-            case "KB" -> 1024L;
-            default -> 1L;
-        };
-        return value.multiply(BigDecimal.valueOf(multiplier)).longValue();
+    private static String resolve(String manifestUrl, String downloadUrl) {
+        if (downloadUrl.startsWith("http://") || downloadUrl.startsWith("https://")) {
+            return downloadUrl;
+        }
+        return URI.create(manifestUrl).resolve(downloadUrl).toString();
+    }
+
+    private static @Nullable JsonArray array(JsonObject object, String name) {
+        if (!object.has(name) || !object.get(name).isJsonArray()) return null;
+        return object.getAsJsonArray(name);
+    }
+
+    private static @Nullable String text(JsonObject object, String name) {
+        if (!object.has(name) || object.get(name).isJsonNull() || !object.get(name).isJsonPrimitive()) {
+            return null;
+        }
+        return object.get(name).getAsString();
     }
 
     private static int parseBuildNumber(String version) {

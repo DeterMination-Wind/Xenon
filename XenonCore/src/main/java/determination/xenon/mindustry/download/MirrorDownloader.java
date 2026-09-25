@@ -155,6 +155,9 @@ public final class MirrorDownloader {
     /// Builds the default HTTP client for mirror downloads.
     private static HttpClient createHttpClient() {
         return HttpClient.newBuilder()
+                // HTTP/2 ALPN makes some mainland hosts RST during the handshake
+                // (SSLHandshakeException: Remote host terminated the handshake).
+                .version(HttpClient.Version.HTTP_1_1)
                 .followRedirects(HttpClient.Redirect.NORMAL)
                 .connectTimeout(Duration.ofSeconds(8))
                 .proxy(ProxySelector.getDefault())
@@ -176,21 +179,22 @@ public final class MirrorDownloader {
         // Non-GitHub origins (alist mirror, mindustry.top static asset, …)
         // can't be wrapped with the mirror prefix list. Hit them directly.
         if (!isGithubOrigin(githubUrl)) {
-            Path tmp = target.getParent() == null
-                    ? Path.of(System.getProperty("java.io.tmpdir", "."))
-                            .resolve(target.getFileName().toString() + ".part")
-                    : target.getParent().resolve("_xenon_dl")
-                            .resolve(target.getFileName().toString() + ".part");
-            Files.createDirectories(tmp.getParent());
+            downloadDirect(githubUrl, target, expectedSize, progress);
+            Logger.LOG.info("MirrorDownloader: direct (non-GitHub) won "
+                    + target.getFileName());
+            return;
+        }
+
+        // 像素工厂文件站 is the first mirror. Use it when the manifest lists this asset.
+        @Nullable String fileStation = MdtbbsFileMirror.lookup(githubUrl);
+        if (fileStation != null) {
             try {
-                downloadStream(githubUrl, tmp, expectedSize, progress);
-                deleteWithRetry(target);
-                Files.move(tmp, target);
-                Logger.LOG.info("MirrorDownloader: direct (non-GitHub) won "
-                        + target.getFileName());
+                downloadDirect(fileStation, target, expectedSize, progress);
+                Logger.LOG.info("MirrorDownloader: file.mdtbbs.cn won " + target.getFileName());
                 return;
-            } finally {
-                try { Files.deleteIfExists(tmp); } catch (IOException ignored) {}
+            } catch (IOException e) {
+                Logger.LOG.warning("MirrorDownloader: file station failed for " + githubUrl
+                        + " (" + e.getMessage() + "); racing other mirrors");
             }
         }
 
@@ -748,9 +752,50 @@ public final class MirrorDownloader {
                 || url.startsWith("https://codeload.github.com/");
     }
 
+    /// Downloads one absolute URL into {@code target} without the GitHub mirror race.
+    private void downloadDirect(String url, Path target, long expectedSize,
+                                @Nullable ProgressCallback progress) throws IOException {
+        Path tmp = target.getParent() == null
+                ? Path.of(System.getProperty("java.io.tmpdir", "."))
+                        .resolve(target.getFileName().toString() + ".part")
+                : target.getParent().resolve("_xenon_dl")
+                        .resolve(target.getFileName().toString() + ".part");
+        Files.createDirectories(tmp.getParent());
+        try {
+            downloadStream(url, tmp, expectedSize, progress);
+            deleteWithRetry(target);
+            Files.move(tmp, target);
+        } finally {
+            try { Files.deleteIfExists(tmp); } catch (IOException ignored) {}
+        }
+    }
+
     /// Streams a non-GitHub URL directly to a temp file.
     private void downloadStream(String url, Path tmp, long expectedSize,
                                 @Nullable ProgressCallback progress) throws IOException {
+        IOException last = null;
+        String current = url;
+        for (int attempt = 0; attempt < 2; attempt++) {
+            try {
+                downloadStreamOnce(current, tmp, expectedSize, progress);
+                return;
+            } catch (IOException e) {
+                last = e;
+                if (attempt == 0 && isHandshakeFailure(e)) {
+                    String softened = softenFileHost(current);
+                    Logger.LOG.warning("MirrorDownloader: handshake terminated for " + current
+                            + "; retrying via " + softened);
+                    current = softened;
+                    continue;
+                }
+                throw e;
+            }
+        }
+        throw last;
+    }
+
+    private void downloadStreamOnce(String url, Path tmp, long expectedSize,
+                                    @Nullable ProgressCallback progress) throws IOException {
         HttpRequest req = HttpRequest.newBuilder(NetworkUtils.resolvePlayMirrorIp(URI.create(url)))
                 .GET()
                 .timeout(Duration.ofMinutes(10))
@@ -763,6 +808,8 @@ public final class MirrorDownloader {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IOException("Interrupted downloading " + url, e);
+        } catch (IOException e) {
+            throw new IOException("Failed downloading " + url, e);
         }
         if (resp.statusCode() / 100 != 2) {
             try (InputStream drain = resp.body()) {
@@ -791,5 +838,21 @@ public final class MirrorDownloader {
                 throw new IOException("Empty response body from " + url);
             }
         }
+    }
+
+    /// Old MDTbbs pages pointed at {@code d.file.mdtbbs.cn}. The manifest host is {@code file.mdtbbs.cn}.
+    private static String softenFileHost(String url) {
+        return url.replace("://d.file.mdtbbs.cn", "://file.mdtbbs.cn");
+    }
+
+    private static boolean isHandshakeFailure(Throwable error) {
+        for (Throwable cursor = error; cursor != null; cursor = cursor.getCause()) {
+            String message = cursor.getMessage();
+            if (message != null && message.toLowerCase(java.util.Locale.ROOT).contains("handshake")) {
+                return true;
+            }
+            if (cursor instanceof javax.net.ssl.SSLHandshakeException) return true;
+        }
+        return false;
     }
 }

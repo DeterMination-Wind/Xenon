@@ -156,7 +156,8 @@ public final class XenonInstallWizardProvider implements WizardProvider {
         // shows a real progress bar + the per-second speed indicator.
         MindustryDownloadTask download = new MindustryDownloadTask(
                 artifact.getDownloadUrl(), jar, artifact.getSize(),
-                MindustryImportFlow.cachesDirectory(), artifact.isArchive());
+                MindustryImportFlow.cachesDirectory(), artifact.isArchive(),
+                artifact.getFallbackUrl());
         download.setName(i18n("xenon.install.task.download", id));
 
         Task<Void> installJar = prepareDir.thenComposeAsync(Schedulers.io(), reusableJar -> {

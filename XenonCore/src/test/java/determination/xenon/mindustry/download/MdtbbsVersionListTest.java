@@ -25,18 +25,19 @@ import java.nio.file.Path;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** Tests parsing MDTbbs directory pages into platform artifacts. */
+/** Tests parsing the MDT File manifest into installable desktop jars. */
 @NotNullByDefault
 public final class MdtbbsVersionListTest {
     @Test
-    public void parsesBuildAndPlatformArtifacts(@TempDir Path tempDir) throws Exception {
+    public void parsesManifestDesktopJar(@TempDir Path tempDir) throws Exception {
         try (FixtureServer server = FixtureServer.start()) {
             MdtbbsVersionList list = new MdtbbsVersionList(
                     new GitHubReleaseClient(null), "1.10.SNAPSHOT",
-                    server.categoryUrl(), server.fileBase(), HttpClient.newHttpClient());
+                    server.manifestUrl(), HttpClient.newHttpClient());
             List<MindustryRemoteVersion> versions = list.refresh();
 
             assertEquals(1, versions.size());
@@ -47,17 +48,19 @@ public final class MdtbbsVersionListTest {
             assertEquals("stable", version.getBuildType());
 
             MindustryRemoteVersion.Artifact windows = version.getArtifactFor(OperatingSystem.WINDOWS);
-            MindustryRemoteVersion.Artifact linux = version.getArtifactFor(OperatingSystem.LINUX);
             assertNotNull(windows);
-            assertNotNull(linux);
-            assertTrue(windows.isArchive());
-            assertTrue(windows.getDownloadUrl().contains("/d/Mindustry/v8/build-159.7-stable"));
-            assertTrue(windows.getDownloadUrl().endsWith("?reques=Xenon+1.10.SNAPSHOT"));
-            assertEquals((long) (101.4d * 1024 * 1024), windows.getSize());
+            assertFalse(windows.isArchive());
+            assertTrue(windows.getDownloadUrl().contains("/d/Mindustry/v8/build-159.7-stable/Mindustry.jar"));
+            assertTrue(windows.getDownloadUrl().startsWith("http://127.0.0.1:"));
+            assertEquals("https://github.com/Anuken/Mindustry/releases/download/v159.7/Mindustry.jar",
+                    windows.getFallbackUrl());
+            assertEquals(101L, windows.getSize());
 
             VersionCache.save(VersionVariant.VANILLA, tempDir, versions);
             MindustryRemoteVersion cached = VersionCache.load(VersionVariant.VANILLA, tempDir).get(0);
             assertNotNull(cached.getArtifactFor(OperatingSystem.WINDOWS));
+            assertEquals(windows.getFallbackUrl(),
+                    cached.getArtifactFor(OperatingSystem.WINDOWS).getFallbackUrl());
         }
     }
 
@@ -67,8 +70,7 @@ public final class MdtbbsVersionListTest {
         static FixtureServer start() throws IOException {
             HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
             FixtureServer fixture = new FixtureServer(server);
-            server.createContext("/category/Mindustry/v8", fixture::index);
-            server.createContext("/category/Mindustry/v8/build-159.7-stable", fixture::build);
+            server.createContext("/api/v1/mindustry/manifest.json", fixture::manifest);
             server.start();
             return fixture;
         }
@@ -77,25 +79,15 @@ public final class MdtbbsVersionListTest {
             this.server = server;
         }
 
-        String categoryUrl() {
+        String manifestUrl() {
             return "http://127.0.0.1:" + server.getAddress().getPort()
-                    + "/category/Mindustry/v8";
+                    + "/api/v1/mindustry/manifest.json";
         }
 
-        String fileBase() {
-            return "http://127.0.0.1:" + server.getAddress().getPort() + "/d";
-        }
-
-        private void index(HttpExchange exchange) throws IOException {
-            respond(exchange, "<a href=\"/category/Mindustry/v8/build-159.7-stable\">build</a>");
-        }
-
-        private void build(HttpExchange exchange) throws IOException {
-            respond(exchange, ""
-                    + "<a class=\"term-file\" href=\"/Mindustry/v8/build-159.7-stable/mindustry-windows-64-bit.zip\">"
-                    + "<span class=\"size\">101.4 MB</span></a>"
-                    + "<a class=\"term-file\" href=\"/Mindustry/v8/build-159.7-stable/mindustry-linux-64-bit.zip\">"
-                    + "<span class=\"size\">90 MB</span></a>");
+        private void manifest(HttpExchange exchange) throws IOException {
+            respond(exchange, """
+                    {"schema_version":1,"unexpected":true,"games":[{"id":"mindustry","releases":[{"tag":"v159.7","channel":"stable","source_repository":"Anuken/Mindustry","assets":[{"file_name":"Mindustry.jar","size":101,"sha256":"abc","platform":"desktop","type":"desktop","download_url":"/d/Mindustry/Main/Stable/v159.7/desktop/Mindustry.jar","extra":1},{"file_name":"Mindustry.jar","size":101,"sha256":"abc","platform":"desktop","type":"desktop","download_url":"/d/Mindustry/v8/build-159.7-stable/Mindustry.jar"},{"file_name":"server-release.jar","size":10,"platform":"server","type":"server","download_url":"/d/Mindustry/v8/build-159.7-stable/server-release.jar"}]}]}]}
+                    """);
         }
 
         private static void respond(HttpExchange exchange, String body) throws IOException {

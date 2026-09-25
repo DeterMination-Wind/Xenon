@@ -52,14 +52,21 @@ public final class MindustryRemoteVersion {
         private final long size;
         private final String fileName;
         private final boolean archive;
+        private final @Nullable String fallbackUrl;
 
         public Artifact(String platform, String downloadUrl, long size,
                         String fileName, boolean archive) {
+            this(platform, downloadUrl, size, fileName, archive, null);
+        }
+
+        public Artifact(String platform, String downloadUrl, long size,
+                        String fileName, boolean archive, @Nullable String fallbackUrl) {
             this.platform = platform == null ? "universal" : platform;
             this.downloadUrl = Objects.requireNonNull(downloadUrl, "downloadUrl");
             this.size = Math.max(0, size);
             this.fileName = fileName == null ? "" : fileName;
             this.archive = archive;
+            this.fallbackUrl = fallbackUrl == null || fallbackUrl.isBlank() ? null : fallbackUrl;
         }
 
         public String getPlatform() { return platform; }
@@ -71,6 +78,9 @@ public final class MindustryRemoteVersion {
         public String getFileName() { return fileName; }
 
         public boolean isArchive() { return archive; }
+
+        /** Alternate URL tried after the primary download fails. May be {@code null}. */
+        public @Nullable String getFallbackUrl() { return fallbackUrl; }
     }
 
     /**

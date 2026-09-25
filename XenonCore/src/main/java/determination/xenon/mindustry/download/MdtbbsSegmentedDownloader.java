@@ -42,6 +42,7 @@ public final class MdtbbsSegmentedDownloader {
     private static final int RETRIES = 3;
 
     private final HttpClient http = HttpClient.newBuilder()
+            .version(HttpClient.Version.HTTP_1_1)
             .followRedirects(HttpClient.Redirect.NORMAL)
             .connectTimeout(Duration.ofSeconds(8))
             .proxy(ProxySelector.getDefault())

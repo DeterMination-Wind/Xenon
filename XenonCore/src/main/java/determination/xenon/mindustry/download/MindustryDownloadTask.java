@@ -42,6 +42,7 @@ public final class MindustryDownloadTask extends Task<Void> {
     private final long expectedSize;
     private final Path cachesRoot;
     private final boolean archive;
+    private final @org.jetbrains.annotations.Nullable String fallbackUrl;
 
     /**
      * @param sourceUrl    direct jar URL, or a platform zip URL when {@code archive} is true
@@ -50,24 +51,41 @@ public final class MindustryDownloadTask extends Task<Void> {
      * @param cachesRoot   launcher caches dir (used for the preferred-mirror cache)
      */
     public MindustryDownloadTask(String sourceUrl, Path target, long expectedSize, Path cachesRoot) {
-        this(sourceUrl, target, expectedSize, cachesRoot, false);
+        this(sourceUrl, target, expectedSize, cachesRoot, false, null);
     }
 
     /** Creates a download task, optionally extracting {@code Mindustry.jar} from a zip. */
     public MindustryDownloadTask(String sourceUrl, Path target, long expectedSize,
                                  Path cachesRoot, boolean archive) {
+        this(sourceUrl, target, expectedSize, cachesRoot, archive, null);
+    }
+
+    /**
+     * @param fallbackUrl tried after the primary URL fails; typically the GitHub release asset
+     */
+    public MindustryDownloadTask(String sourceUrl, Path target, long expectedSize,
+                                 Path cachesRoot, boolean archive,
+                                 @org.jetbrains.annotations.Nullable String fallbackUrl) {
         this.sourceUrl = sourceUrl;
         this.target = target;
         this.expectedSize = expectedSize;
         this.cachesRoot = cachesRoot;
         this.archive = archive;
+        this.fallbackUrl = fallbackUrl == null || fallbackUrl.isBlank() ? null : fallbackUrl;
         setName(target.getFileName().toString());
     }
 
     @Override
     public void execute() throws Exception {
         if (!archive) {
-            new MirrorDownloader(cachesRoot).download(sourceUrl, target, expectedSize, this::updateDownloadProgress);
+            try {
+                new MirrorDownloader(cachesRoot).download(sourceUrl, target, expectedSize, this::updateDownloadProgress);
+            } catch (IOException primary) {
+                if (fallbackUrl == null || fallbackUrl.equals(sourceUrl)) throw primary;
+                Logger.LOG.warning("Primary Mindustry download failed (" + primary.getMessage()
+                        + "); trying " + fallbackUrl);
+                new MirrorDownloader(cachesRoot).download(fallbackUrl, target, expectedSize, this::updateDownloadProgress);
+            }
             return;
         }
 

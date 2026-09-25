@@ -2,6 +2,15 @@
 
 All notable changes to Xenon will be documented in this file.
 
+## [1.12.1] — 2026-09-26
+
+### Changed
+- Mindustry downloads check the MDT File manifest first and use `file.mdtbbs.cn` when that asset is listed.
+- Download clients use HTTP/1.1. A handshake reset retries once, rewriting a legacy `d.file.mdtbbs.cn` host to `file.mdtbbs.cn`, then falls back to the GitHub release asset through the existing mirror race.
+- The mainland vanilla version list reads `https://file.mdtbbs.cn/api/v1/mindustry/manifest.json` instead of scraping the file-station HTML.
+
+See the [bilingual release notes](release-notes/v1.12.1.md) for details.
+
 ## [1.12.0] — 2026-09-18
 
 ### Fixed
@@ -109,3 +118,4 @@ The first public release. Forked from HMCL, Mindustry support layered on top.
 [1.9.0]: https://github.com/DeterMination-Wind/Xenon/releases/tag/v1.9.0
 [1.11.0]: https://github.com/DeterMination-Wind/Xenon/releases/tag/v1.11.0
 [1.12.0]: https://github.com/DeterMination-Wind/Xenon/releases/tag/v1.12.0
+[1.12.1]: https://github.com/DeterMination-Wind/Xenon/releases/tag/v1.12.1
