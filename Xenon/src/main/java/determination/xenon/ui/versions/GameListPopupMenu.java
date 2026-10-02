@@ -35,6 +35,7 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import determination.xenon.game.Version;
+import determination.xenon.mindustry.ui.MindustryRoutes;
 import determination.xenon.setting.Profile;
 import determination.xenon.ui.FXUtils;
 import determination.xenon.ui.construct.ImageContainer;
@@ -53,7 +54,13 @@ public final class GameListPopupMenu extends StackPane {
                             double initOffsetX, double initOffsetY,
                             Profile profile, List<Version> versions) {
         GameListPopupMenu menu = new GameListPopupMenu();
-        menu.getItems().setAll(versions.stream().map(it -> new GameItem(profile, it.getId())).toList());
+        // Drop entries whose version folder disappeared while the list was
+        // open; rendering them later throws VersionNotFoundException.
+        menu.getItems().setAll(versions.stream()
+                .filter(it -> profile.getRepository().hasVersion(it.getId())
+                        || MindustryRoutes.isMindustry(profile, it.getId()))
+                .map(it -> new GameItem(profile, it.getId()))
+                .toList());
         JFXPopup popup = new JFXPopup(menu);
         popup.show(owner, vAlign, hAlign, initOffsetX, initOffsetY);
     }
@@ -126,8 +133,9 @@ public final class GameListPopupMenu extends StackPane {
                 GameItem item = getItem();
                 if (item != null) {
                     item.getProfile().setSelectedVersion(item.getId());
-                    if (getScene().getWindow() instanceof JFXPopup popup)
+                    if (getScene() != null && getScene().getWindow() instanceof JFXPopup popup) {
                         popup.hide();
+                    }
                 }
             });
             this.graphic = ripplerContainer;

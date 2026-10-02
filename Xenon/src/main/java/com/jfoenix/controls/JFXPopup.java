@@ -170,8 +170,18 @@ public class JFXPopup extends PopupControl {
 
     @Override
     public void hide() {
+        // JavaFX's PopupWindow.unbindOwnerFocusedProperty can throw when a
+        // popup is hidden twice (for example the user clicks an item while
+        // the owner window is closing). Skipping the redundant hide keeps
+        // that JDK-side race out of the launcher, and the skin is only reset
+        // when it was actually created.
+        if (!isShowing()) {
+            return;
+        }
         super.hide();
-        ((JFXPopupSkin) getSkin()).init();
+        if (getSkin() instanceof JFXPopupSkin skin) {
+            skin.init();
+        }
     }
 
     /***************************************************************************

@@ -94,12 +94,27 @@ public class GameItem {
             return;
         }
 
+        if (!profile.getRepository().hasVersion(id)) {
+            // The popup can outlive its version folder (for example after a
+            // manual delete), so never resolve a missing version here.
+            title.set(id);
+            subtitle.set(i18n("version.not_exist"));
+            image.set(determination.xenon.game.TexturesLoader.getDefaultSkinImage());
+            return;
+        }
+
         record Result(@Nullable String gameVersion, @Nullable String tag) {
         }
 
         CompletableFuture.supplyAsync(() -> {
             // GameVersion.minecraftVersion() is a time-costing job (up to ~200 ms)
-            Optional<String> gameVersion = profile.getRepository().getGameVersion(id);
+            Optional<String> gameVersion;
+            try {
+                gameVersion = profile.getRepository().getGameVersion(id);
+            } catch (RuntimeException e) {
+                LOG.warning("Failed to resolve game version for " + id, e);
+                gameVersion = Optional.empty();
+            }
             String modPackVersion = null;
             try {
                 ModpackConfiguration<?> config = profile.getRepository().readModpackConfiguration(id);
@@ -109,13 +124,20 @@ public class GameItem {
             }
             return new Result(gameVersion.orElse(null), modPackVersion);
         }, POOL_VERSION_RESOLVE).whenCompleteAsync((result, exception) -> {
-            if (exception == null) {
+            if (exception != null) {
+                LOG.warning("Failed to read version info from " + id, exception);
+                return;
+            }
+            String fallback = Objects.requireNonNullElse(result.gameVersion, i18n("message.unknown"));
+            try {
                 if (result.tag != null) {
                     tag.set(result.tag);
                 }
 
-                StringBuilder libraries = new StringBuilder(Objects.requireNonNullElse(result.gameVersion, i18n("message.unknown")));
-                LibraryAnalyzer analyzer = LibraryAnalyzer.analyze(profile.getRepository().getResolvedPreservingPatchesVersion(id), result.gameVersion);
+                StringBuilder libraries = new StringBuilder(fallback);
+                LibraryAnalyzer analyzer = LibraryAnalyzer.analyze(
+                        profile.getRepository().getResolvedPreservingPatchesVersion(id),
+                        result.gameVersion);
                 for (LibraryAnalyzer.LibraryMark mark : analyzer) {
                     String libraryId = mark.getLibraryId();
                     String libraryVersion = mark.getLibraryVersion();
@@ -128,8 +150,11 @@ public class GameItem {
                 }
 
                 subtitle.set(libraries.toString());
-            } else {
-                LOG.warning("Failed to read version info from " + id, exception);
+            } catch (RuntimeException e) {
+                // A version whose metadata cannot be resolved must not take
+                // the launcher down while a popup is rendering.
+                LOG.warning("Failed to render version entry for " + id, e);
+                subtitle.set(fallback);
             }
         }, Schedulers.javafx());
 

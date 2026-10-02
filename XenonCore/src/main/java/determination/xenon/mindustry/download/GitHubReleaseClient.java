@@ -20,6 +20,7 @@ package determination.xenon.mindustry.download;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonDeserializer;
+import com.google.gson.JsonSyntaxException;
 import com.google.gson.reflect.TypeToken;
 import determination.xenon.util.io.NetworkUtils;
 import determination.xenon.util.logging.Logger;
@@ -114,7 +115,16 @@ public final class GitHubReleaseClient {
 
         String relativePath = "repos/" + ownerRepo + "/releases?per_page=" + perPage;
         String body = fetchWithFallback(relativePath, ownerRepo);
-        List<GitHubRelease> all = GSON.fromJson(body, RELEASE_LIST_TYPE);
+        List<GitHubRelease> all;
+        try {
+            all = GSON.fromJson(body, RELEASE_LIST_TYPE);
+        } catch (JsonSyntaxException e) {
+            // GitHub answers rate limits and outages with an object, not the
+            // release array, so surface a readable IOException instead of a
+            // Gson parse crash.
+            throw new IOException("GitHub Releases returned an unexpected response for "
+                    + ownerRepo + " (rate limited or blocked)", e);
+        }
         if (all == null) return Collections.emptyList();
         if (all.size() > limit) return new ArrayList<>(all.subList(0, limit));
         return all;
@@ -127,7 +137,12 @@ public final class GitHubReleaseClient {
         String relativePath = "repos/" + ownerRepo + "/releases/latest";
         String body = fetchWithFallback(relativePath, ownerRepo + "_latest");
         if (body == null || body.isEmpty()) return null;
-        return GSON.fromJson(body, GitHubRelease.class);
+        try {
+            return GSON.fromJson(body, GitHubRelease.class);
+        } catch (JsonSyntaxException e) {
+            throw new IOException("GitHub Releases returned an unexpected response for "
+                    + ownerRepo + " (rate limited or blocked)", e);
+        }
     }
 
     /**

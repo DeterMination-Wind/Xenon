@@ -146,7 +146,23 @@ public final class LauncherHelper {
 
         HMCLGameRepository repository = profile.getRepository();
         DefaultDependencyManager dependencyManager = profile.getDependency();
-        AtomicReference<Version> version = new AtomicReference<>(MaintainTask.maintain(repository, repository.getResolvedVersion(selectedVersion)));
+
+        // Corrupted or half-deleted instances can have no main class; fail
+        // with a readable dialog instead of an IllegalStateException from the
+        // command-line builder.
+        if (!repository.hasVersion(selectedVersion)) {
+            Controllers.dialog(i18n("launch.failed.main_class_missing", selectedVersion),
+                    i18n("message.error"), MessageType.ERROR);
+            return;
+        }
+        Version resolvedVersion = repository.getResolvedVersion(selectedVersion);
+        if (resolvedVersion.getMainClass() == null) {
+            Controllers.dialog(i18n("launch.failed.main_class_missing", selectedVersion),
+                    i18n("message.error"), MessageType.ERROR);
+            return;
+        }
+
+        AtomicReference<Version> version = new AtomicReference<>(MaintainTask.maintain(repository, resolvedVersion));
         Optional<String> gameVersion = repository.getGameVersion(version.get());
         boolean integrityCheck = repository.unmarkVersionLaunchedAbnormally(selectedVersion);
         CountDownLatch launchingLatch = new CountDownLatch(1);

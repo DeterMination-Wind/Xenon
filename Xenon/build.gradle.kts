@@ -86,6 +86,13 @@ val runtimeCriticalClasses = listOf(
     "com/posthog/server/PostHog.class",
     "com/posthog/server/PostHogConfig.class",
     "com/posthog/server/PostHogInterface.class",
+    // OkHttp 4 is Kotlin based; keep a few classes from the transitive
+    // Kotlin/Okio runtime in the verification list so a future minimize or
+    // packaging change cannot silently drop them (crash reports showed
+    // NoClassDefFoundError for Ref$IntRef from OkHttp shutdown paths).
+    "kotlin/jvm/internal/Ref\$IntRef.class",
+    "okhttp3/internal/http2/Http2Connection.class",
+    "okio/ByteString.class",
 )
 
 tasks.withType<JavaCompile> {
