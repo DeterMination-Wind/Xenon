@@ -2,6 +2,26 @@
 
 All notable changes to Xenon will be documented in this file.
 
+## [1.13.0] — 2026-10-02
+
+### Added
+- Native MDTBBS community page: browse categories and threads, search, read formatted posts and replies, post new threads, reply, like, bookmark and view notifications without opening a browser.
+- MindAuth sign-in from the launcher with the system browser and a local callback; author names open their forum profile.
+- Resource center tab for MDTBBS blueprints and maps: search, previews, one-click install into the selected instance, and uploads that enter forum moderation.
+- Cloud saves for every instance: slots, history, upload, restore with a local backup, pinning and quota display.
+- Friends and multiplayer helpers: presence and "playing now" activity, a friends and invites dialog, and `xenon://join?intent=` link handling.
+
+### Fixed
+- The shadow jar build now verifies the Kotlin/Okio classes OkHttp needs, so dependency minimization cannot silently drop them.
+- Hiding a JFoenix popup twice no longer crashes on a JavaFX listener.
+- Deleted or corrupted instances no longer throw while the game list renders or the game launches; they show a clear message instead.
+- GitHub release responses that are not a release array now produce a readable error instead of a Gson crash.
+
+### Changed
+- Resource previews are limited to three concurrent downloads.
+
+See the [bilingual release notes](release-notes/v1.13.0.md) for details.
+
 ## [1.12.1] — 2026-09-26
 
 ### Changed
