@@ -2,6 +2,16 @@
 
 All notable changes to Xenon will be documented in this file.
 
+## [1.13.1] — 2026-10-02
+
+### Fixed
+- The "Last log" button on the Logs tab and "Open log file" in the abnormal-exit dialog now open the best available log instead of reporting a missing `last_log.txt`: the game's own log, then the launcher-captured process output, then the newest crash report.
+- Every launch keeps its process output under `<instance folder>/logs/` (latest 10 files), so early crashes before Mindustry writes its own log stay diagnosable.
+- The Logs tab follows the effective launch data directory, including save-archive runtimes.
+- New game folders and profiles default to the official Mindustry data directory (`%APPDATA%\Mindustry` on Windows), and the remaining `.minecraft` example paths were removed.
+
+See the [bilingual release notes](release-notes/v1.13.1.md) for details.
+
 ## [1.13.0] — 2026-10-02
 
 ### Added
