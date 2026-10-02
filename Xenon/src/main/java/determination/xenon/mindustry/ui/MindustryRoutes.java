@@ -289,6 +289,7 @@ public final class MindustryRoutes {
     private static void onClientEvent(MindustryClientRuntimeRegistry.ClientEvent event) {
         if (event instanceof MindustryClientRuntimeRegistry.Started started) {
             LOG.info("Mindustry process started: id=" + started.id() + ", pid=" + started.pid());
+            CommunityServices.presence().publishPlaying(started.id(), null, null);
         } else if (event instanceof MindustryClientRuntimeRegistry.AlreadyRunning alreadyRunning) {
             LOG.info("Ignored duplicate Mindustry launch request for " + alreadyRunning.id()
                     + ", pid=" + alreadyRunning.pid());
@@ -296,6 +297,7 @@ public final class MindustryRoutes {
         } else if (event instanceof MindustryClientRuntimeRegistry.Exited exited) {
             LOG.info("Mindustry process exited: id=" + exited.id() + ", pid=" + exited.pid()
                     + ", code=" + exited.exitCode());
+            CommunityServices.presence().clearPlaying();
             refreshOpenModPanes(exited.id());
             if (exited.exitCode() != 0) {
                 Path lastLog = exited.dataDir().resolve("last_log.txt");

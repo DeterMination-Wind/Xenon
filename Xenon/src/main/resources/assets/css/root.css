@@ -1107,6 +1107,58 @@
     -fx-font-size: 12px;
 }
 
+.community-card {
+    -fx-background-color: -monet-surface-container-low-transparent-80;
+    -fx-background-radius: 4;
+    -fx-cursor: hand;
+}
+
+.community-card:hover {
+    -fx-background-color: -monet-surface-container;
+}
+
+.community-reply {
+    -fx-background-color: -monet-surface-container-low-transparent-80;
+    -fx-background-radius: 4;
+}
+
+.community-quote {
+    -fx-border-color: -monet-outline-variant;
+    -fx-border-width: 0 0 0 3;
+    -fx-padding: 0 0 0 12;
+}
+
+.community-heading {
+    -fx-font-size: 15px;
+    -fx-font-weight: bold;
+}
+
+.community-code {
+    -fx-font-family: "Consolas", "Menlo", "monospace";
+    -fx-background-color: -monet-surface-container;
+    -fx-background-radius: 3;
+    -fx-padding: 6;
+}
+
+.community-link {
+    -fx-fill: -monet-primary;
+    -fx-cursor: hand;
+}
+
+.community-author {
+    -fx-text-fill: -monet-primary;
+    -fx-cursor: hand;
+}
+
+.community-author:hover {
+    -fx-underline: true;
+}
+
+.community-mention {
+    -fx-fill: -monet-primary;
+    -fx-font-weight: bold;
+}
+
 .md-list-cell {
     -fx-border-color: -monet-outline-variant;
     -fx-border-width: 0 0 1 0;

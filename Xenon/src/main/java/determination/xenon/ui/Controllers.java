@@ -353,6 +353,9 @@ public final class Controllers {
 
         decorator = new DecoratorController(stage, getRootPage());
 
+        determination.xenon.mindustry.ui.MdtbbsJoinIntentHandler.processPending();
+        determination.xenon.mindustry.ui.CommunityServices.presence().start();
+
         if (config().getCommonDirType() == EnumCommonDirectory.CUSTOM &&
                 !FileUtils.canCreateDirectory(config().getCommonDirectory())) {
             config().setCommonDirType(EnumCommonDirectory.DEFAULT);
@@ -648,6 +651,8 @@ public final class Controllers {
                     Versions.launch(profile, profile.getSelectedVersion(), LauncherHelper::setKeep);
                     break;
             }
+        } else if (href.startsWith(determination.xenon.mindustry.ui.MdtbbsJoinIntentHandler.JOIN_SCHEME)) {
+            determination.xenon.mindustry.ui.MdtbbsJoinIntentHandler.handle(href);
         } else {
             FXUtils.openLink(href);
         }

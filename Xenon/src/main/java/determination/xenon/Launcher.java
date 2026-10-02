@@ -322,6 +322,8 @@ public final class Launcher extends Application {
             return;
         }
 
+        determination.xenon.mindustry.ui.MdtbbsJoinIntentHandler.captureArguments(args);
+
         Thread.setDefaultUncaughtExceptionHandler(CRASH_REPORTER);
         AsyncTaskExecutor.setUncaughtExceptionHandler(new CrashReporter(false));
 

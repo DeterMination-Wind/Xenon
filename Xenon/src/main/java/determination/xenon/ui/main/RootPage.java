@@ -201,6 +201,13 @@ public class RootPage extends DecoratorAnimatedPage implements DecoratorPage {
             serverItem.setOnAction(e -> Controllers.navigate(
                     new determination.xenon.mindustry.ui.server.MindustryServerListPane()));
 
+            // community — native MDTBBS forum page
+            AdvancedListItem communityItem = new AdvancedListItem();
+            communityItem.setLeftIcon(SVG.EXPLORE);
+            communityItem.setTitle(i18n("xenon.community"));
+            communityItem.setOnAction(e -> Controllers.navigate(
+                    new determination.xenon.mindustry.ui.MindustryCommunityPane()));
+
             // fifth item in left sidebar
             AdvancedListItem launcherSettingsItem = new AdvancedListItem();
             launcherSettingsItem.setLeftIcon(SVG.SETTINGS);
@@ -224,6 +231,7 @@ public class RootPage extends DecoratorAnimatedPage implements DecoratorPage {
                     .add(gameItem)
                     .add(downloadItem)
                     .add(serverItem)
+                    .add(communityItem)
                     .startCategory(i18n("settings.launcher.general").toUpperCase(Locale.ROOT))
                     .add(launcherSettingsItem)
                     .addNavigationDrawerItem(i18n("contact.chat"), SVG.CHAT, () -> {

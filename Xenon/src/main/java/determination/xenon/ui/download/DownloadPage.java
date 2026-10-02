@@ -19,6 +19,7 @@ package determination.xenon.ui.download;
 
 import javafx.beans.property.ReadOnlyObjectProperty;
 import javafx.beans.property.ReadOnlyObjectWrapper;
+import determination.xenon.mindustry.ui.MdtbbsResourcePane;
 import determination.xenon.mindustry.ui.MindustryMapBrowserPane;
 import determination.xenon.mindustry.ui.MindustryModBrowserPane;
 import determination.xenon.mindustry.ui.MindustryVariantPickerPane;
@@ -63,6 +64,7 @@ public class DownloadPage extends DecoratorAnimatedPage implements DecoratorPage
     private final TabHeader.Tab<MindustryVariantPickerPane> newGameTab = new TabHeader.Tab<>("newGameTab");
     private final TabHeader.Tab<MindustryMapBrowserPane> mapTab = new TabHeader.Tab<>("mapTab");
     private final TabHeader.Tab<MindustryModBrowserPane> modTab = new TabHeader.Tab<>("modTab");
+    private final TabHeader.Tab<MdtbbsResourcePane> resourceTab = new TabHeader.Tab<>("resourceTab");
     private final TransitionPane transitionPane = new TransitionPane();
 
     public DownloadPage() {
@@ -78,8 +80,9 @@ public class DownloadPage extends DecoratorAnimatedPage implements DecoratorPage
         newGameTab.setNodeSupplier(MindustryVariantPickerPane::new);
         mapTab.setNodeSupplier(MindustryMapBrowserPane::new);
         modTab.setNodeSupplier(MindustryModBrowserPane::new);
+        resourceTab.setNodeSupplier(MdtbbsResourcePane::new);
 
-        tab = new TabHeader(transitionPane, newGameTab, mapTab, modTab);
+        tab = new TabHeader(transitionPane, newGameTab, mapTab, modTab, resourceTab);
         tab.select(newGameTab);
 
         AdvancedListBox sideBar = new AdvancedListBox()
@@ -90,7 +93,9 @@ public class DownloadPage extends DecoratorAnimatedPage implements DecoratorPage
                 .addNavigationDrawerTab(tab, mapTab, i18n("xenon.mindustry.maps"),
                         SVG.LANDSCAPE, SVG.LANDSCAPE)
                 .addNavigationDrawerTab(tab, modTab, i18n("mods"),
-                        SVG.EXTENSION, SVG.EXTENSION_FILL);
+                        SVG.EXTENSION, SVG.EXTENSION_FILL)
+                .addNavigationDrawerTab(tab, resourceTab, i18n("xenon.resource.nav"),
+                        SVG.GLOBE_BOOK, SVG.GLOBE_BOOK);
         FXUtils.setLimitWidth(sideBar, 200);
         setLeft(sideBar);
         setCenter(transitionPane);
@@ -111,6 +116,11 @@ public class DownloadPage extends DecoratorAnimatedPage implements DecoratorPage
 
     public void showMapDownloads() {
         tab.select(mapTab, false);
+    }
+
+    /// Selects the MDTBBS resource tab.
+    public void showResourceDownloads() {
+        tab.select(resourceTab, false);
     }
 
     // ---- HMCL ABI shims (no-ops on Xenon) ---------------------------------
