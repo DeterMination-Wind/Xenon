@@ -22,6 +22,7 @@ import determination.xenon.mindustry.save.MindustryLaunchSaveService;
 import determination.xenon.mindustry.uuid.MindustryPlayerLaunchHook;
 import determination.xenon.mindustry.uuid.MindustrySettingsBin;
 import determination.xenon.mindustry.uuid.UuidProfile;
+import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -146,11 +147,18 @@ public final class MindustryLaunchService {
                 version.resolveDataDir(versionRoot),
                 launchSaveFile);
 
+        // Keep a launcher-side copy of the process output: Mindustry only
+        // creates its own last_log.txt once the JVM reached the game's file
+        // logger, so an early crash would otherwise leave the log actions
+        // pointing at a file that does not exist.
+        @Nullable Path launchLog = MindustryLaunchLog.newLaunchLog(versionRoot);
+
         LaunchOptions.Builder builder = LaunchOptions.builder()
                 .javaExecutable(java)
                 .jar(jar)
                 .workingDirectory(version.resolveWorkingDirectory(versionRoot))
                 .dataDir(dataDir)
+                .launchLogFile(launchLog)
                 .jvmArgs(LaunchOptions.tokenize(version.getJvmArgs()))
                 .gameArgs(LaunchOptions.tokenize(version.getGameArgs()));
 

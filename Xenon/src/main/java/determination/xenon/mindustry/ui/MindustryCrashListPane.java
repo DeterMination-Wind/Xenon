@@ -21,6 +21,7 @@ import com.jfoenix.controls.JFXButton;
 import com.jfoenix.controls.JFXListView;
 import com.jfoenix.controls.JFXTextField;
 import determination.xenon.Metadata;
+import determination.xenon.mindustry.MindustryLogFinder;
 import determination.xenon.mindustry.VersionVariant;
 import determination.xenon.mindustry.crash.CrashReport;
 import determination.xenon.mindustry.crash.IssueTemplateBuilder;
@@ -54,7 +55,6 @@ import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.Unmodifiable;
 
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.format.DateTimeFormatter;
 import java.time.ZoneId;
@@ -73,8 +73,11 @@ public final class MindustryCrashListPane extends BorderPane {
     private static final DateTimeFormatter STAMP =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.systemDefault());
 
-    /// Mindustry data directory for the selected instance.
+    /// Mindustry data directory the selected instance launches with.
     private final Path dataDir;
+
+    /// Version root used to discover launcher-captured logs, or `null` when unknown.
+    private final @Nullable Path versionRoot;
 
     /// Variant used to choose the upstream feedback target.
     private final VersionVariant variant;
@@ -92,8 +95,14 @@ public final class MindustryCrashListPane extends BorderPane {
     private @Unmodifiable List<CrashReport> allReports = List.of();
 
     /// Creates a crash report pane for one Mindustry data directory.
-    public MindustryCrashListPane(Path dataDir, @Nullable VersionVariant variant) {
+    ///
+    /// @param dataDir data directory the instance launches with
+    /// @param versionRoot instance version root, used to find launcher-captured
+    ///                    logs; may be `null`
+    /// @param variant variant used to choose the upstream feedback target
+    public MindustryCrashListPane(Path dataDir, @Nullable Path versionRoot, @Nullable VersionVariant variant) {
         this.dataDir = dataDir;
+        this.versionRoot = versionRoot;
         this.variant = variant == null ? VersionVariant.CUSTOM : variant;
         setPadding(new Insets(12));
 
@@ -131,15 +140,22 @@ public final class MindustryCrashListPane extends BorderPane {
         reload();
     }
 
-    /// Opens the selected instance's always-current Mindustry log.
+    /// Opens the most useful log of the selected instance.
+    ///
+    /// The game's `last_log.txt` wins when present; otherwise the launcher's
+    /// own capture of the latest run is opened, and finally a crash report. An
+    /// instance that has never been launched falls back to its log folder so
+    /// the click is never a dead end.
     private void openLastLog() {
-        Path lastLog = dataDir.resolve("last_log.txt");
-        if (!Files.isRegularFile(lastLog)) {
-            LOG.warning("Mindustry last log does not exist: " + lastLog);
+        @Nullable Path log = MindustryLogFinder.resolveLog(dataDir, null, versionRoot);
+        if (log == null) {
+            LOG.warning("Mindustry has no log for data directory " + dataDir
+                    + " (version root " + versionRoot + ")");
+            FXUtils.openFolder(dataDir);
             Controllers.showToast(i18n("xenon.mindustry.logs.last_log.missing"));
             return;
         }
-        FXUtils.openFile(lastLog);
+        FXUtils.openFile(log);
     }
 
     /// Reloads crash report metadata from disk on the IO scheduler.

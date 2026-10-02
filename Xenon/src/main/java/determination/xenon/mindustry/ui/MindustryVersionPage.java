@@ -21,6 +21,7 @@ import com.jfoenix.controls.JFXButton;
 import determination.xenon.mindustry.MindustryImportFlow;
 import determination.xenon.mindustry.MindustryVersion;
 import determination.xenon.mindustry.XenonGameRepository;
+import determination.xenon.mindustry.save.MindustryLaunchSaveService;
 import determination.xenon.task.Schedulers;
 import determination.xenon.ui.Controllers;
 import determination.xenon.ui.FXUtils;
@@ -64,6 +65,10 @@ public final class MindustryVersionPage extends DecoratorAnimatedPage implements
     private final Path versionRoot;
     private final Path workingDirectory;
     private final Path dataDir;
+
+    /// Data directory the next launch will actually write to; differs from
+    /// {@link #dataDir} when a save archive runtime is selected.
+    private final Path launchDataDir;
     private final Runnable modPaneRefreshListener = this::refreshModPaneAfterProcessExit;
 
     public MindustryVersionPage(MindustryVersion version) {
@@ -72,11 +77,13 @@ public final class MindustryVersionPage extends DecoratorAnimatedPage implements
         this.versionRoot = repo.getVersionRoot(version);
         this.workingDirectory = version.resolveWorkingDirectory(versionRoot);
         this.dataDir = version.resolveDataDir(versionRoot);
+        this.launchDataDir = MindustryLaunchSaveService.resolveLaunchDataDir(
+                versionRoot, dataDir, version.getLaunchSaveFile());
 
         modTab.setNodeSupplier(() -> new MindustryModListPane(dataDir));
         saveTab.setNodeSupplier(() -> new MindustrySaveListPane(repo, version, versionRoot));
         schematicTab.setNodeSupplier(() -> new MindustrySchematicListPane(dataDir));
-        crashTab.setNodeSupplier(() -> new MindustryCrashListPane(dataDir, version.getVariant()));
+        crashTab.setNodeSupplier(() -> new MindustryCrashListPane(launchDataDir, versionRoot, version.getVariant()));
 
         tab = new TabHeader(transitionPane, modTab, saveTab, schematicTab, crashTab);
         tab.select(modTab);

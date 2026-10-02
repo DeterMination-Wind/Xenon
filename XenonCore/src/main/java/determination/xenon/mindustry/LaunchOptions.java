@@ -18,6 +18,7 @@
 package determination.xenon.mindustry;
 
 import determination.xenon.util.platform.OperatingSystem;
+import org.jetbrains.annotations.Nullable;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -42,6 +43,7 @@ public final class LaunchOptions {
     private final Path jar;
     private final Path workingDirectory;
     private final Path dataDir;
+    private final @Nullable Path launchLogFile;
     private final List<String> jvmArgs;
     private final List<String> gameArgs;
     private final long maxHeapMb;
@@ -52,6 +54,7 @@ public final class LaunchOptions {
         this.jar = Objects.requireNonNull(b.jar, "jar");
         this.workingDirectory = b.workingDirectory != null ? b.workingDirectory : jar.getParent();
         this.dataDir = Objects.requireNonNull(b.dataDir, "dataDir");
+        this.launchLogFile = b.launchLogFile;
         this.jvmArgs = Collections.unmodifiableList(new ArrayList<>(b.jvmArgs));
         this.gameArgs = Collections.unmodifiableList(new ArrayList<>(b.gameArgs));
         this.maxHeapMb = b.maxHeapMb;
@@ -65,6 +68,12 @@ public final class LaunchOptions {
     public Path getWorkingDirectory() { return workingDirectory; }
 
     public Path getDataDir() { return dataDir; }
+
+    /**
+     * File the launcher captures the process output into, or {@code null}
+     * when the launch should not be recorded by the launcher.
+     */
+    public @Nullable Path getLaunchLogFile() { return launchLogFile; }
 
     public List<String> getJvmArgs() { return jvmArgs; }
 
@@ -116,6 +125,7 @@ public final class LaunchOptions {
         private Path jar;
         private Path workingDirectory;
         private Path dataDir;
+        private @Nullable Path launchLogFile;
         private final List<String> jvmArgs = new ArrayList<>();
         private final List<String> gameArgs = new ArrayList<>();
         private long maxHeapMb = 1024;
@@ -128,6 +138,12 @@ public final class LaunchOptions {
         public Builder workingDirectory(Path p) { this.workingDirectory = p; return this; }
 
         public Builder dataDir(Path p) { this.dataDir = p; return this; }
+
+        /**
+         * Sets the launcher-captured log file for this launch. Pass
+         * {@code null} (the default) to keep the output in memory only.
+         */
+        public Builder launchLogFile(@Nullable Path p) { this.launchLogFile = p; return this; }
 
         public Builder jvmArgs(List<String> args) { this.jvmArgs.clear(); this.jvmArgs.addAll(args); return this; }
 

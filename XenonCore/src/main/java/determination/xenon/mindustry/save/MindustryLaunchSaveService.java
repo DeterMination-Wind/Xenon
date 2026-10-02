@@ -30,6 +30,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Instant;
@@ -142,7 +143,8 @@ public final class MindustryLaunchSaveService {
             throw new IOException("Not a Mindustry data archive: " + archive);
         }
 
-        Path runtimeDir = runtimeDir(versionRoot, archive.getFileName().toString());
+        Path runtimeDir = resolveLaunchDataDir(versionRoot, defaultDataDir,
+                archive.getFileName().toString());
         if (!isRuntimeCurrent(runtimeDir, archive)) {
             FileUtils.deleteDirectory(runtimeDir);
             Files.createDirectories(runtimeDir);
@@ -154,6 +156,30 @@ public final class MindustryLaunchSaveService {
             writeMarker(runtimeDir, archive);
         }
         return runtimeDir;
+    }
+
+    /// Resolves the data directory a launch would use for a given archive
+    /// selection without extracting the archive or touching the disk.
+    ///
+    /// UI pages use this to inspect the same directory the game will write to;
+    /// the returned runtime directory may not exist yet.
+    ///
+    /// @param versionRoot the instance's version root
+    /// @param defaultDataDir the data directory used when no archive is selected
+    /// @param selectedArchiveFile the instance's selected archive file name, or `null` for no archive
+    /// @return the effective data directory for the next launch
+    public static Path resolveLaunchDataDir(Path versionRoot,
+                                            Path defaultDataDir,
+                                            @Nullable String selectedArchiveFile) {
+        if (selectedArchiveFile == null || selectedArchiveFile.isBlank()) {
+            return defaultDataDir;
+        }
+        try {
+            String simpleName = Path.of(selectedArchiveFile).getFileName().toString();
+            return runtimeDir(versionRoot, simpleName);
+        } catch (InvalidPathException ex) {
+            return defaultDataDir;
+        }
     }
 
     private static MindustrySaveArchive readArchive(Path archive) throws IOException {

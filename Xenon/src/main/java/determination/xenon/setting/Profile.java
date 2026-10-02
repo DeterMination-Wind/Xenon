@@ -31,6 +31,7 @@ import determination.xenon.event.RefreshedVersionsEvent;
 import determination.xenon.game.HMCLCacheRepository;
 import determination.xenon.game.HMCLGameRepository;
 import determination.xenon.game.Version;
+import determination.xenon.mindustry.MindustryVersion;
 import determination.xenon.mindustry.ui.MindustryRoutes;
 import determination.xenon.ui.WeakListenerHolder;
 import determination.xenon.util.ToStringBuilder;
@@ -119,7 +120,7 @@ public final class Profile implements Observable {
     }
 
     public Profile(String name) {
-        this(name, Path.of(".minecraft"));
+        this(name, MindustryVersion.defaultMindustryDataDir());
     }
 
     public Profile(String name, Path initialGameDir) {
@@ -250,7 +251,8 @@ public final class Profile implements Observable {
         @Override
         public Profile deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context) throws JsonParseException {
             if (!(json instanceof JsonObject obj)) return null;
-            String gameDir = Optional.ofNullable(obj.get("gameDir")).map(JsonElement::getAsString).orElse("");
+            String gameDir = Optional.ofNullable(obj.get("gameDir")).map(JsonElement::getAsString)
+                    .orElseGet(() -> MindustryVersion.defaultMindustryDataDir().toString());
 
             return new Profile("Default",
                     Path.of(gameDir),

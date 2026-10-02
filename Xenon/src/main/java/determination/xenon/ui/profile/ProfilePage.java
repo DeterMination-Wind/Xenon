@@ -32,6 +32,7 @@ import javafx.scene.control.ScrollPane;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import determination.xenon.mindustry.MindustryVersion;
 import determination.xenon.setting.Profile;
 import determination.xenon.setting.Profiles;
 import determination.xenon.ui.FXUtils;
@@ -65,7 +66,8 @@ public final class ProfilePage extends BorderPane implements DecoratorPage {
 
         state.set(State.fromTitle(profile == null ? i18n("profile.new") : i18n("profile") + " - " + profileDisplayName));
         location = new SimpleStringProperty(this, "location",
-                Optional.ofNullable(profile).map(Profile::getGameDir).map(FileUtils::getAbsolutePath).orElse(".minecraft"));
+                Optional.ofNullable(profile).map(Profile::getGameDir).map(FileUtils::getAbsolutePath)
+                        .orElse(FileUtils.getAbsolutePath(MindustryVersion.defaultMindustryDataDir())));
 
         ScrollPane scroll = new ScrollPane();
         this.setCenter(scroll);
@@ -152,7 +154,12 @@ public final class ProfilePage extends BorderPane implements DecoratorPage {
                 return;
             }
 
-            if (!".minecraft".equals(FileUtils.getName(newPath)))
+            String folderName = FileUtils.getName(newPath);
+            if (!MindustryVersion.DATA_DIR_NAME.equals(folderName) && !".minecraft".equals(folderName))
+                return;
+            // The default Mindustry data directory is the OS-level home of the
+            // game; naming a profile after its parent ("Roaming") helps nobody.
+            if (newPath.equals(MindustryVersion.defaultMindustryDataDir()))
                 return;
 
             Path parent = newPath.getParent();

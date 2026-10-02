@@ -27,6 +27,7 @@ import determination.xenon.event.EventBus;
 import determination.xenon.event.RefreshedVersionsEvent;
 import determination.xenon.mindustry.MindustryImportFlow;
 import determination.xenon.mindustry.MindustryInstallationDiscovery;
+import determination.xenon.mindustry.MindustryVersion;
 import determination.xenon.task.Schedulers;
 
 import java.nio.file.Path;
@@ -106,9 +107,9 @@ public final class Profiles {
     private static void checkProfiles() {
         if (profiles.isEmpty()) {
             Optional<Path> steamMindustry = MindustryInstallationDiscovery.findDefaultSteamInstallationRoot();
-            Path defaultGameDir = steamMindustry.orElse(Path.of(".minecraft"));
+            Path defaultGameDir = steamMindustry.orElse(MindustryVersion.defaultMindustryDataDir());
             Profile current = new Profile(Profiles.DEFAULT_PROFILE, defaultGameDir,
-                    new VersionSetting(), null, steamMindustry.isEmpty());
+                    new VersionSetting(), null, !defaultGameDir.isAbsolute());
             Profile home = new Profile(Profiles.HOME_PROFILE, Metadata.XENON_GLOBAL_DIRECTORY);
             Platform.runLater(() -> {
                 profiles.addAll(current, home);

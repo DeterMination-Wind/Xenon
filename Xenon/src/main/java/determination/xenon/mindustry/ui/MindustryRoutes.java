@@ -22,6 +22,7 @@ import determination.xenon.mindustry.LaunchOptions;
 import determination.xenon.mindustry.MindustryClientRuntimeRegistry;
 import determination.xenon.mindustry.MindustryImportFlow;
 import determination.xenon.mindustry.MindustryLaunchService;
+import determination.xenon.mindustry.MindustryLogFinder;
 import determination.xenon.mindustry.MindustryVersion;
 import determination.xenon.mindustry.XenonGameRepository;
 import determination.xenon.mindustry.XenonLauncher;
@@ -43,7 +44,6 @@ import org.jetbrains.annotations.NotNullByDefault;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -300,12 +300,12 @@ public final class MindustryRoutes {
             CommunityServices.presence().clearPlaying();
             refreshOpenModPanes(exited.id());
             if (exited.exitCode() != 0) {
-                Path lastLog = exited.dataDir().resolve("last_log.txt");
                 Platform.runLater(() -> Controllers.dialog(new MessageDialogPane.Builder(
                                 i18n("xenon.mindustry.launch.exited_abnormally", exited.exitCode())
                                         + formatRecentLines(exited.recentLines()),
                                 i18n("message.error"), MessageDialogPane.MessageType.ERROR)
-                        .addAction(i18n("xenon.mindustry.launch.open_log"), () -> openLastLog(lastLog))
+                        .addAction(i18n("xenon.mindustry.launch.open_log"),
+                                () -> openLastLog(exited.dataDir(), exited.launchLogFile()))
                         .ok(null)
                         .build()));
             }
@@ -355,14 +355,21 @@ public final class MindustryRoutes {
         return builder.toString();
     }
 
-    /// Opens the log written by the Mindustry process that just exited.
-    private static void openLastLog(Path lastLog) {
-        if (!Files.isRegularFile(lastLog)) {
-            LOG.warning("Mindustry last log does not exist: " + lastLog);
+    /// Opens the best available log of the Mindustry process that just exited.
+    ///
+    /// The game's own `last_log.txt` is preferred; when the JVM died before
+    /// Mindustry installed its file logger (or the file is missing), the
+    /// launcher-captured output of this very launch is shown instead.
+    private static void openLastLog(Path dataDir, @Nullable Path launchLogFile) {
+        @Nullable Path log = MindustryLogFinder.resolveLog(dataDir, launchLogFile, null);
+        if (log == null) {
+            LOG.warning("Mindustry produced no log for data directory " + dataDir
+                    + " (launcher log " + launchLogFile + ")");
+            FXUtils.openFolder(dataDir);
             Controllers.showToast(i18n("xenon.mindustry.logs.last_log.missing"));
             return;
         }
-        FXUtils.openFile(lastLog);
+        FXUtils.openFile(log);
     }
 
     /** Confirm + delete a Mindustry version (clears its data dir as well). */

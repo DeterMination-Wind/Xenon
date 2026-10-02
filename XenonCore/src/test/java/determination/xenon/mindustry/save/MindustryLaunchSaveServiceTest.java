@@ -110,6 +110,26 @@ public final class MindustryLaunchSaveServiceTest {
         assertFalse(Files.exists(legacySave));
     }
 
+    /// Resolves the effective launch data directory without extracting anything.
+    @Test
+    public void resolvesLaunchDataDirectoryWithoutExtracting(@TempDir Path tempDir) {
+        Path versionRoot = tempDir.resolve("version");
+        Path defaultDataDir = tempDir.resolve("default-data");
+
+        assertSame(defaultDataDir,
+                MindustryLaunchSaveService.resolveLaunchDataDir(versionRoot, defaultDataDir, null));
+        assertSame(defaultDataDir,
+                MindustryLaunchSaveService.resolveLaunchDataDir(versionRoot, defaultDataDir, "  "));
+
+        Path runtime = MindustryLaunchSaveService.resolveLaunchDataDir(
+                versionRoot, defaultDataDir, "我的存档.zip");
+        assertTrue(runtime.startsWith(MindustryLaunchSaveService.runtimesDir(versionRoot)));
+        assertFalse(Files.exists(runtime));
+
+        assertSame(defaultDataDir, MindustryLaunchSaveService.resolveLaunchDataDir(
+                versionRoot, defaultDataDir, "bad\0name.zip"));
+    }
+
     /// Writes a representative Mindustry data archive used by launcher save selection.
     private static Path writeDataArchive(Path archive) throws IOException {
         try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(archive))) {

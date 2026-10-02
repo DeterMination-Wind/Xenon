@@ -141,7 +141,7 @@ public final class MindustryClientRuntimeRegistry {
 
         handles.remove(handle.id, handle);
         emit(handle.listener, new Exited(handle.id, handle.pid(), exitCode, recentLines,
-                handle.options.getDataDir()));
+                handle.options.getDataDir(), handle.options.getLaunchLogFile()));
 
         RuntimeHandle replacement = new RuntimeHandle(handle.id, handle.options,
                 handle.listener, handle.stdout, handle.stderr);
@@ -193,14 +193,16 @@ public final class MindustryClientRuntimeRegistry {
 
     /// Emitted once a process exits normally or with an error code.
     ///
-    /// The data directory is captured from the launch options so callers can
-    /// still open the correct log when an archive-backed runtime directory
-    /// was used for this launch.
+    /// The data directory and the launcher-captured log path are captured from
+    /// the launch options so callers can still open the correct log when an
+    /// archive-backed runtime directory was used for this launch, or when the
+    /// game died before writing its own `last_log.txt`.
     public record Exited(String id,
                          long pid,
                          int exitCode,
                          @Unmodifiable List<String> recentLines,
-                         Path dataDir)
+                         Path dataDir,
+                         @Nullable Path launchLogFile)
             implements ClientEvent {
     }
 
@@ -307,7 +309,8 @@ public final class MindustryClientRuntimeRegistry {
                 }
                 registry.removeIfCurrent(id, this);
                 if (!staleTerminated) {
-                    emit(listener, new Exited(id, pid(), code, lines, options.getDataDir()));
+                    emit(listener, new Exited(id, pid(), code, lines, options.getDataDir(),
+                            options.getLaunchLogFile()));
                 }
             });
         }

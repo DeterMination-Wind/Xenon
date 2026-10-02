@@ -36,6 +36,9 @@ import java.util.Objects;
  */
 @NotNullByDefault
 public final class MindustryVersion {
+    /** Folder name of the official Mindustry data directory inside the OS app-data root. */
+    public static final String DATA_DIR_NAME = "Mindustry";
+
     /** Stable identifier picked by the user (also the directory name). */
     private @Nullable String id;
     /** Display name (defaults to {@link #id} if absent). */
@@ -138,12 +141,12 @@ public final class MindustryVersion {
                 Path winRoot = appdata != null
                         ? Path.of(appdata)
                         : Path.of(System.getProperty("user.home", "."));
-                return winRoot.resolve("Mindustry").toAbsolutePath().normalize();
+                return winRoot.resolve(DATA_DIR_NAME).toAbsolutePath().normalize();
             case MACOS:
                 return Path.of(System.getProperty("user.home", "."),
-                        "Library", "Application Support", "Mindustry").toAbsolutePath().normalize();
+                        "Library", "Application Support", DATA_DIR_NAME).toAbsolutePath().normalize();
             default:
-                return Path.of(System.getProperty("user.home", "."), ".local", "share", "Mindustry")
+                return Path.of(System.getProperty("user.home", "."), ".local", "share", DATA_DIR_NAME)
                         .toAbsolutePath().normalize();
         }
     }
