@@ -98,6 +98,10 @@ public final class MdtbbsResourcePane extends BorderPane implements PageAware {
     private static final double PREVIEW_HEIGHT = 150.0;
     /// Card gap in the two-column grid.
     private static final double CARD_GAP = 12.0;
+    /// How many preview downloads may be in flight at once. The server renders
+    /// each map preview on demand, so a full page of cards must not hit it
+    /// with twenty simultaneous renders.
+    private static final int MAX_CONCURRENT_PREVIEWS = 3;
 
     /// Shared account coordinator.
     private final MdtbbsCommunity community = CommunityServices.community();
@@ -133,6 +137,9 @@ public final class MdtbbsResourcePane extends BorderPane implements PageAware {
     /// Preview URLs that already failed, so they are not requested again.
     private final java.util.Set<String> failedPreviews =
             java.util.concurrent.ConcurrentHashMap.newKeySet();
+    /// Limits how many preview downloads run concurrently.
+    private final java.util.concurrent.Semaphore previewSlots =
+            new java.util.concurrent.Semaphore(MAX_CONCURRENT_PREVIEWS);
 
     /// Whether the map mode is active.
     private boolean mapMode;
@@ -539,7 +546,10 @@ public final class MdtbbsResourcePane extends BorderPane implements PageAware {
             return;
         }
         Schedulers.io().execute(() -> {
+            boolean acquired = false;
             try {
+                previewSlots.acquire();
+                acquired = true;
                 byte[] bytes = client.downloadBytes(url);
                 Image image = new Image(new java.io.ByteArrayInputStream(bytes), 720, 0, true, true);
                 Platform.runLater(() -> {
@@ -550,9 +560,13 @@ public final class MdtbbsResourcePane extends BorderPane implements PageAware {
                     previewCache.put(url, image);
                     view.setImage(image);
                 });
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
             } catch (IOException | RuntimeException e) {
                 failedPreviews.add(url);
                 LOG.info("MDTBBS preview unavailable: " + url + " (" + e.getMessage() + ")");
+            } finally {
+                if (acquired) previewSlots.release();
             }
         });
     }
