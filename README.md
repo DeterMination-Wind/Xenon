@@ -16,9 +16,9 @@
 
 ### Xenon 是什么？
 
-Xenon 是一款面向 Mindustry 玩家和服主的跨平台桌面启动器与实例管理器。它把游戏安装、版本切换、Mod、存档、蓝图和服务器维护集中到一个入口中，让不同游戏环境彼此独立，却不需要手动整理 Java、启动参数和数据目录。
+Xenon 是一款面向 Mindustry 玩家和服主的跨平台桌面启动器与实例管理器。它把游戏安装、版本切换、Mod、存档、蓝图、云存档、MDTBBS 社区和服务器维护集中到一个入口中，让不同游戏环境彼此独立，却不需要手动整理 Java、启动参数和数据目录。
 
-**面向中国大陆用户：** Xenon 通过整合由启动器作者提供的镜像服务器、Wayzer 的 GitHub 镜像、MDT BBS 原版端镜像以及通用 GitHub 公益镜像等，为中国大陆用户带来 1 MB/s-30 MB/s 的超高速 Mindustry 资源下载体验。
+**面向中国大陆用户：** Xenon 通过整合由启动器作者提供的镜像服务器、Wayzer 的 GitHub 镜像、MDT BBS 原版端文件站以及通用 GitHub 公益镜像等，为中国大陆用户带来 1 MB/s-30 MB/s 的超高速 Mindustry 资源下载体验；原版安装包会优先从 MDT 文件站获取，失败时自动回退到其他镜像。
 
 Xenon 源自 [HMCL](https://github.com/HMCL-dev/HMCL)，并围绕 Mindustry 的实际使用方式重新组织。无论你是在多个客户端之间切换、维护不同的 Mod 组合，还是管理一台服务器，都可以从同一个地方开始。
 
@@ -35,6 +35,18 @@ Xenon 可以直接安装 Mindustry，也支持接入 Steam 中已有的安装或
 #### 让游戏内容跟着实例一起管理
 
 Mod、地图、蓝图和存档都可以围绕具体实例整理、备份和导出。完整的游戏环境还可以打包为 `.xenon` 文件，方便迁移或分享；地图则可以直接从 [mindustry.top](https://mindustry.top) 浏览和安装。
+
+#### 在启动器里参与 MDTBBS 社区
+
+内置 [MDTBBS](https://mdtbbs.cn/) 社区页，浏览版块和帖子、搜索、阅读正文与回复，发帖、回复、点赞、收藏和查看通知都无需打开网页。通过 MindAuth 在系统浏览器完成登录后自动返回启动器，帖子和回复的作者名可以直接打开用户主页。
+
+#### 蓝图、地图、存档都在实例旁边
+
+下载页的「资源」可以浏览和搜索 MDTBBS 上的蓝图与地图，预览后一键安装到指定实例，也可以把本地蓝图或地图提交审核。每个实例还提供「云存档」：云端槽位与历史快照、上传、一键恢复（恢复前自动备份本地文件）、固定重要版本并显示额度。
+
+#### 好友与联机邀请
+
+登录 MDTBBS 后，可以看到好友的在线状态与「正在玩」动态，并在好友面板里接受或拒绝联机邀请；`xenon://join?intent=` 链接会直接唤起启动器。当前版本完成联机信令，进入服务器仍在 Mindustry 内完成。
 
 #### 玩家和服主使用同一个工作台
 
@@ -87,9 +99,9 @@ GPLv3（沿用 HMCL）。详见 [LICENSE](LICENSE)。
 
 ### What is Xenon?
 
-Xenon is a cross-platform desktop launcher and instance manager for Mindustry players and server owners. It brings installation, version switching, mod management, saves, schematics, and server maintenance into one place, so different game environments stay separate without requiring you to manage Java, launch arguments, or data directories by hand.
+Xenon is a cross-platform desktop launcher and instance manager for Mindustry players and server owners. It brings installation, version switching, mod management, saves, schematics, cloud saves, the MDTBBS community, and server maintenance into one place, so different game environments stay separate without requiring you to manage Java, launch arguments, or data directories by hand.
 
-**For users in mainland China:** Xenon combines mirror servers provided by the launcher maintainer, Wayzer's GitHub mirror, the MDT BBS mirror for original Mindustry builds, and general-purpose public GitHub mirrors to deliver 1 MB/s-30 MB/s download speeds for Mindustry resources.
+**For users in mainland China:** Xenon combines mirror servers provided by the launcher maintainer, Wayzer's GitHub mirror, the MDT BBS file station for original Mindustry builds, and general-purpose public GitHub mirrors to deliver 1 MB/s-30 MB/s download speeds for Mindustry resources. Original builds are fetched from the MDT file station first and fall back to the other mirrors when it is unavailable.
 
 Xenon is based on [HMCL](https://github.com/HMCL-dev/HMCL), but its workflow is organized around the way Mindustry is actually played and hosted. Whether you switch between several clients, maintain different mod setups, or run a server, Xenon gives you one place to manage them.
 
@@ -106,6 +118,18 @@ Xenon can install Mindustry directly, discover an existing Steam installation, o
 #### Keep game content with its instance
 
 Mods, maps, schematics, and saves can be organized, backed up, and exported alongside the instance they belong to. An entire setup can also be packed as a `.xenon` file for migration or sharing, while maps can be browsed and installed from [mindustry.top](https://mindustry.top).
+
+#### Join the MDTBBS community inside the launcher
+
+Xenon ships a native [MDTBBS](https://mdtbbs.cn/) community page: browse categories and threads, search, read formatted posts and replies, and post, reply, like, bookmark or check notifications without a browser. MindAuth sign-in opens the system browser and returns to the launcher automatically, and author names link to their forum profiles.
+
+#### Resources, maps and saves live next to the instance
+
+The Resources tab on the download page browses and searches MDTBBS blueprints and maps, previews them, and installs them into the selected instance with one click; local blueprints or maps can be submitted for moderation too. Every instance also has Cloud saves: cloud slots and history, upload, one-click restore with an automatic local backup, pinning and quota display.
+
+#### Friends and multiplayer invites
+
+After signing in to MDTBBS, Xenon shows friends' online status and "playing now" activity, and the friends dialog lets you accept or decline multiplayer invites; `xenon://join?intent=` links bring the launcher to the foreground. Signalling is implemented in this release; joining the server still happens inside Mindustry.
 
 #### One workspace for players and server owners
 
