@@ -19,6 +19,7 @@ package determination.xenon.mindustry.ui;
 
 import com.jfoenix.controls.JFXButton;
 import com.jfoenix.controls.JFXTextField;
+import determination.xenon.mindustry.MindustryVersion;
 import determination.xenon.mindustry.mod.MindustryLocalMod;
 import determination.xenon.mindustry.mod.MindustryModManager;
 import determination.xenon.task.Schedulers;
@@ -37,6 +38,7 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 import javafx.stage.FileChooser;
+import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -51,8 +53,14 @@ import static determination.xenon.util.logging.Logger.LOG;
 /** Per-instance Mindustry mod manager — replaces HMCL's ModListPage for Mindustry instances. */
 public final class MindustryModListPane extends BorderPane {
 
+    private final Path dataDir;
     private final Path modsDir;
     private final MindustryModManager manager;
+    /// Instance descriptor used for post-install compatibility checks; `null`
+    /// when this pane is shared by the server mods page.
+    private final @Nullable MindustryVersion version;
+    /// Instance root paired with [#version] for compatibility checks; may be `null`.
+    private final @Nullable Path versionRoot;
     private final Label status = new Label();
     private final JFXTextField search = new JFXTextField();
     private final VBox listBox = new VBox(2);
@@ -60,6 +68,19 @@ public final class MindustryModListPane extends BorderPane {
     private List<MindustryLocalMod> allMods = List.of();
 
     public MindustryModListPane(Path dataDir) {
+        this(dataDir, null, null);
+    }
+
+    /// Creates a mod list pane for one instance.
+    ///
+    /// @param dataDir Mindustry data directory that owns `mods/`
+    /// @param version instance descriptor used for post-install compatibility
+    ///                checks; may be `null`
+    /// @param versionRoot instance root paired with `version`; may be `null`
+    public MindustryModListPane(Path dataDir, @Nullable MindustryVersion version, @Nullable Path versionRoot) {
+        this.dataDir = dataDir;
+        this.version = version;
+        this.versionRoot = versionRoot;
         this.modsDir = dataDir.resolve("mods");
         this.manager = new MindustryModManager(modsDir);
         setPadding(new Insets(12));
@@ -221,12 +242,37 @@ public final class MindustryModListPane extends BorderPane {
             try {
                 Files.createDirectories(modsDir);
                 manager.install(f.toPath());
+                List<MindustryCompatibility.Issue> issues = evaluateAfterInstall();
+                if (!issues.isEmpty()) {
+                    Platform.runLater(() -> MindustryCompatibility.showIssues(
+                            i18n("xenon.mindustry.install.compat.title"), issues));
+                }
                 Platform.runLater(this::reload);
             } catch (IOException ex) {
                 LOG.warning("Failed to install mod " + f, ex);
                 Platform.runLater(() -> showError(ex));
             }
         });
+    }
+
+    /// Re-evaluates instance compatibility after a mod install.
+    ///
+    /// Returns an empty list when this pane was created without instance
+    /// metadata, so the server mods page keeps its existing behavior. Must run
+    /// on the IO scheduler.
+    private List<MindustryCompatibility.Issue> evaluateAfterInstall() {
+        MindustryVersion version = this.version;
+        Path versionRoot = this.versionRoot;
+        if (version == null || versionRoot == null) {
+            return List.of();
+        }
+        try {
+            return MindustryCompatibility.forInstance(version, versionRoot, dataDir);
+        } catch (RuntimeException ex) {
+            // A failed evaluation must never block the post-install refresh.
+            LOG.warning("Failed to evaluate Mindustry compatibility after install", ex);
+            return List.of();
+        }
     }
 
     private void showError(Throwable ex) {

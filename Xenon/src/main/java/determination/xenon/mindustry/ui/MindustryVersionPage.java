@@ -47,7 +47,7 @@ import static determination.xenon.util.logging.Logger.LOG;
 /**
  * Per-instance management page for a Mindustry version. Mirrors HMCL's
  * {@code VersionPage} layout (left sidebar + transition pane) but every
- * tab is Mindustry-shaped: Mod / Save / Schematic / Crash. The HMCL
+ * tab is Mindustry-shaped: Mod / Save / Schematic / Crash / Health. The HMCL
  * VersionPage stays in place for legacy MC instances.
  */
 public final class MindustryVersionPage extends DecoratorAnimatedPage implements DecoratorPage, PageAware {
@@ -60,6 +60,7 @@ public final class MindustryVersionPage extends DecoratorAnimatedPage implements
     private final TabHeader.Tab<MindustrySaveListPane> saveTab = new TabHeader.Tab<>("saveTab");
     private final TabHeader.Tab<MindustrySchematicListPane> schematicTab = new TabHeader.Tab<>("schematicTab");
     private final TabHeader.Tab<MindustryCrashListPane> crashTab = new TabHeader.Tab<>("crashTab");
+    private final TabHeader.Tab<MindustryHealthPane> healthTab = new TabHeader.Tab<>("healthTab");
 
     private final MindustryVersion version;
     private final Path versionRoot;
@@ -80,12 +81,13 @@ public final class MindustryVersionPage extends DecoratorAnimatedPage implements
         this.launchDataDir = MindustryLaunchSaveService.resolveLaunchDataDir(
                 versionRoot, dataDir, version.getLaunchSaveFile());
 
-        modTab.setNodeSupplier(() -> new MindustryModListPane(dataDir));
+        modTab.setNodeSupplier(() -> new MindustryModListPane(dataDir, version, versionRoot));
         saveTab.setNodeSupplier(() -> new MindustrySaveListPane(repo, version, versionRoot));
         schematicTab.setNodeSupplier(() -> new MindustrySchematicListPane(dataDir));
         crashTab.setNodeSupplier(() -> new MindustryCrashListPane(launchDataDir, versionRoot, version.getVariant()));
+        healthTab.setNodeSupplier(() -> new MindustryHealthPane(version, versionRoot, dataDir));
 
-        tab = new TabHeader(transitionPane, modTab, saveTab, schematicTab, crashTab);
+        tab = new TabHeader(transitionPane, modTab, saveTab, schematicTab, crashTab, healthTab);
         tab.select(modTab);
 
         AdvancedListBox sideBar = new AdvancedListBox()
@@ -93,7 +95,8 @@ public final class MindustryVersionPage extends DecoratorAnimatedPage implements
                 .addNavigationDrawerTab(tab, modTab, i18n("xenon.mindustry.modlist.title"), SVG.EXTENSION, SVG.EXTENSION_FILL)
                 .addNavigationDrawerTab(tab, saveTab, i18n("xenon.mindustry.save.title"), SVG.ARCHIVE, SVG.ARCHIVE_FILL)
                 .addNavigationDrawerTab(tab, schematicTab, i18n("xenon.mindustry.schematic.title"), SVG.SCHEMA, SVG.SCHEMA_FILL)
-                .addNavigationDrawerTab(tab, crashTab, i18n("xenon.mindustry.logs.title"), SVG.SCRIPT);
+                .addNavigationDrawerTab(tab, crashTab, i18n("xenon.mindustry.logs.title"), SVG.SCRIPT)
+                .addNavigationDrawerTab(tab, healthTab, i18n("xenon.mindustry.health.title"), SVG.CHECK, SVG.CHECK_CIRCLE);
         VBox.setVgrow(sideBar, Priority.ALWAYS);
 
         AdvancedListBox toolbar = new AdvancedListBox()

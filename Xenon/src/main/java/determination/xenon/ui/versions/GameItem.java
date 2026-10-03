@@ -20,8 +20,11 @@ package determination.xenon.ui.versions;
 import javafx.beans.property.*;
 import javafx.scene.image.Image;
 import determination.xenon.download.LibraryAnalyzer;
+import determination.xenon.mindustry.MindustryImportFlow;
 import determination.xenon.mindustry.MindustryVersion;
 import determination.xenon.mindustry.MindustryVersionDisplay;
+import determination.xenon.mindustry.playtime.MindustryPlaytimeStore;
+import determination.xenon.mindustry.playtime.PlaytimeSummary;
 import determination.xenon.mindustry.ui.MindustryRoutes;
 import determination.xenon.mod.ModpackConfiguration;
 import determination.xenon.setting.Profile;
@@ -30,6 +33,8 @@ import determination.xenon.util.i18n.I18n;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
+import java.nio.file.Path;
+import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -87,6 +92,17 @@ public class GameItem {
                 String buildLabel = MindustryVersionDisplay.buildLabel(
                         v.getVariant(), v.getBuild(), v.getBuildType(), v.getId(), v.getJarPath());
                 if (!buildLabel.isEmpty()) sub.append("  ·  ").append(buildLabel);
+                try {
+                    Path versionRoot = MindustryImportFlow.repositoryForVersion(v).getVersionRoot(v);
+                    PlaytimeSummary s = new MindustryPlaytimeStore(versionRoot).readSummary();
+                    if (s.lastLaunchEpochMillis() > 0) {
+                        sub.append("  ·  ").append(i18n("xenon.mindustry.playtime.line",
+                                I18n.formatDateTime(Instant.ofEpochMilli(s.lastLaunchEpochMillis())),
+                                formatDuration(s.totalActiveMillis())));
+                    }
+                } catch (RuntimeException ex) {
+                    LOG.warning("Failed to read Mindustry playtime for " + id, ex);
+                }
                 subtitle.set(sub.toString());
                 tag.set("Mindustry");
             }
@@ -160,6 +176,16 @@ public class GameItem {
 
         title.set(id);
         image.set(profile.getRepository().getVersionIconImage(id));
+    }
+
+    /// Formats a playtime duration as localized hours/minutes or minutes.
+    private static String formatDuration(long millis) {
+        long hours = millis / 3_600_000;
+        long minutes = (millis % 3_600_000) / 60_000;
+        if (hours > 0) {
+            return i18n("xenon.mindustry.playtime.duration.hm", hours, minutes);
+        }
+        return i18n("xenon.mindustry.playtime.duration.m", minutes);
     }
 
     public ReadOnlyStringProperty titleProperty() {

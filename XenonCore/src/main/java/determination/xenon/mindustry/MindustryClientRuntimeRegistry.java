@@ -141,7 +141,7 @@ public final class MindustryClientRuntimeRegistry {
 
         handles.remove(handle.id, handle);
         emit(handle.listener, new Exited(handle.id, handle.pid(), exitCode, recentLines,
-                handle.options.getDataDir(), handle.options.getLaunchLogFile()));
+                handle.options.getDataDir(), handle.options.getLaunchLogFile(), true));
 
         RuntimeHandle replacement = new RuntimeHandle(handle.id, handle.options,
                 handle.listener, handle.stdout, handle.stderr);
@@ -197,12 +197,18 @@ public final class MindustryClientRuntimeRegistry {
     /// the launch options so callers can still open the correct log when an
     /// archive-backed runtime directory was used for this launch, or when the
     /// game died before writing its own `last_log.txt`.
+    ///
+    /// `reloadExit` is true when Mindustry exited intentionally to reload its
+    /// mods; a replacement [Started] event follows immediately, so callers
+    /// should treat the instance as still running. For every other exit the
+    /// flag is false and the process is gone for good.
     public record Exited(String id,
                          long pid,
                          int exitCode,
                          @Unmodifiable List<String> recentLines,
                          Path dataDir,
-                         @Nullable Path launchLogFile)
+                         @Nullable Path launchLogFile,
+                         boolean reloadExit)
             implements ClientEvent {
     }
 
@@ -310,7 +316,7 @@ public final class MindustryClientRuntimeRegistry {
                 registry.removeIfCurrent(id, this);
                 if (!staleTerminated) {
                     emit(listener, new Exited(id, pid(), code, lines, options.getDataDir(),
-                            options.getLaunchLogFile()));
+                            options.getLaunchLogFile(), false));
                 }
             });
         }

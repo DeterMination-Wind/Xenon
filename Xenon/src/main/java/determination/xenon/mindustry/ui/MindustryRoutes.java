@@ -27,6 +27,7 @@ import determination.xenon.mindustry.MindustryVersion;
 import determination.xenon.mindustry.XenonGameRepository;
 import determination.xenon.mindustry.XenonLauncher;
 import determination.xenon.mindustry.modpack.XenonModpackPacker;
+import determination.xenon.mindustry.playtime.MindustryPlaytimeStore;
 import determination.xenon.setting.Profile;
 import determination.xenon.setting.Profiles;
 import determination.xenon.task.FetchTask;
@@ -71,6 +72,11 @@ public final class MindustryRoutes {
     private static final int RECENT_LINE_DISPLAY_LIMIT = 12;
     private static final Map<String, CopyOnWriteArrayList<Runnable>> MOD_PANE_REFRESH_LISTENERS =
             new ConcurrentHashMap<>();
+
+    /// Live playtime sessions of this launcher process, keyed by instance id
+    /// and valued by the pid that started the session. Reload relaunches keep
+    /// the original pid so the recorded session spans the whole play run.
+    private static final Map<String, Long> ACTIVE_SESSIONS = new ConcurrentHashMap<>();
 
     private MindustryRoutes() {}
 
@@ -272,9 +278,11 @@ public final class MindustryRoutes {
         Schedulers.io().execute(() -> {
             try {
                 XenonGameRepository repo = MindustryImportFlow.repositoryForVersion(version);
+                Path versionRoot = repo.getVersionRoot(version);
                 LaunchOptions opts = MindustryLaunchService.buildLaunchOptions(repo, version,
                         determination.xenon.mindustry.CurrentPlayerProfile.current());
-                MindustryClientRuntimeRegistry.shared().launch(id, opts, MindustryRoutes::onClientEvent,
+                MindustryClientRuntimeRegistry.shared().launch(id, opts,
+                        event -> onClientEvent(versionRoot, event),
                         line -> LOG.info("[mindustry] " + line),
                         line -> LOG.warning("[mindustry] " + line));
             } catch (Throwable ex) {
@@ -286,10 +294,20 @@ public final class MindustryRoutes {
         });
     }
 
-    private static void onClientEvent(MindustryClientRuntimeRegistry.ClientEvent event) {
+    private static void onClientEvent(Path versionRoot, MindustryClientRuntimeRegistry.ClientEvent event) {
         if (event instanceof MindustryClientRuntimeRegistry.Started started) {
             LOG.info("Mindustry process started: id=" + started.id() + ", pid=" + started.pid());
             CommunityServices.presence().publishPlaying(started.id(), null, null);
+            if (ACTIVE_SESSIONS.putIfAbsent(started.id(), started.pid()) == null) {
+                Schedulers.io().execute(() -> {
+                    try {
+                        new MindustryPlaytimeStore(versionRoot)
+                                .recordStart(started.pid(), System.currentTimeMillis());
+                    } catch (IOException ex) {
+                        LOG.warning("Failed to record Mindustry playtime start for " + started.id(), ex);
+                    }
+                });
+            }
         } else if (event instanceof MindustryClientRuntimeRegistry.AlreadyRunning alreadyRunning) {
             LOG.info("Ignored duplicate Mindustry launch request for " + alreadyRunning.id()
                     + ", pid=" + alreadyRunning.pid());
@@ -309,6 +327,22 @@ public final class MindustryRoutes {
                         .ok(null)
                         .build()));
             }
+            if (exited.reloadExit()) {
+                // Mindustry restarts itself after mod changes; keep the playtime
+                // session open because a replacement Started event follows.
+                return;
+            }
+            Long sessionPid = ACTIVE_SESSIONS.remove(exited.id());
+            if (sessionPid != null) {
+                Schedulers.io().execute(() -> {
+                    try {
+                        new MindustryPlaytimeStore(versionRoot)
+                                .recordEnd(sessionPid, System.currentTimeMillis());
+                    } catch (IOException ex) {
+                        LOG.warning("Failed to record Mindustry playtime end for " + exited.id(), ex);
+                    }
+                });
+            }
         } else if (event instanceof MindustryClientRuntimeRegistry.WindowlessProcessTerminated terminated) {
             LOG.warning("Terminated windowless Mindustry process: id=" + terminated.id()
                     + ", pid=" + terminated.pid());
@@ -321,8 +355,36 @@ public final class MindustryRoutes {
                             i18n("message.error"), MessageDialogPane.MessageType.ERROR);
                 }
             });
+            if (!terminated.relaunching()) {
+                Long sessionPid = ACTIVE_SESSIONS.remove(terminated.id());
+                if (sessionPid != null) {
+                    Schedulers.io().execute(() -> {
+                        try {
+                            new MindustryPlaytimeStore(versionRoot)
+                                    .recordEnd(sessionPid, System.currentTimeMillis());
+                        } catch (IOException ex) {
+                            LOG.warning("Failed to record Mindustry playtime end for "
+                                    + terminated.id(), ex);
+                        }
+                    });
+                }
+            }
         } else if (event instanceof MindustryClientRuntimeRegistry.LaunchFailed failed) {
             LOG.warning("Mindustry runtime launch failed: id=" + failed.id(), failed.error());
+            // A relaunch after a windowless-process termination may fail
+            // before the replacement starts; close the still-open session so
+            // it cannot absorb the duration of a later play run.
+            Long sessionPid = ACTIVE_SESSIONS.remove(failed.id());
+            if (sessionPid != null) {
+                Schedulers.io().execute(() -> {
+                    try {
+                        new MindustryPlaytimeStore(versionRoot)
+                                .recordEnd(sessionPid, System.currentTimeMillis());
+                    } catch (IOException ex) {
+                        LOG.warning("Failed to record Mindustry playtime end for " + failed.id(), ex);
+                    }
+                });
+            }
         }
     }
 

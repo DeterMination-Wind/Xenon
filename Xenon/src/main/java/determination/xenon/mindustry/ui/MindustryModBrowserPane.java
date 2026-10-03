@@ -598,6 +598,16 @@ public final class MindustryModBrowserPane extends BorderPane implements PageAwa
             if (ex == null) {
                 Controllers.showToast(i18n("xenon.mindustry.mod.browser.installed.into",
                         label, targetName));
+                Schedulers.io().execute(() -> {
+                    try {
+                        List<MindustryCompatibility.Issue> issues =
+                                MindustryCompatibility.forInstance(target, versionRoot, dataDir);
+                        Platform.runLater(() -> MindustryCompatibility.showIssues(
+                                i18n("xenon.mindustry.install.compat.title"), issues));
+                    } catch (RuntimeException evaluationError) {
+                        LOG.warning("Failed to evaluate Mindustry compatibility after install", evaluationError);
+                    }
+                });
             } else {
                 String msg = ex.getMessage() == null ? ex.toString() : ex.getMessage();
                 LOG.warning("Failed to install mod " + ownerRepo + " into " + target.getId(), ex);
