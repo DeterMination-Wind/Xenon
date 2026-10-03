@@ -417,6 +417,26 @@ public final class FileUtils {
         }
     }
 
+    /// Deletes `path` by moving it to the platform trash when possible.
+    ///
+    /// Falls back to a permanent delete when the platform has no trash
+    /// support (or the move fails), so user-visible file deletions can all
+    /// route through this method. A missing path counts as already deleted.
+    ///
+    /// @param path file to remove
+    /// @return whether the path no longer exists at its original location
+    /// @throws IOException when neither the trash move nor the permanent delete succeeded
+    public static boolean deleteSafely(Path path) throws IOException {
+        Objects.requireNonNull(path, "path");
+        if (!Files.exists(path)) {
+            return true;
+        }
+        if (moveToTrash(path)) {
+            return true;
+        }
+        return Files.deleteIfExists(path);
+    }
+
     public static void cleanDirectory(Path directory)
             throws IOException {
         if (!Files.exists(directory)) {

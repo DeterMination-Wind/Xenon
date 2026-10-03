@@ -22,12 +22,17 @@ import determination.xenon.mindustry.save.MindustryLaunchSaveService;
 import determination.xenon.mindustry.uuid.MindustryPlayerLaunchHook;
 import determination.xenon.mindustry.uuid.MindustrySettingsBin;
 import determination.xenon.mindustry.uuid.UuidProfile;
+import determination.xenon.setting.Profile;
+import determination.xenon.setting.Profiles;
+import determination.xenon.setting.VersionSetting;
+import determination.xenon.util.platform.SystemInfo;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.List;
 import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -161,6 +166,7 @@ public final class MindustryLaunchService {
                 .launchLogFile(launchLog)
                 .jvmArgs(LaunchOptions.tokenize(version.getJvmArgs()))
                 .gameArgs(LaunchOptions.tokenize(version.getGameArgs()));
+        applyMemoryDefaults(builder, version, dataDir);
 
         if (playerProfile != null
                 && playerProfile.uuid != null && !playerProfile.uuid.isBlank()
@@ -180,5 +186,41 @@ public final class MindustryLaunchService {
     /** {@code <config>/versions} convenience accessor. */
     public static Path defaultVersionsRoot() {
         return Metadata.getVersionsDirectory();
+    }
+
+    /// Applies heap defaults for one instance.
+    ///
+    /// Priority: an explicit `-Xmx` inside the version's own JVM arguments
+    /// wins, then a non-automatic per-version setting, and finally the
+    /// mod-size-aware automatic suggestion. Without this the launcher would
+    /// always request the 1 GiB default, which is not enough for modded
+    /// instances.
+    ///
+    /// @param builder   launch options under construction
+    /// @param version   instance about to launch
+    /// @param dataDir   effective Mindustry data directory of the launch
+    private static void applyMemoryDefaults(LaunchOptions.Builder builder,
+                                            MindustryVersion version,
+                                            Path dataDir) {
+        List<String> jvmArgs = LaunchOptions.tokenize(version.getJvmArgs());
+        if (MindustryMemoryPolicy.hasExplicitHeapLimit(jvmArgs)) {
+            return;
+        }
+        Profile profile = Profiles.getSelectedProfile();
+        VersionSetting setting = profile == null ? null : profile.getVersionSetting(version.getId());
+        if (setting != null && !setting.isAutoMemory()) {
+            builder.maxHeapMb(setting.getMaxMemory());
+            if (setting.getMinMemory() != null) {
+                builder.minHeapMb(setting.getMinMemory());
+            }
+            return;
+        }
+        long totalMb = SystemInfo.getTotalMemorySize() / (1024L * 1024L);
+        long availableMb = SystemInfo.getPhysicalMemoryStatus().getAvailable() / (1024L * 1024L);
+        long modsBytes = MindustryMemoryPolicy.measureEnabledModsBytes(dataDir);
+        builder.maxHeapMb(MindustryMemoryPolicy.suggestHeapMb(totalMb, availableMb, modsBytes));
+        if (setting != null && setting.getMinMemory() != null) {
+            builder.minHeapMb(setting.getMinMemory());
+        }
     }
 }

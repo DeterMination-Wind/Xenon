@@ -66,12 +66,19 @@ public final class Settings {
         return Metadata.XENON_GLOBAL_DIRECTORY.toString();
     }
 
+    /// The directory portable mode stores launcher data in.
+    public static String getPortableCommonDirectory() {
+        return Metadata.getPortableDirectory().toString();
+    }
+
     public String getCommonDirectory() {
         switch (config().getCommonDirType()) {
             case DEFAULT:
                 return getDefaultCommonDirectory();
             case CUSTOM:
                 return config().getCommonDirectory();
+            case PORTABLE:
+                return getPortableCommonDirectory();
             default:
                 return null;
         }

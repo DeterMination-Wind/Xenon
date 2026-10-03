@@ -111,7 +111,7 @@ public final class MindustryXVersionList extends MindustryVersionList {
                         r.getPublishedAt(),
                         asset.getSize(),
                         r.getTagName(),
-                        asset.getName()));
+                        asset.getName()).withReleaseNotes(r.getBody()));
             }
             if (!out.isEmpty()) return out;
             Logger.LOG.warning("GitHub MindustryX feed returned no usable rows; falling back to mindustry.top");

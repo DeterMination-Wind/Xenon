@@ -30,7 +30,7 @@ Xenon 源自 [HMCL](https://github.com/HMCL-dev/HMCL)，并围绕 Mindustry 的�
 
 #### 把安装和下载交给启动器
 
-Xenon 可以直接安装 Mindustry，也支持接入 Steam 中已有的安装或导入本地版本。启动器会协助准备 Java 和数据目录，并针对不同网络环境使用可用的下载来源，在来源不可用时自动回退。
+Xenon 可以直接安装 Mindustry，也支持接入 Steam 中已有的安装或导入本地版本。启动器会协助准备 Java 和数据目录，并针对不同网络环境使用可用的下载来源，在来源不可用时自动回退。下载支持断点续传与暂停/继续，中断后重新安装会从已下载的字节继续；在设置中填入 GitHub Token 还可以把 GitHub API 额度从每小时 60 次提升到 5000 次。
 
 #### 让游戏内容跟着实例一起管理
 
@@ -51,6 +51,10 @@ Mod、地图、蓝图和存档都可以围绕具体实例整理、备份和导�
 #### 玩家和服主使用同一个工作台
 
 除了启动本地游戏，Xenon 也能管理多个 Mindustry 服务器实例。服主可以在同一处处理运行状态、控制台、配置和自动重启，并使用 [ScriptAgent4Mindustry](https://github.com/way-zer/ScriptAgent4Mindustry) 管理脚本环境。
+
+#### 联机与实例小工具
+
+「联机」页内置官方公共服务器列表，也可以用六位房号通过 EasyTier 快速组建 P2P 房间；实例页的「迁移数据」可以从其他实例复制存档、mod、蓝图、地图与游玩统计；启动内存会结合已启用 mod 的体积自动推荐；便携版还能用启动器目录下的 `Xenon.portable` 标记把所有数据保存在程序目录中。
 
 #### 出现问题时更容易找到原因
 
@@ -136,7 +140,7 @@ Official, testing, and community clients can live side by side. Each instance ke
 
 #### Let the launcher handle installation
 
-Xenon can install Mindustry directly, discover an existing Steam installation, or import a local build. It helps prepare Java and data directories and uses available download sources for different network conditions, with automatic fallback when a source is unavailable.
+Xenon can install Mindustry directly, discover an existing Steam installation, or import a local build. It helps prepare Java and data directories and uses available download sources for different network conditions, with automatic fallback when a source is unavailable. Downloads are resumable and can be paused and continued, so a retried installation picks up from the last byte; adding a GitHub token in the settings raises the API rate limit from 60 to 5000 requests per hour.
 
 #### Keep game content with its instance
 
@@ -157,6 +161,10 @@ After signing in to MDTBBS, Xenon shows friends' online status and "playing now"
 #### One workspace for players and server owners
 
 Xenon also manages multiple Mindustry server instances. Server owners can handle runtime status, console access, configuration, and automatic restarts in the same workspace, with [ScriptAgent4Mindustry](https://github.com/way-zer/ScriptAgent4Mindustry) support for script management.
+
+#### Netplay and instance tools
+
+The Netplay page ships the official public server list and creates EasyTier P2P rooms from a six-digit code. Each instance gains a Migrate data dialog that copies saves, mods, schematics, maps and playtime from another instance; launch memory is suggested from the enabled mod set; and the portable build can keep all data next to the launcher through the `Xenon.portable` marker.
 
 #### Make troubleshooting less painful
 

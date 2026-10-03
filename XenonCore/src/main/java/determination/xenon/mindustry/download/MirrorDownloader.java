@@ -170,11 +170,30 @@ public final class MirrorDownloader {
     /// `progress` receives `(read, total)` and may be `null`.
     public void download(String githubUrl, Path target, long expectedSize,
                          @Nullable ProgressCallback progress) throws IOException {
+        download(githubUrl, target, expectedSize, progress, null);
+    }
+
+    /// Downloads a canonical GitHub URL with optional pause/cancel support.
+    ///
+    /// Downloads that carry a {@link DownloadControl} — or that already have
+    /// a resumable partial file — take the single-stream resume path so an
+    /// interrupted transfer continues from its last byte. Everything else
+    /// keeps the racing strategy, which is faster when starting from zero.
+    ///
+    /// @param control pause/resume/cancel state, or `null` for a plain download
+    public void download(String githubUrl, Path target, long expectedSize,
+                         @Nullable ProgressCallback progress,
+                         @Nullable DownloadControl control) throws IOException {
         if (githubUrl == null || githubUrl.isEmpty()) {
             throw new IOException("Missing source URL");
         }
         @Nullable Path parent = target.getParent();
         if (parent != null) Files.createDirectories(parent);
+
+        if (control != null || ResumableDownloader.hasPartial(target)) {
+            resumableDownload(githubUrl, target, expectedSize, progress, control);
+            return;
+        }
 
         // Non-GitHub origins (alist mirror, mindustry.top static asset, …)
         // can't be wrapped with the mirror prefix list. Hit them directly.
@@ -300,6 +319,90 @@ public final class MirrorDownloader {
             }
         }
         // All retries exhausted — throw with a user-friendly message.
+        throw new IOException(friendlyMessage(lastError), lastError);
+    }
+
+    // ------------------------------------------------------------------
+    // Resumable single-stream path
+    // ------------------------------------------------------------------
+
+    /// One download candidate: a label, its concrete URL, and the mirror base
+    /// used for preferred-mirror caching (`null` for the file station and the
+    /// direct origin).
+    private record Candidate(String label, String url, @Nullable String mirrorBase) {
+    }
+
+    /// Single-stream, resumable download with mirror failover.
+    ///
+    /// Candidates are probed so the fastest reachable mirror is tried first.
+    /// A candidate that dies mid-stream keeps its partial file, which the
+    /// next candidate continues with a `Range` request; cancellation deletes
+    /// the partial files.
+    private void resumableDownload(String githubUrl, Path target, long expectedSize,
+                                   @Nullable ProgressCallback progress,
+                                   @Nullable DownloadControl control) throws IOException {
+        if (control != null && control.isCancelled()) {
+            ResumableDownloader.discardPartial(target);
+            throw new ResumableDownloader.DownloadCancelledException(
+                    "Cancelled before starting " + target);
+        }
+
+        List<Candidate> candidates = new ArrayList<>();
+        if (isGithubOrigin(githubUrl)) {
+            // 像素工厂文件站 first: it is the fastest source in mainland China.
+            @Nullable String fileStation = MdtbbsFileMirror.lookup(githubUrl);
+            if (fileStation != null) {
+                candidates.add(new Candidate("file station", fileStation, null));
+            }
+            List<Probe> survivors = probeAll(githubUrl);
+            survivors.sort(Comparator.comparingLong(p -> p.latencyMs));
+            @Nullable String preferred = readPreferredMirror();
+            if (preferred != null) {
+                for (int i = 0; i < survivors.size(); i++) {
+                    if (survivors.get(i).label.equals("mirror:" + preferred)) {
+                        Probe p = survivors.remove(i);
+                        survivors.add(0, p);
+                        Logger.LOG.info("MirrorDownloader: cached preferred mirror "
+                                + preferred + " promoted for resumable download");
+                        break;
+                    }
+                }
+            }
+            for (Probe p : survivors) {
+                String base = p.label.startsWith("mirror:")
+                        ? p.label.substring("mirror:".length()) : null;
+                candidates.add(new Candidate(p.label, p.url, base));
+            }
+            if (includeDirectOrigin) {
+                candidates.add(new Candidate("direct", githubUrl, null));
+            }
+        } else {
+            candidates.add(new Candidate("direct", githubUrl, null));
+        }
+        if (candidates.isEmpty()) {
+            throw new IOException("No reachable mirrors for " + githubUrl);
+        }
+
+        @Nullable IOException lastError = null;
+        ResumableDownloader downloader = new ResumableDownloader();
+        for (Candidate candidate : candidates) {
+            try {
+                downloader.download(candidate.url, target, expectedSize, progress, control);
+                if (candidate.mirrorBase() != null) {
+                    writePreferredMirror(candidate.mirrorBase());
+                }
+                Logger.LOG.info("MirrorDownloader: " + candidate.label()
+                        + " finished " + target.getFileName());
+                return; // success — do not fail over
+            } catch (ResumableDownloader.DownloadCancelledException e) {
+                throw e; // user cancelled: never retry, partial files are gone
+            } catch (IOException e) {
+                lastError = e;
+                Logger.LOG.warning("MirrorDownloader: " + candidate.label()
+                        + " failed for " + githubUrl + " (" + e.getMessage()
+                        + "); trying the next candidate");
+            }
+        }
         throw new IOException(friendlyMessage(lastError), lastError);
     }
 

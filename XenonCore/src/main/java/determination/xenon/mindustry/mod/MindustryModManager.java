@@ -18,6 +18,7 @@
 package determination.xenon.mindustry.mod;
 
 import determination.xenon.mindustry.uuid.MindustrySettingsBin;
+import determination.xenon.util.io.FileUtils;
 import determination.xenon.util.logging.Logger;
 
 import java.io.IOException;
@@ -233,9 +234,9 @@ public final class MindustryModManager {
         writeEnabledSetting(mod, false);
     }
 
-    /** Permanently remove the underlying archive from disk. */
+    /** Remove the underlying archive, preferring the platform trash. */
     public void delete(MindustryLocalMod mod) throws IOException {
-        Files.deleteIfExists(mod.getFile());
+        FileUtils.deleteSafely(mod.getFile());
     }
 
     /**

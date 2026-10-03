@@ -28,21 +28,31 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 
-/**
- * HMCL-{@link Task} adapter around {@link MirrorDownloader}.
- *
- * <p>Reports {@code (read, total)} into {@link Task#updateProgress} so
- * {@code TaskListPane} draws the per-subtask bar, and inherits the
- * global download-speed counter for free since {@link MirrorDownloader}
- * already feeds {@link determination.xenon.task.FetchTask#recordDownloadedBytes}.</p>
- */
+/// HMCL-{@link Task} adapter around {@link MirrorDownloader}.
+///
+/// <p>Reports {@code (read, total)} into {@link Task#updateProgress} so
+/// {@code TaskListPane} draws the per-subtask bar, and inherits the
+/// global download-speed counter for free since the downloaders already
+/// feed {@link determination.xenon.task.FetchTask#recordDownloadedBytes}.</p>
+///
+/// <p>Every task owns a {@link DownloadControl} published under
+/// {@link #CONTROL_PROPERTY}; the wizard dialog reads it to offer a
+/// pause/resume button. Interrupted transfers keep a `.part` file, so
+/// retries and restarted launchers resume instead of starting over.</p>
 public final class MindustryDownloadTask extends Task<Void> {
+
+    /// Task property key carrying the {@link DownloadControl} instance.
+    public static final String CONTROL_PROPERTY = "xenon.download.control";
+
     private final String sourceUrl;
     private final Path target;
     private final long expectedSize;
     private final Path cachesRoot;
     private final boolean archive;
     private final @org.jetbrains.annotations.Nullable String fallbackUrl;
+
+    /// Pause/resume/cancel state shared with the progress dialog.
+    private final DownloadControl control = new DownloadControl();
 
     /**
      * @param sourceUrl    direct jar URL, or a platform zip URL when {@code archive} is true
@@ -73,18 +83,28 @@ public final class MindustryDownloadTask extends Task<Void> {
         this.archive = archive;
         this.fallbackUrl = fallbackUrl == null || fallbackUrl.isBlank() ? null : fallbackUrl;
         setName(target.getFileName().toString());
+        getProperties().put(CONTROL_PROPERTY, control);
+    }
+
+    /// The pause/resume/cancel state of this download.
+    public DownloadControl getDownloadControl() {
+        return control;
     }
 
     @Override
     public void execute() throws Exception {
         if (!archive) {
             try {
-                new MirrorDownloader(cachesRoot).download(sourceUrl, target, expectedSize, this::updateDownloadProgress);
+                new MirrorDownloader(cachesRoot).download(sourceUrl, target, expectedSize,
+                        this::updateDownloadProgress, control);
+            } catch (ResumableDownloader.DownloadCancelledException cancelled) {
+                throw cancelled; // user cancelled: never try the fallback URL
             } catch (IOException primary) {
                 if (fallbackUrl == null || fallbackUrl.equals(sourceUrl)) throw primary;
                 Logger.LOG.warning("Primary Mindustry download failed (" + primary.getMessage()
                         + "); trying " + fallbackUrl);
-                new MirrorDownloader(cachesRoot).download(fallbackUrl, target, expectedSize, this::updateDownloadProgress);
+                new MirrorDownloader(cachesRoot).download(fallbackUrl, target, expectedSize,
+                        this::updateDownloadProgress, control);
             }
             return;
         }
@@ -94,19 +114,36 @@ public final class MindustryDownloadTask extends Task<Void> {
         Path staging = parent.resolve("_xenon_mindustry_archive");
         Files.createDirectories(staging);
         Path zip = staging.resolve(target.getFileName() + ".zip");
+        boolean completed = false;
         try {
-            new MdtbbsSegmentedDownloader().download(sourceUrl, zip, expectedSize,
-                    this::updateDownloadProgress);
+            new ResumableDownloader().download(sourceUrl, zip, expectedSize,
+                    this::updateDownloadProgress, control);
             extractMindustryJar(zip, target);
             Files.createDirectories(target.getParent());
+            completed = true;
             Logger.LOG.info("Extracted Mindustry.jar from " + sourceUrl);
         } finally {
-            Files.deleteIfExists(zip);
-            Files.deleteIfExists(staging);
+            // Keep the staging archive (and its `.part` resume data) after a
+            // failure so the next attempt continues from the last byte; clean
+            // up on success or when the user cancelled the download.
+            if (completed || control.isCancelled()) {
+                Files.deleteIfExists(zip);
+                try {
+                    Files.deleteIfExists(staging);
+                } catch (java.nio.file.DirectoryNotEmptyException ignored) {
+                    // A leftover partial file keeps the staging directory alive.
+                }
+            }
         }
     }
 
     private void updateDownloadProgress(long read, long total) {
+        // Propagate HMCL's task cancellation into the download control so the
+        // cancel contract (stop + remove partial files) also applies when the
+        // executor interrupts the worker.
+        if (isCancelled()) {
+            control.cancel();
+        }
         // updateProgress requires read <= total > 0; bail if total is unknown.
         if (total > 0 && read >= 0) {
             long capped = Math.min(read, total);

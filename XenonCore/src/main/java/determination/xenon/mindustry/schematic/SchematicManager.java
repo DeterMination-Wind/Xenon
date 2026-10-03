@@ -17,6 +17,7 @@
  */
 package determination.xenon.mindustry.schematic;
 
+import determination.xenon.util.io.FileUtils;
 import determination.xenon.util.logging.Logger;
 
 import java.io.IOException;
@@ -211,12 +212,12 @@ public final class SchematicManager {
     }
 
     /**
-     * Delete {@code msch} from the filesystem. No-op if the file is already
-     * gone.
+     * Delete {@code msch} from the filesystem, preferring the platform
+     * trash. No-op if the file is already gone.
      */
     public void delete(Path msch) throws IOException {
         Objects.requireNonNull(msch, "msch");
-        if (Files.deleteIfExists(msch)) {
+        if (FileUtils.deleteSafely(msch)) {
             Logger.LOG.info("Deleted schematic " + msch);
         }
     }

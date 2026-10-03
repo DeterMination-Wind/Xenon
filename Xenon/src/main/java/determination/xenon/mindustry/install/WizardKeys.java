@@ -36,4 +36,8 @@ public final class WizardKeys {
     public static final SettingsMap.Key<DataDirectoryPolicy> DATA_DIR_POLICY = new SettingsMap.Key<>("xenon.data_dir_policy");
     public static final SettingsMap.Key<String> CUSTOM_DATA_DIR = new SettingsMap.Key<>("xenon.custom_data_dir");
     public static final SettingsMap.Key<Boolean> OVERRIDE_EXISTING = new SettingsMap.Key<>("xenon.override_existing");
+
+    /// Optional source instance whose saves / mods / schematics / maps the new
+    /// instance should start with.
+    public static final SettingsMap.Key<String> COPY_FROM = new SettingsMap.Key<>("xenon.copy_from");
 }

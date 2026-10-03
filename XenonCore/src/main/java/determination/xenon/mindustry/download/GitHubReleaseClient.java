@@ -359,6 +359,9 @@ public final class GitHubReleaseClient {
                 .header("Accept", "application/vnd.github+json")
                 .header("X-GitHub-Api-Version", "2022-11-28")
                 .header("User-Agent", "Xenon-Launcher");
+        // Attach the optional token only when the final URL still targets
+        // api.github.com; mirror hosts must never see the credential.
+        GitHubAuth.authorize(rb, URI.create(mirroredUrl));
         if (bodyFile != null && Files.isRegularFile(bodyFile)) {
             if (etag != null) rb.header("If-None-Match", etag);
             if (lastModified != null) rb.header("If-Modified-Since", lastModified);
@@ -371,6 +374,7 @@ public final class GitHubReleaseClient {
             Thread.currentThread().interrupt();
             throw new IOException("Interrupted contacting " + mirroredUrl, e);
         }
+        GitHubAuth.recordRateLimit(resp);
 
         int code = resp.statusCode();
         if (code == 304) {
@@ -390,6 +394,12 @@ public final class GitHubReleaseClient {
             return body;
         }
         // Treat 4xx/5xx as a mirror failure so the caller picks another one.
+        if (code == 403 && !GitHubAuth.hasToken()) {
+            // GitHub answers rate limits with 403 + a JSON body; the anonymous
+            // budget is only 60 requests per hour.
+            throw new IOException("GitHub HTTP 403 for " + mirroredUrl
+                    + " (likely the anonymous API rate limit; configure a GitHub token in Settings - Download)");
+        }
         throw new IOException("GitHub HTTP " + code + " for " + mirroredUrl);
     }
 

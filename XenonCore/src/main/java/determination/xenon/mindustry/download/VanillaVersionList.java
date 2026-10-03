@@ -85,7 +85,7 @@ public final class VanillaVersionList extends MindustryVersionList {
                         release.getPublishedAt(),
                         asset.getSize(),
                         release.getTagName(),
-                        asset.getName()));
+                        asset.getName()).withReleaseNotes(release.getBody()));
             }
             if (!out.isEmpty()) {
                 out.sort(Comparator.comparingInt(MindustryRemoteVersion::getBuild).reversed());

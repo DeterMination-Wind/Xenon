@@ -79,7 +79,7 @@ public final class FooVersionList extends MindustryVersionList {
                     r.getPublishedAt(),
                     asset.getSize(),
                     r.getTagName(),
-                    asset.getName()));
+                    asset.getName()).withReleaseNotes(r.getBody()));
         }
         return out;
     }

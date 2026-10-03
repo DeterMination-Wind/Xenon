@@ -25,6 +25,7 @@ import determination.xenon.mindustry.XenonGameRepository;
 import determination.xenon.mindustry.download.GitHubReleaseClient;
 import determination.xenon.mindustry.download.MindustryDownloadTask;
 import determination.xenon.mindustry.download.MindustryRemoteVersion;
+import determination.xenon.mindustry.migrate.InstanceDataMigration;
 import determination.xenon.mindustry.mod.GitHubDirectInstaller;
 import determination.xenon.mindustry.mod.MindustryModManager;
 import determination.xenon.mindustry.mod.MindustryModsIndexRepository;
@@ -41,6 +42,7 @@ import javafx.scene.Node;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Objects;
 
@@ -213,9 +215,45 @@ public final class XenonInstallWizardProvider implements WizardProvider {
             }
         }).setName(i18n("xenon.install.task.preload"));
 
-        // installJar and preloadStage run in parallel off prepareDir;
-        // whenComplete fires after both branches finish.
-        return Task.allOf(installJar, preloadStage)
+        // Stage 5 (optional): seed the new instance from an existing one.
+        String copyFrom = settings.get(WizardKeys.COPY_FROM);
+        Task<Void> copyStage = save.thenRunAsync(Schedulers.io(), () -> {
+            if (copyFrom == null || copyFrom.isBlank()) return;
+            MindustryVersion source = repo.get(copyFrom).orElse(null);
+            if (source == null) {
+                LOG.warning("Copy source instance " + copyFrom + " no longer exists; skipped");
+                return;
+            }
+            MindustryVersion target = repo.get(id).orElseThrow();
+            Path sourceRoot = repo.getVersionRoot(source);
+            Path targetRoot = repo.getVersionRoot(target);
+            InstanceDataMigration.Request request = new InstanceDataMigration.Request(
+                    sourceRoot,
+                    source.resolveDataDir(sourceRoot),
+                    targetRoot,
+                    target.resolveDataDir(targetRoot),
+                    EnumSet.of(InstanceDataMigration.Category.SAVES,
+                            InstanceDataMigration.Category.MODS,
+                            InstanceDataMigration.Category.SCHEMATICS,
+                            InstanceDataMigration.Category.MAPS,
+                            InstanceDataMigration.Category.PLAYTIME),
+                    false);
+            try {
+                InstanceDataMigration.Result result = InstanceDataMigration.run(request, null);
+                LOG.info("Seeded instance " + id + " from " + copyFrom + ": copied="
+                        + result.totalCopied() + " skipped=" + result.totalSkipped());
+            } catch (IOException e) {
+                // Seeding is a bonus: a failure must not fail the install.
+                LOG.warning("Seeding instance " + id + " from " + copyFrom
+                        + " failed: " + e.getMessage());
+            }
+        }).setName(i18n("xenon.install.task.migrate"));
+
+        // installJar, preloadStage and copyStage run in parallel off save;
+        // whenComplete fires after every branch finished. The pause control
+        // of the download task is published on the composed task so the
+        // wizard dialog can offer pause/resume.
+        Task<Void> pipeline = Task.allOf(installJar, preloadStage, copyStage)
                 .whenComplete(Schedulers.javafx(), exception -> {
                     // Kick the HMCL versions listener so MainPage / sidebar
                     // re-runs its merge of HMCL + XenonGameRepository and the
@@ -227,6 +265,9 @@ public final class XenonInstallWizardProvider implements WizardProvider {
                     }
                 })
                 .setName(i18n("xenon.install.task.title"));
+        pipeline.getProperties().put(MindustryDownloadTask.CONTROL_PROPERTY,
+                download.getDownloadControl());
+        return pipeline;
     }
 
     @Override

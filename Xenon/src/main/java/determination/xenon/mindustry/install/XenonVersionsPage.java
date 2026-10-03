@@ -19,6 +19,7 @@ package determination.xenon.mindustry.install;
 
 import com.jfoenix.controls.JFXButton;
 import com.jfoenix.controls.JFXListView;
+import determination.xenon.mindustry.MindustryEra;
 import determination.xenon.mindustry.MindustryImportFlow;
 import determination.xenon.mindustry.MindustryVersionDisplay;
 import determination.xenon.mindustry.VersionVariant;
@@ -27,7 +28,9 @@ import determination.xenon.mindustry.download.MindustryRemoteVersion;
 import determination.xenon.mindustry.download.MindustryVersionList;
 import determination.xenon.mindustry.download.VersionCache;
 import determination.xenon.task.Schedulers;
+import determination.xenon.ui.Controllers;
 import determination.xenon.ui.FXUtils;
+import determination.xenon.ui.MarkdownDialog;
 import determination.xenon.ui.SVG;
 import determination.xenon.ui.construct.RipplerContainer;
 import determination.xenon.ui.construct.TwoLineListItem;
@@ -45,6 +48,7 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import org.jetbrains.annotations.Nullable;
 
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -71,6 +75,7 @@ public final class XenonVersionsPage extends VBox implements WizardPage, Refresh
     private final GitHubReleaseClient client;
     private final JFXListView<MindustryRemoteVersion> list;
     private final Label status;
+    private final Label legacyHint;
     private final JFXButton next;
     private VersionVariant variant;
 
@@ -87,6 +92,11 @@ public final class XenonVersionsPage extends VBox implements WizardPage, Refresh
         status = new Label();
         status.setWrapText(true);
 
+        legacyHint = new Label();
+        legacyHint.setWrapText(true);
+        legacyHint.setManaged(false);
+        legacyHint.setVisible(false);
+
         list = new JFXListView<>();
         list.getStyleClass().add("no-padding");
         list.setCellFactory(lv -> new VersionCell());
@@ -98,7 +108,10 @@ public final class XenonVersionsPage extends VBox implements WizardPage, Refresh
         next.setDisable(true);
         next.setOnAction(e -> commit());
         list.getSelectionModel().selectedItemProperty()
-                .addListener((obs, o, n) -> next.setDisable(n == null));
+                .addListener((obs, o, n) -> {
+                    next.setDisable(n == null);
+                    updateLegacyHint(n);
+                });
         // Double-click to commit, mirroring HMCL.
         list.setOnMouseClicked(e -> {
             if (e.getClickCount() == 2 && list.getSelectionModel().getSelectedItem() != null) {
@@ -106,7 +119,20 @@ public final class XenonVersionsPage extends VBox implements WizardPage, Refresh
             }
         });
 
-        getChildren().addAll(title, status, list, next);
+        getChildren().addAll(title, status, list, legacyHint, next);
+    }
+
+    /// Shows a compatibility warning when a pre-v7 vanilla build is selected.
+    ///
+    /// @param item the selected remote row, or `null` after a refresh
+    private void updateLegacyHint(@Nullable MindustryRemoteVersion item) {
+        boolean legacy = item != null
+                && MindustryEra.of(item.getVariant(), item.getBuild()).isLegacy();
+        legacyHint.setManaged(legacy);
+        legacyHint.setVisible(legacy);
+        if (legacy) {
+            legacyHint.setText(i18n("xenon.install.versions.legacy_warning", item.getBuild()));
+        }
     }
 
     private void commit() {
@@ -132,6 +158,7 @@ public final class XenonVersionsPage extends VBox implements WizardPage, Refresh
     public void refresh() {
         VersionVariant target = variant;
         next.setDisable(true);
+        updateLegacyHint(null);
 
         // Cache-first: prime the picker with whatever we last fetched so
         // the UI never shows a blank list, then kick off the async
@@ -172,7 +199,15 @@ public final class XenonVersionsPage extends VBox implements WizardPage, Refresh
                                 + "  ·  " + i18n("xenon.install.versions.failed")
                                 + " " + ex.getMessage());
                     } else {
-                        status.setText(i18n("xenon.install.versions.failed") + " " + ex.getMessage());
+                        // First offline start: fall back to the snapshot
+                        // bundled with the launcher instead of an empty list.
+                        List<MindustryRemoteVersion> bundled = VersionCache.loadBundled(target);
+                        if (!bundled.isEmpty()) {
+                            list.getItems().setAll(bundled);
+                            status.setText(i18n("xenon.install.versions.offline_snapshot", bundled.size()));
+                        } else {
+                            status.setText(i18n("xenon.install.versions.failed") + " " + ex.getMessage());
+                        }
                     }
                 });
             }
@@ -184,10 +219,11 @@ public final class XenonVersionsPage extends VBox implements WizardPage, Refresh
         return i18n("xenon.install.versions.title");
     }
 
-    /** HMCL-style rich row: title (filename or tag) + subtitle + tags + arrow. */
+    /// HMCL-style rich row: title (filename or tag) + subtitle + tags + arrow.
     private final class VersionCell extends ListCell<MindustryRemoteVersion> {
         private final TwoLineListItem twoLine = new TwoLineListItem();
         private final StackPane pane = new StackPane();
+        private final JFXButton notesButton;
 
         VersionCell() {
             HBox hbox = new HBox(12);
@@ -196,6 +232,21 @@ public final class XenonVersionsPage extends VBox implements WizardPage, Refresh
 
             HBox actions = new HBox(8);
             actions.setAlignment(Pos.CENTER_RIGHT);
+
+            // Release-notes button: only shown for rows whose feed carried a body.
+            notesButton = newToggleButton4(SVG.FEEDBACK);
+            notesButton.setOnAction(e -> {
+                MindustryRemoteVersion item = getItem();
+                if (item == null || item.getReleaseNotes().isBlank()) {
+                    return;
+                }
+                Controllers.dialog(new MarkdownDialog(
+                        item.getTagName().isBlank() ? item.getDisplayVersion() : item.getTagName(),
+                        item.getReleaseNotes()));
+            });
+            notesButton.setManaged(false);
+            notesButton.setVisible(false);
+
             JFXButton actionBtn = newToggleButton4(SVG.ARROW_FORWARD);
             actionBtn.setOnAction(e -> {
                 MindustryRemoteVersion item = getItem();
@@ -204,7 +255,7 @@ public final class XenonVersionsPage extends VBox implements WizardPage, Refresh
                     commit();
                 }
             });
-            actions.getChildren().add(actionBtn);
+            actions.getChildren().addAll(notesButton, actionBtn);
 
             hbox.getChildren().setAll(twoLine, actions);
             pane.getStyleClass().add("md-list-cell");
@@ -244,10 +295,23 @@ public final class XenonVersionsPage extends VBox implements WizardPage, Refresh
             twoLine.setSubtitle(sub.length() == 0 ? null : sub.toString());
 
             twoLine.getTags().clear();
+            boolean hasNotes = !item.getReleaseNotes().isBlank();
+            notesButton.setManaged(hasNotes);
+            notesButton.setVisible(hasNotes);
             String buildLabel = MindustryVersionDisplay.buildLabel(item.getVariant(),
                     item.getBuild(), item.getBuildType(), item.getTagName(), item.getFileName());
             if (!buildLabel.isEmpty()) {
                 twoLine.addTag(buildLabel);
+            }
+            // Era + runtime chips make the huge version range scannable; they
+            // only apply to vanilla builds because other variants count
+            // differently.
+            MindustryEra era = MindustryEra.of(item.getVariant(), item.getBuild());
+            if (era != MindustryEra.UNKNOWN) {
+                twoLine.addTag(i18n(era.i18nKey()));
+                twoLine.addTag(i18n(MindustryEra.requiresJava8(item.getBuild())
+                        ? "xenon.mindustry.era.java8"
+                        : "xenon.mindustry.era.java17"));
             }
             if (!item.getBuildType().isEmpty()) {
                 twoLine.addTag(localizeChannel(item.getBuildType()));

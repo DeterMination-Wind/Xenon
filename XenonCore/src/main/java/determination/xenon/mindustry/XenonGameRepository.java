@@ -306,7 +306,11 @@ public final class XenonGameRepository {
         Path root = getVersionRoot(id);
         boolean removed = versions.remove(id) != null;
         if (Files.isDirectory(root)) {
-            FileUtils.deleteDirectory(root);
+            // An instance root holds saves, mods and schematics, so prefer
+            // the platform trash over an unrecoverable recursive delete.
+            if (!FileUtils.moveToTrash(root)) {
+                FileUtils.deleteDirectory(root);
+            }
             removed = true;
         }
         return removed;

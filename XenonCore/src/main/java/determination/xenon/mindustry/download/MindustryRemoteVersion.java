@@ -45,6 +45,11 @@ public final class MindustryRemoteVersion {
     private final String fileName;
     private final Map<String, Artifact> artifacts;
 
+    /// Release-notes body (Markdown) attached by the download feeds; `null`
+    /// when the feed had none. Serialized with the version cache so release
+    /// notes stay available offline.
+    private @Nullable String releaseNotes;
+
     /** One platform-specific downloadable artifact. */
     public static final class Artifact {
         private final String platform;
@@ -140,6 +145,22 @@ public final class MindustryRemoteVersion {
     }
 
     public int getBuild() { return build; }
+
+    /// The GitHub release-notes body for this version.
+    ///
+    /// @return Markdown text, or an empty string when the feed provided none
+    public String getReleaseNotes() {
+        return releaseNotes == null ? "" : releaseNotes;
+    }
+
+    /// Attaches the GitHub release-notes body to this row.
+    ///
+    /// @param notes Markdown body from the release feed, or `null`
+    /// @return this row, for fluent use inside feed builders
+    public MindustryRemoteVersion withReleaseNotes(@Nullable String notes) {
+        this.releaseNotes = notes == null || notes.isBlank() ? null : notes;
+        return this;
+    }
 
     public String getBuildType() { return buildType; }
 

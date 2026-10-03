@@ -1,0 +1,302 @@
+[
+  {
+    "build": 160,
+    "buildType": "stable",
+    "variant": "VANILLA",
+    "downloadUrl": "https://github.com/Anuken/Mindustry/releases/download/v160.5/Mindustry.jar",
+    "publishedAt": "2026-09-20T13:56:41Z",
+    "size": 88902250,
+    "tagName": "v160.5",
+    "fileName": "Mindustry.jar"
+  },
+  {
+    "build": 160,
+    "buildType": "stable",
+    "variant": "VANILLA",
+    "downloadUrl": "https://github.com/Anuken/Mindustry/releases/download/v160.4/Mindustry.jar",
+    "publishedAt": "2026-09-14T02:44:19Z",
+    "size": 87044493,
+    "tagName": "v160.4",
+    "fileName": "Mindustry.jar"
+  },
+  {
+    "build": 160,
+    "buildType": "stable",
+    "variant": "VANILLA",
+    "downloadUrl": "https://github.com/Anuken/Mindustry/releases/download/v160.3/Mindustry.jar",
+    "publishedAt": "2026-09-13T03:55:01Z",
+    "size": 87031418,
+    "tagName": "v160.3",
+    "fileName": "Mindustry.jar"
+  },
+  {
+    "build": 160,
+    "buildType": "stable",
+    "variant": "VANILLA",
+    "downloadUrl": "https://github.com/Anuken/Mindustry/releases/download/v160.2/Mindustry.jar",
+    "publishedAt": "2026-09-12T17:35:35Z",
+    "size": 87022576,
+    "tagName": "v160.2",
+    "fileName": "Mindustry.jar"
+  },
+  {
+    "build": 160,
+    "buildType": "stable",
+    "variant": "VANILLA",
+    "downloadUrl": "https://github.com/Anuken/Mindustry/releases/download/v160.1/Mindustry.jar",
+    "publishedAt": "2026-09-11T06:45:00Z",
+    "size": 87033822,
+    "tagName": "v160.1",
+    "fileName": "Mindustry.jar"
+  },
+  {
+    "build": 160,
+    "buildType": "stable",
+    "variant": "VANILLA",
+    "downloadUrl": "https://github.com/Anuken/Mindustry/releases/download/v160/Mindustry.jar",
+    "publishedAt": "2026-09-11T01:19:12Z",
+    "size": 87039071,
+    "tagName": "v160",
+    "fileName": "Mindustry.jar"
+  },
+  {
+    "build": 159,
+    "buildType": "stable",
+    "variant": "VANILLA",
+    "downloadUrl": "https://github.com/Anuken/Mindustry/releases/download/v159.7/Mindustry.jar",
+    "publishedAt": "2026-07-19T21:41:43Z",
+    "size": 86634761,
+    "tagName": "v159.7",
+    "fileName": "Mindustry.jar"
+  },
+  {
+    "build": 159,
+    "buildType": "stable",
+    "variant": "VANILLA",
+    "downloadUrl": "https://github.com/Anuken/Mindustry/releases/download/v159.6/Mindustry.jar",
+    "publishedAt": "2026-07-15T02:39:21Z",
+    "size": 86624922,
+    "tagName": "v159.6",
+    "fileName": "Mindustry.jar"
+  },
+  {
+    "build": 159,
+    "buildType": "stable",
+    "variant": "VANILLA",
+    "downloadUrl": "https://github.com/Anuken/Mindustry/releases/download/v159.5/Mindustry.jar",
+    "publishedAt": "2026-07-13T17:34:35Z",
+    "size": 86629111,
+    "tagName": "v159.5",
+    "fileName": "Mindustry.jar"
+  },
+  {
+    "build": 159,
+    "buildType": "stable",
+    "variant": "VANILLA",
+    "downloadUrl": "https://github.com/Anuken/Mindustry/releases/download/v159.3/Mindustry.jar",
+    "publishedAt": "2026-07-11T13:17:57Z",
+    "size": 86230982,
+    "tagName": "v159.3",
+    "fileName": "Mindustry.jar"
+  },
+  {
+    "build": 159,
+    "buildType": "stable",
+    "variant": "VANILLA",
+    "downloadUrl": "https://github.com/Anuken/Mindustry/releases/download/v159.2/Mindustry.jar",
+    "publishedAt": "2026-07-08T13:45:51Z",
+    "size": 85177108,
+    "tagName": "v159.2",
+    "fileName": "Mindustry.jar"
+  },
+  {
+    "build": 159,
+    "buildType": "stable",
+    "variant": "VANILLA",
+    "downloadUrl": "https://github.com/Anuken/Mindustry/releases/download/v159.1/Mindustry.jar",
+    "publishedAt": "2026-07-07T13:42:53Z",
+    "size": 85168963,
+    "tagName": "v159.1",
+    "fileName": "Mindustry.jar"
+  },
+  {
+    "build": 159,
+    "buildType": "stable",
+    "variant": "VANILLA",
+    "downloadUrl": "https://github.com/Anuken/Mindustry/releases/download/v159/Mindustry.jar",
+    "publishedAt": "2026-07-06T23:38:42Z",
+    "size": 85175278,
+    "tagName": "v159",
+    "fileName": "Mindustry.jar"
+  },
+  {
+    "build": 158,
+    "buildType": "stable",
+    "variant": "VANILLA",
+    "downloadUrl": "https://github.com/Anuken/Mindustry/releases/download/v158.1/Mindustry.jar",
+    "publishedAt": "2026-05-25T00:13:24Z",
+    "size": 84728358,
+    "tagName": "v158.1",
+    "fileName": "Mindustry.jar"
+  },
+  {
+    "build": 158,
+    "buildType": "stable",
+    "variant": "VANILLA",
+    "downloadUrl": "https://github.com/Anuken/Mindustry/releases/download/v158/Mindustry.jar",
+    "publishedAt": "2026-05-23T22:34:54Z",
+    "size": 84728229,
+    "tagName": "v158",
+    "fileName": "Mindustry.jar"
+  },
+  {
+    "build": 157,
+    "buildType": "stable",
+    "variant": "VANILLA",
+    "downloadUrl": "https://github.com/Anuken/Mindustry/releases/download/v157.4/Mindustry.jar",
+    "publishedAt": "2026-04-22T01:24:38Z",
+    "size": 84587299,
+    "tagName": "v157.4",
+    "fileName": "Mindustry.jar"
+  },
+  {
+    "build": 157,
+    "buildType": "stable",
+    "variant": "VANILLA",
+    "downloadUrl": "https://github.com/Anuken/Mindustry/releases/download/v157.3/Mindustry.jar",
+    "publishedAt": "2026-04-18T01:03:17Z",
+    "size": 84583655,
+    "tagName": "v157.3",
+    "fileName": "Mindustry.jar"
+  },
+  {
+    "build": 157,
+    "buildType": "stable",
+    "variant": "VANILLA",
+    "downloadUrl": "https://github.com/Anuken/Mindustry/releases/download/v157.2/Mindustry.jar",
+    "publishedAt": "2026-04-15T17:26:21Z",
+    "size": 84565544,
+    "tagName": "v157.2",
+    "fileName": "Mindustry.jar"
+  },
+  {
+    "build": 157,
+    "buildType": "stable",
+    "variant": "VANILLA",
+    "downloadUrl": "https://github.com/Anuken/Mindustry/releases/download/v157.1/Mindustry.jar",
+    "publishedAt": "2026-04-14T21:10:59Z",
+    "size": 84579673,
+    "tagName": "v157.1",
+    "fileName": "Mindustry.jar"
+  },
+  {
+    "build": 157,
+    "buildType": "stable",
+    "variant": "VANILLA",
+    "downloadUrl": "https://github.com/Anuken/Mindustry/releases/download/v157/Mindustry.jar",
+    "publishedAt": "2026-04-09T01:46:56Z",
+    "size": 84540141,
+    "tagName": "v157",
+    "fileName": "Mindustry.jar"
+  },
+  {
+    "build": 156,
+    "buildType": "stable",
+    "variant": "VANILLA",
+    "downloadUrl": "https://github.com/Anuken/Mindustry/releases/download/v156.2/Mindustry.jar",
+    "publishedAt": "2026-03-27T17:10:15Z",
+    "size": 84151616,
+    "tagName": "v156.2",
+    "fileName": "Mindustry.jar"
+  },
+  {
+    "build": 156,
+    "buildType": "stable",
+    "variant": "VANILLA",
+    "downloadUrl": "https://github.com/Anuken/Mindustry/releases/download/v156.1/Mindustry.jar",
+    "publishedAt": "2026-03-25T15:46:34Z",
+    "size": 84143021,
+    "tagName": "v156.1",
+    "fileName": "Mindustry.jar"
+  },
+  {
+    "build": 156,
+    "buildType": "stable",
+    "variant": "VANILLA",
+    "downloadUrl": "https://github.com/Anuken/Mindustry/releases/download/v156/Mindustry.jar",
+    "publishedAt": "2026-03-23T19:44:23Z",
+    "size": 83878114,
+    "tagName": "v156",
+    "fileName": "Mindustry.jar"
+  },
+  {
+    "build": 155,
+    "buildType": "stable",
+    "variant": "VANILLA",
+    "downloadUrl": "https://github.com/Anuken/Mindustry/releases/download/v155.4/Mindustry.jar",
+    "publishedAt": "2026-02-16T18:14:56Z",
+    "size": 80412995,
+    "tagName": "v155.4",
+    "fileName": "Mindustry.jar"
+  },
+  {
+    "build": 155,
+    "buildType": "stable",
+    "variant": "VANILLA",
+    "downloadUrl": "https://github.com/Anuken/Mindustry/releases/download/v155.3/Mindustry.jar",
+    "publishedAt": "2026-02-13T16:39:49Z",
+    "size": 89286073,
+    "tagName": "v155.3",
+    "fileName": "Mindustry.jar"
+  },
+  {
+    "build": 155,
+    "buildType": "stable",
+    "variant": "VANILLA",
+    "downloadUrl": "https://github.com/Anuken/Mindustry/releases/download/v155.2/Mindustry.jar",
+    "publishedAt": "2026-02-12T01:52:48Z",
+    "size": 89302480,
+    "tagName": "v155.2",
+    "fileName": "Mindustry.jar"
+  },
+  {
+    "build": 155,
+    "buildType": "stable",
+    "variant": "VANILLA",
+    "downloadUrl": "https://github.com/Anuken/Mindustry/releases/download/v155.1/Mindustry.jar",
+    "publishedAt": "2026-02-10T16:06:38Z",
+    "size": 89271191,
+    "tagName": "v155.1",
+    "fileName": "Mindustry.jar"
+  },
+  {
+    "build": 155,
+    "buildType": "stable",
+    "variant": "VANILLA",
+    "downloadUrl": "https://github.com/Anuken/Mindustry/releases/download/v155/Mindustry.jar",
+    "publishedAt": "2026-02-09T03:41:53Z",
+    "size": 89232650,
+    "tagName": "v155",
+    "fileName": "Mindustry.jar"
+  },
+  {
+    "build": 154,
+    "buildType": "stable",
+    "variant": "VANILLA",
+    "downloadUrl": "https://github.com/Anuken/Mindustry/releases/download/v154.3/Mindustry.jar",
+    "publishedAt": "2025-12-21T15:12:58Z",
+    "size": 79795238,
+    "tagName": "v154.3",
+    "fileName": "Mindustry.jar"
+  },
+  {
+    "build": 154,
+    "buildType": "stable",
+    "variant": "VANILLA",
+    "downloadUrl": "https://github.com/Anuken/Mindustry/releases/download/v154.2/Mindustry.jar",
+    "publishedAt": "2025-12-18T00:11:48Z",
+    "size": 79793092,
+    "tagName": "v154.2",
+    "fileName": "Mindustry.jar"
+  }
+]

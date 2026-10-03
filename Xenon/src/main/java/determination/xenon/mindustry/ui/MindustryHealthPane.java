@@ -18,6 +18,7 @@
 package determination.xenon.mindustry.ui;
 
 import com.jfoenix.controls.JFXButton;
+import determination.xenon.mindustry.MindustryMemoryPolicy;
 import determination.xenon.mindustry.MindustryVersion;
 import determination.xenon.mindustry.playtime.MindustryPlaytimeStore;
 import determination.xenon.mindustry.playtime.PlaytimeFormat;
@@ -28,7 +29,9 @@ import determination.xenon.ui.FXUtils;
 import determination.xenon.ui.SVG;
 import determination.xenon.ui.construct.AdvancedListItem;
 import determination.xenon.ui.construct.MessageDialogPane;
+import determination.xenon.util.DataSizeUnit;
 import determination.xenon.util.i18n.I18n;
+import determination.xenon.util.platform.SystemInfo;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -143,11 +146,33 @@ public final class MindustryHealthPane extends BorderPane {
     private void populate(PlaytimeSummary playtime, List<MindustryCompatibility.Issue> issues) {
         listBox.getChildren().clear();
         listBox.getChildren().add(infoItem());
+        listBox.getChildren().add(memoryItem());
         listBox.getChildren().add(playtimeItem(playtime));
         appendCompatItems(issues);
         status.setText(issues.isEmpty()
                 ? i18n("xenon.mindustry.health.clean")
                 : i18n("xenon.mindustry.health.count", issues.size()));
+    }
+
+    /// Builds the row describing the heap the next launch will request.
+    ///
+    /// Reports the mod-size-aware automatic suggestion, or states that an
+    /// explicit heap limit from the instance's JVM arguments wins.
+    private AdvancedListItem memoryItem() {
+        AdvancedListItem item = new AdvancedListItem();
+        item.setTitle(i18n("xenon.mindustry.health.section.memory"));
+        if (MindustryMemoryPolicy.hasExplicitHeapLimit(
+                determination.xenon.mindustry.LaunchOptions.tokenize(version.getJvmArgs()))) {
+            item.setSubtitle(i18n("xenon.mindustry.health.memory.manual"));
+            return item;
+        }
+        long totalMb = SystemInfo.getTotalMemorySize() / (1024L * 1024L);
+        long availableMb = SystemInfo.getPhysicalMemoryStatus().getAvailable() / (1024L * 1024L);
+        long modsBytes = MindustryMemoryPolicy.measureEnabledModsBytes(dataDir);
+        long suggested = MindustryMemoryPolicy.suggestHeapMb(totalMb, availableMb, modsBytes);
+        item.setSubtitle(i18n("xenon.mindustry.health.memory.auto",
+                suggested, DataSizeUnit.format(modsBytes)));
+        return item;
     }
 
     /// Builds the row describing the instance itself.

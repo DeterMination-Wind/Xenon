@@ -73,6 +73,23 @@ public final class Metadata {
 
     public static final Path CURRENT_DIRECTORY = Path.of(System.getProperty("user.dir")).toAbsolutePath().normalize();
 
+    /// Directory that contains the launcher jar, or the working directory for
+    /// development runs started from classes.
+    public static final Path PROGRAM_DIRECTORY = resolveProgramDirectory();
+
+    /// File name of the portable marker next to the launcher jar.
+    public static final String PORTABLE_MARKER_NAME = "Xenon.portable";
+
+    /// Portable marker file: when it exists, launcher data defaults to
+    /// {@link #PORTABLE_DIRECTORY} until the marker is removed.
+    public static final Path PORTABLE_MARKER = PROGRAM_DIRECTORY.resolve(PORTABLE_MARKER_NAME);
+
+    /// Portable data root: `XenonData/` next to the launcher jar.
+    public static final Path PORTABLE_DIRECTORY = PROGRAM_DIRECTORY.resolve("XenonData");
+
+    /// Whether the portable marker was present when the launcher started.
+    public static final boolean IS_PORTABLE = java.nio.file.Files.isRegularFile(PORTABLE_MARKER);
+
     /**
      * The launcher's global config directory.
      * <ul>
@@ -91,6 +108,9 @@ public final class Metadata {
 
     static {
         String xenonHome = System.getProperty("xenon.home", System.getenv("XENON_USER_HOME"));
+        if (StringUtils.isBlank(xenonHome) && IS_PORTABLE) {
+            xenonHome = PORTABLE_DIRECTORY.toString();
+        }
         if (StringUtils.isBlank(xenonHome)) {
             if (OperatingSystem.CURRENT_OS.isLinuxOrBSD()) {
                 String xdgData = System.getenv("XDG_DATA_HOME");
@@ -147,6 +167,47 @@ public final class Metadata {
     /** {@code <XENON_GLOBAL_DIRECTORY>/modpacks} — Xenon Modpack imports/exports. */
     public static Path getModpacksDirectory() {
         return XENON_GLOBAL_DIRECTORY.resolve("modpacks");
+    }
+
+    /// Resolves the directory that holds the launcher jar.
+    ///
+    /// Falls back to {@link #CURRENT_DIRECTORY} for class-path runs
+    /// (development) and whenever the code source is not a jar file.
+    private static Path resolveProgramDirectory() {
+        Path jar = JarUtils.thisJarPath();
+        if (jar != null) {
+            Path parent = jar.getParent();
+            if (parent != null) {
+                return parent.toAbsolutePath().normalize();
+            }
+        }
+        return CURRENT_DIRECTORY;
+    }
+
+    /// Whether the launcher runs with the portable marker active.
+    ///
+    /// Portable mode stores all launcher data under
+    /// {@link #PORTABLE_DIRECTORY}; it is activated by creating
+    /// {@link #PORTABLE_MARKER} and only takes effect after a restart.
+    public static boolean isPortable() {
+        return IS_PORTABLE;
+    }
+
+    /// The portable data root used when {@link #isPortable()} is true.
+    public static Path getPortableDirectory() {
+        return PORTABLE_DIRECTORY;
+    }
+
+    /// The marker file that toggles portable mode.
+    public static Path getPortableMarker() {
+        return PORTABLE_MARKER;
+    }
+
+    /// Whether this build is an installed package (msi / dmg / deb / AppImage),
+    /// where the program directory is managed by the installer and portable
+    /// mode is not offered.
+    public static boolean isInstalledBuild() {
+        return Boolean.getBoolean("xenon.installed");
     }
 
     public static boolean isStable() {

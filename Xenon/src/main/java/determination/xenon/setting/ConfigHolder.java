@@ -19,6 +19,7 @@ package determination.xenon.setting;
 
 import com.google.gson.JsonParseException;
 import determination.xenon.Metadata;
+import determination.xenon.mindustry.download.GitHubAuth;
 import determination.xenon.util.FileSaver;
 import determination.xenon.util.i18n.I18n;
 import determination.xenon.util.io.FileUtils;
@@ -90,6 +91,16 @@ public final class ConfigHolder {
         if (!unsupportedVersion)
             configInstance.addListener(source -> FileSaver.save(configLocation, configInstance.toJson()));
 
+        // Portable mode is decided before the config loads (the marker defines
+        // the data root), so make the stored choice match the marker.
+        reconcilePortableMode();
+
+        // The download layer cannot read the config directly; push the token
+        // into XenonCore and keep both sides in sync.
+        GitHubAuth.setToken(configInstance.getGithubToken());
+        configInstance.githubTokenProperty().addListener(
+                (observable, oldValue, newValue) -> GitHubAuth.setToken(newValue));
+
         globalConfigInstance = loadGlobalConfig();
         globalConfigInstance.addListener(source -> FileSaver.save(GLOBAL_CONFIG_PATH, globalConfigInstance.toJson()));
 
@@ -115,6 +126,25 @@ public final class ConfigHolder {
                 // throw up the error now to prevent further data loss
                 throw new IOException("Config at " + configLocation + " is not writable");
             }
+        }
+    }
+
+    /// Aligns the stored common-directory choice with the portable marker.
+    ///
+    /// The marker is read while {@link Metadata} initializes, before the
+    /// config exists, so it always wins. A leftover `PORTABLE` value without
+    /// the marker degrades to the default directory.
+    private static void reconcilePortableMode() {
+        if (unsupportedVersion) {
+            return;
+        }
+        EnumCommonDirectory stored = configInstance.getCommonDirType();
+        if (Metadata.isPortable()) {
+            if (stored != EnumCommonDirectory.PORTABLE) {
+                configInstance.setCommonDirType(EnumCommonDirectory.PORTABLE);
+            }
+        } else if (stored == EnumCommonDirectory.PORTABLE) {
+            configInstance.setCommonDirType(EnumCommonDirectory.DEFAULT);
         }
     }
 

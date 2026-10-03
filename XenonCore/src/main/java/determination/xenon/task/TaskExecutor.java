@@ -35,6 +35,14 @@ public abstract class TaskExecutor {
                 : List.of();
     }
 
+    /// The first task of this execution.
+    ///
+    /// Exposed so UI can read task metadata (for example a download pause
+    /// control published in the task properties) before the task finishes.
+    public Task<?> getFirstTask() {
+        return firstTask;
+    }
+
     public void addTaskListener(TaskListener taskListener) {
         taskListeners.add(taskListener);
     }

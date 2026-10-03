@@ -21,10 +21,14 @@ import com.jfoenix.controls.JFXButton;
 import javafx.application.Platform;
 import javafx.beans.property.StringProperty;
 import javafx.geometry.Insets;
+import javafx.geometry.Pos;
 import javafx.scene.control.Label;
 import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
+import determination.xenon.mindustry.download.DownloadControl;
+import determination.xenon.mindustry.download.MindustryDownloadTask;
 import determination.xenon.task.*;
 import determination.xenon.ui.FXUtils;
 import determination.xenon.util.TaskCancellationAction;
@@ -45,6 +49,7 @@ public class TaskExecutorDialogPane extends BorderPane {
 
     private final Label lblTitle;
     private final Label lblProgress;
+    private final JFXButton btnPause;
     private final JFXButton btnCancel;
     private final TaskListPane taskListPane;
 
@@ -74,9 +79,19 @@ public class TaskExecutorDialogPane extends BorderPane {
             lblProgress = new Label();
             bottom.setLeft(lblProgress);
 
+            // The pause button only appears for tasks that publish a download
+            // control; every other task keeps the plain cancel dialog.
+            btnPause = new JFXButton(i18n("download.pause"));
+            btnPause.getStyleClass().add("dialog-cancel");
+            btnPause.setManaged(false);
+            btnPause.setVisible(false);
+
             btnCancel = new JFXButton(i18n("button.cancel"));
             btnCancel.getStyleClass().add("dialog-cancel");
-            bottom.setRight(btnCancel);
+
+            HBox actions = new HBox(8, btnPause, btnCancel);
+            actions.setAlignment(Pos.CENTER_RIGHT);
+            bottom.setRight(actions);
         }
 
         setCancel(cancel);
@@ -105,6 +120,7 @@ public class TaskExecutorDialogPane extends BorderPane {
 
         if (executor != null) {
             taskListPane.setExecutor(executor);
+            setupPauseButton(executor);
 
             if (autoClose)
                 executor.addTaskListener(new TaskListener() {
@@ -114,6 +130,29 @@ public class TaskExecutorDialogPane extends BorderPane {
                     }
                 });
         }
+    }
+
+    /// Shows and wires the pause button when the executor's task publishes a
+    /// download control; hides it for every other task type.
+    private void setupPauseButton(TaskExecutor executor) {
+        Object value = executor.getFirstTask().getProperties().get(MindustryDownloadTask.CONTROL_PROPERTY);
+        if (!(value instanceof DownloadControl control)) {
+            btnPause.setVisible(false);
+            btnPause.setManaged(false);
+            return;
+        }
+        btnPause.setText(i18n("download.pause"));
+        btnPause.setVisible(true);
+        btnPause.setManaged(true);
+        btnPause.setOnAction(e -> {
+            if (control.isPaused()) {
+                control.resume();
+                btnPause.setText(i18n("download.pause"));
+            } else {
+                control.pause();
+                btnPause.setText(i18n("download.resume"));
+            }
+        });
     }
 
     public StringProperty titleProperty() {

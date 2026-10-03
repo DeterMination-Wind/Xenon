@@ -208,6 +208,13 @@ public class RootPage extends DecoratorAnimatedPage implements DecoratorPage {
             communityItem.setOnAction(e -> Controllers.navigate(
                     new determination.xenon.mindustry.ui.MindustryCommunityPane()));
 
+            // netplay — public server directory + EasyTier P2P rooms
+            AdvancedListItem netplayItem = new AdvancedListItem();
+            netplayItem.setLeftIcon(SVG.PUBLIC);
+            netplayItem.setTitle(i18n("xenon.netplay.title"));
+            netplayItem.setOnAction(e -> Controllers.navigate(
+                    new determination.xenon.mindustry.ui.MindustryNetplayPane()));
+
             // fifth item in left sidebar
             AdvancedListItem launcherSettingsItem = new AdvancedListItem();
             launcherSettingsItem.setLeftIcon(SVG.SETTINGS);
@@ -232,6 +239,7 @@ public class RootPage extends DecoratorAnimatedPage implements DecoratorPage {
                     .add(downloadItem)
                     .add(serverItem)
                     .add(communityItem)
+                    .add(netplayItem)
                     .startCategory(i18n("settings.launcher.general").toUpperCase(Locale.ROOT))
                     .add(launcherSettingsItem)
                     .addNavigationDrawerItem(i18n("contact.chat"), SVG.CHAT, () -> {

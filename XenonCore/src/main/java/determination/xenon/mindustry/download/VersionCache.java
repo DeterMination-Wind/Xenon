@@ -27,6 +27,7 @@ import determination.xenon.mindustry.VersionVariant;
 import determination.xenon.util.logging.Logger;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -36,6 +37,8 @@ import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Disk cache for {@link MindustryRemoteVersion} feeds, keyed by
@@ -50,6 +53,10 @@ import java.util.Locale;
 public final class VersionCache {
 
     private static final Type LIST_TYPE = new TypeToken<List<MindustryRemoteVersion>>() {}.getType();
+
+    /// Parsed bundled snapshots, keyed by variant; parsed at most once.
+    private static final Map<VersionVariant, List<MindustryRemoteVersion>> BUNDLED =
+            new ConcurrentHashMap<>();
 
     private static final Gson GSON = new GsonBuilder()
             .registerTypeAdapter(Instant.class,
@@ -107,5 +114,35 @@ public final class VersionCache {
         if (variant == null || cacheRoot == null) return null;
         return cacheRoot.resolve("mindustry").resolve("versions")
                 .resolve(variant.name().toLowerCase(Locale.ROOT) + ".json");
+    }
+
+    /// Reads the version-list snapshot bundled with the launcher.
+    ///
+    /// Used when the network is unreachable and no on-disk cache exists yet,
+    /// so a first offline start still shows a usable list of versions instead
+    /// of an empty picker. Results are parsed once and memoised.
+    ///
+    /// @param variant release variant to load the snapshot for
+    /// @return the bundled rows, or an empty list when no snapshot is shipped
+    public static List<MindustryRemoteVersion> loadBundled(VersionVariant variant) {
+        if (variant == null) {
+            return Collections.emptyList();
+        }
+        return BUNDLED.computeIfAbsent(variant, key -> {
+            String resource = "/assets/mindustry/versions-"
+                    + key.name().toLowerCase(Locale.ROOT) + "-snapshot.json";
+            try (InputStream in = VersionCache.class.getResourceAsStream(resource)) {
+                if (in == null) {
+                    return Collections.emptyList();
+                }
+                String text = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+                List<MindustryRemoteVersion> parsed = GSON.fromJson(text, LIST_TYPE);
+                return parsed != null ? List.copyOf(parsed) : Collections.emptyList();
+            } catch (Exception e) {
+                Logger.LOG.warning("VersionCache: failed to read bundled " + resource
+                        + ": " + e.getMessage());
+                return Collections.emptyList();
+            }
+        });
     }
 }

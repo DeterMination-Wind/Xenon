@@ -74,7 +74,7 @@ public final class CnArcVersionList extends MindustryVersionList {
                     r.getPublishedAt(),
                     asset.getSize(),
                     r.getTagName(),
-                    asset.getName()));
+                    asset.getName()).withReleaseNotes(r.getBody()));
         }
         return out;
     }

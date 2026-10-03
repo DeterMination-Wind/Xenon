@@ -116,10 +116,11 @@ public final class MindustryLaunchSaveService {
         return readArchive(target);
     }
 
-    /// Delete an imported archive and its extracted runtime directory.
+    /// Delete an imported archive (preferring the platform trash) and its
+    /// derived runtime directory.
     public static void deleteArchive(Path versionRoot, String archiveFileName) throws IOException {
         Path archive = resolveArchive(versionRoot, archiveFileName);
-        Files.deleteIfExists(archive);
+        FileUtils.deleteSafely(archive);
         FileUtils.deleteDirectory(runtimeDir(versionRoot, archive.getFileName().toString()));
     }
 

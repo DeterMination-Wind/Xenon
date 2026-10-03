@@ -30,5 +30,11 @@ public enum EnumCommonDirectory {
     /**
      * User customized common directory (set via {@code xenon.home} or {@code XENON_USER_HOME}).
      */
-    CUSTOM
+    CUSTOM,
+    /**
+     * Portable mode: keep all launcher data in {@code XenonData/} next to the
+     * launcher jar. Activated by creating the {@code Xenon.portable} marker and
+     * only takes effect after a restart.
+     */
+    PORTABLE
 }

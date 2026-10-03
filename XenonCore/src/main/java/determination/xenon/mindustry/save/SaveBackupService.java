@@ -17,6 +17,7 @@
  */
 package determination.xenon.mindustry.save;
 
+import determination.xenon.util.io.FileUtils;
 import determination.xenon.util.logging.Logger;
 
 import java.io.BufferedInputStream;
@@ -250,12 +251,13 @@ public final class SaveBackupService {
     }
 
     /**
-     * Delete a save file. Missing files are tolerated silently — the operation
-     * is idempotent from the caller's perspective.
+     * Delete a save file, preferring the platform trash. Missing files are
+     * tolerated silently — the operation is idempotent from the caller's
+     * perspective.
      */
     public void delete(Path msav) throws IOException {
         Objects.requireNonNull(msav, "msav");
-        boolean removed = Files.deleteIfExists(msav);
+        boolean removed = FileUtils.deleteSafely(msav);
         if (removed) {
             Logger.LOG.info("Deleted save " + msav);
         } else {

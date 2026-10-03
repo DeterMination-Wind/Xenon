@@ -19,18 +19,23 @@ package determination.xenon.mindustry.install;
 
 import determination.xenon.mindustry.DataDirectoryPolicy;
 import determination.xenon.mindustry.MindustryImportFlow;
+import determination.xenon.mindustry.MindustryVersion;
 import determination.xenon.mindustry.download.MindustryRemoteVersion;
 import determination.xenon.ui.wizard.WizardController;
 import determination.xenon.ui.wizard.WizardPage;
 import determination.xenon.util.SettingsMap;
 import javafx.geometry.Insets;
 import javafx.scene.control.Button;
+import javafx.scene.control.CheckBox;
+import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.RadioButton;
 import javafx.scene.control.TextField;
 import javafx.scene.control.ToggleGroup;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
+import javafx.util.StringConverter;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.Locale;
 
@@ -50,6 +55,8 @@ public final class IsolationPage extends VBox implements WizardPage {
     private final RadioButton global;
     private final RadioButton custom;
     private final TextField customDir;
+    private final CheckBox copyToggle;
+    private final ComboBox<MindustryVersion> copySourceBox;
 
     public IsolationPage(WizardController controller) {
         this.controller = controller;
@@ -78,6 +85,25 @@ public final class IsolationPage extends VBox implements WizardPage {
         getChildren().addAll(new Label(i18n("xenon.install.isolation.policy.label")),
                 isolated, global, custom, customDir);
 
+        // Optional: seed the new instance from an existing one. The copy runs
+        // after the instance directory is created, see XenonInstallWizardProvider.
+        copyToggle = new CheckBox(i18n("xenon.install.isolation.copy"));
+        copySourceBox = new ComboBox<>();
+        copySourceBox.setConverter(new StringConverter<>() {
+            @Override
+            public String toString(@Nullable MindustryVersion version) {
+                return version == null ? "" : version.getName();
+            }
+
+            @Override
+            public MindustryVersion fromString(String string) {
+                return null;
+            }
+        });
+        copySourceBox.setMaxWidth(320);
+        copySourceBox.disableProperty().bind(copyToggle.selectedProperty().not());
+        getChildren().addAll(copyToggle, copySourceBox);
+
         Button next = new Button(i18n("wizard.next"));
         next.setDefaultButton(true);
         next.setOnAction(e -> {
@@ -99,6 +125,9 @@ public final class IsolationPage extends VBox implements WizardPage {
                     : DataDirectoryPolicy.CUSTOM;
             controller.getSettings().put(WizardKeys.VERSION_ID, id);
             controller.getSettings().put(WizardKeys.DATA_DIR_POLICY, policy);
+            if (copyToggle.isSelected() && copySourceBox.getValue() != null) {
+                controller.getSettings().put(WizardKeys.COPY_FROM, copySourceBox.getValue().getId());
+            }
             if (policy == DataDirectoryPolicy.CUSTOM) {
                 String dir = customDir.getText() == null ? "" : customDir.getText().trim();
                 if (dir.isEmpty()) {
@@ -119,6 +148,10 @@ public final class IsolationPage extends VBox implements WizardPage {
         if (ver != null && (idField.getText() == null || idField.getText().isEmpty())) {
             idField.setText(ver.getVariant().name().toLowerCase(Locale.ROOT) + "-" + ver.getBuild());
         }
+        determination.xenon.mindustry.XenonGameRepository repository =
+                MindustryImportFlow.currentRepository();
+        repository.refresh();
+        copySourceBox.getItems().setAll(repository.all());
     }
 
     @Override

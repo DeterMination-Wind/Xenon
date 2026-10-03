@@ -18,6 +18,7 @@
 package determination.xenon.ui.main;
 
 import com.jfoenix.controls.*;
+import javafx.application.Platform;
 import javafx.beans.binding.Bindings;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -26,27 +27,44 @@ import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.ToggleGroup;
 import javafx.scene.layout.*;
+import determination.xenon.Metadata;
+import determination.xenon.mindustry.download.GitHubAuth;
 import determination.xenon.setting.EnumCommonDirectory;
 import determination.xenon.setting.Settings;
 import determination.xenon.task.FetchTask;
+import determination.xenon.task.Schedulers;
+import determination.xenon.ui.Controllers;
 import determination.xenon.ui.FXUtils;
 import determination.xenon.ui.WeakListenerHolder;
 import determination.xenon.ui.construct.*;
 import determination.xenon.util.io.FileUtils;
 import determination.xenon.util.javafx.SafeStringConverter;
+import org.jetbrains.annotations.Nullable;
 
+import java.io.IOException;
 import java.net.Proxy;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Arrays;
+import java.nio.file.StandardOpenOption;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static determination.xenon.setting.ConfigHolder.config;
 import static determination.xenon.util.i18n.I18n.i18n;
+import static determination.xenon.util.logging.Logger.LOG;
 
 public class DownloadSettingsPage extends StackPane {
 
     private final WeakListenerHolder holder = new WeakListenerHolder();
+
+    /// GitHub account sublist, filled while the download section builds and
+    /// wired to `downloadList` afterwards.
+    private ComponentSublist githubSublist;
 
     public DownloadSettingsPage() {
         VBox content = new VBox(10);
@@ -67,14 +85,23 @@ public class DownloadSettingsPage extends StackPane {
             {
                 {
                     MultiFileItem<EnumCommonDirectory> fileCommonLocation = new MultiFileItem<>();
-                    fileCommonLocation.loadChildren(Arrays.asList(
-                            new MultiFileItem.Option<>(i18n("launcher.cache_directory.default"), EnumCommonDirectory.DEFAULT),
-                            new MultiFileItem.FileOption<>(i18n("settings.custom"), EnumCommonDirectory.CUSTOM)
-                                    .setChooserTitle(i18n("launcher.cache_directory.choose"))
-                                    .setSelectionMode(FileSelector.SelectionMode.DIRECTORY)
-                                    .bindBidirectional(config().commonDirectoryProperty())
-                    ));
+                    List<MultiFileItem.Option<EnumCommonDirectory>> commonDirectoryOptions = new ArrayList<>();
+                    commonDirectoryOptions.add(new MultiFileItem.Option<>(
+                            i18n("launcher.cache_directory.default"), EnumCommonDirectory.DEFAULT));
+                    commonDirectoryOptions.add(new MultiFileItem.FileOption<>(i18n("settings.custom"), EnumCommonDirectory.CUSTOM)
+                            .setChooserTitle(i18n("launcher.cache_directory.choose"))
+                            .setSelectionMode(FileSelector.SelectionMode.DIRECTORY)
+                            .bindBidirectional(config().commonDirectoryProperty()));
+                    if (!Metadata.isInstalledBuild()) {
+                        // Portable mode is meaningful for the portable zip only;
+                        // installed packages own their program directory.
+                        commonDirectoryOptions.add(new MultiFileItem.Option<>(
+                                i18n("launcher.cache_directory.portable"), EnumCommonDirectory.PORTABLE));
+                    }
+                    fileCommonLocation.loadChildren(commonDirectoryOptions);
                     fileCommonLocation.selectedDataProperty().bindBidirectional(config().commonDirTypeProperty());
+                    holder.onWeakChangeAndOperate(config().commonDirTypeProperty(),
+                            DownloadSettingsPage::applyPortableSelection);
 
                     fileCommonLocationSublist.getContent().add(fileCommonLocation);
                     fileCommonLocationSublist.setTitle(i18n("launcher.cache_directory"));
@@ -142,9 +169,39 @@ public class DownloadSettingsPage extends StackPane {
                     hintPane.setText(i18n("settings.launcher.download.threads.hint"));
                     downloadThreads.getChildren().add(hintPane);
                 }
+
+                {
+                    githubSublist = new ComponentSublist();
+                    githubSublist.setTitle(i18n("download.github.title"));
+                    githubSublist.setHasSubtitle(true);
+                    githubSublist.subtitleProperty().set(i18n("download.github.token.hint"));
+
+                    VBox githubPane = new VBox(8);
+                    githubPane.setPadding(new Insets(8, 0, 0, 0));
+
+                    HBox tokenRow = new HBox(8);
+                    tokenRow.setAlignment(Pos.CENTER_LEFT);
+                    JFXTextField tokenField = new JFXTextField();
+                    FXUtils.setLimitWidth(tokenField, 320);
+                    FXUtils.bindString(tokenField, config().githubTokenProperty());
+                    tokenField.setPromptText(i18n("download.github.token.prompt"));
+
+                    Label status = new Label();
+                    status.setWrapText(true);
+
+                    JFXButton verify = FXUtils.newBorderButton(i18n("download.github.verify"));
+                    verify.setOnAction(e -> verifyGithubToken(status));
+
+                    tokenRow.getChildren().setAll(tokenField, verify);
+                    githubPane.getChildren().setAll(tokenRow, status);
+                    githubSublist.getContent().add(githubPane);
+
+                    // Prime the status line without blocking the FX thread.
+                    refreshGithubStatus(status);
+                }
             }
 
-            downloadList.getContent().addAll(fileCommonLocationSublist, downloadThreads);
+            downloadList.getContent().addAll(fileCommonLocationSublist, githubSublist, downloadThreads);
             content.getChildren().addAll(ComponentList.createComponentListTitle(i18n("download")), downloadList);
         }
 
@@ -322,6 +379,91 @@ public class DownloadSettingsPage extends StackPane {
         }
 
     }
+
+    /// Applies a portable-mode selection by creating or removing the marker file.
+    ///
+    /// The metadata layer resolves the data root before the config loads, so a
+    /// switch only takes effect after a restart; the dialog says so. When
+    /// writing the marker fails (read-only installation), the selection rolls
+    /// back to the state the running launcher actually uses.
+    private static void applyPortableSelection(EnumCommonDirectory type) {
+        boolean wantPortable = type == EnumCommonDirectory.PORTABLE;
+        if (wantPortable == Metadata.isPortable()) {
+            return;
+        }
+        try {
+            if (wantPortable) {
+                Files.createDirectories(Metadata.getPortableDirectory());
+                Files.writeString(Metadata.getPortableMarker(),
+                        "Xenon portable mode marker.\n"
+                                + "Delete this file to return to the default data directory.\n",
+                        StandardCharsets.UTF_8, StandardOpenOption.CREATE,
+                        StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+            } else {
+                Files.deleteIfExists(Metadata.getPortableMarker());
+            }
+            Controllers.dialog(i18n(wantPortable
+                            ? "launcher.cache_directory.portable.enabled"
+                            : "launcher.cache_directory.portable.disabled"),
+                    i18n("message.info"), MessageDialogPane.MessageType.INFO);
+        } catch (IOException e) {
+            LOG.warning("Failed to switch portable mode", e);
+            config().setCommonDirType(Metadata.isPortable()
+                    ? EnumCommonDirectory.PORTABLE : EnumCommonDirectory.DEFAULT);
+            Controllers.dialog(i18n("launcher.cache_directory.portable.failed", e.getMessage()),
+                    i18n("message.error"), MessageDialogPane.MessageType.ERROR);
+        }
+    }
+
+    /// Validates the configured token and reports the account and quota.
+    private static void verifyGithubToken(Label status) {
+        String token = config().getGithubToken();
+        if (token == null || token.isBlank()) {
+            status.setText(i18n("download.github.anonymous"));
+            return;
+        }
+        status.setText(i18n("message.doing"));
+        Schedulers.io().execute(() -> {
+            try {
+                GitHubAuth.TokenCheck check = GitHubAuth.verify(token);
+                Platform.runLater(() -> status.setText(
+                        formatGithubStatus(check.login(), check.rateLimit())));
+            } catch (IOException e) {
+                LOG.warning("GitHub token verification failed", e);
+                Platform.runLater(() -> status.setText(
+                        i18n("download.github.invalid", e.getMessage())));
+            }
+        });
+    }
+
+    /// Refreshes the rate limit for the already configured token.
+    private static void refreshGithubStatus(Label status) {
+        if (!GitHubAuth.hasToken()) {
+            status.setText(i18n("download.github.anonymous"));
+            return;
+        }
+        Schedulers.io().execute(() -> {
+            try {
+                GitHubAuth.RateLimit limit = GitHubAuth.refreshRateLimit();
+                Platform.runLater(() -> status.setText(formatGithubStatus(null, limit)));
+            } catch (IOException e) {
+                LOG.warning("Failed to refresh the GitHub rate limit", e);
+                Platform.runLater(() -> status.setText(i18n("download.github.offline")));
+            }
+        });
+    }
+
+    /// Formats the account / quota status line.
+    private static String formatGithubStatus(@Nullable String login, GitHubAuth.RateLimit limit) {
+        String reset = RESET_FORMAT.format(limit.reset().atZone(ZoneId.systemDefault()));
+        String rate = i18n("download.github.rate_limit", limit.remaining(), limit.limit(), reset);
+        return login == null || login.isBlank()
+                ? rate
+                : i18n("download.github.verified", login) + "  ·  " + rate;
+    }
+
+    /// Formatter for the rate-limit reset instant.
+    private static final DateTimeFormatter RESET_FORMAT = DateTimeFormatter.ofPattern("HH:mm");
 
     private void clearCacheDirectory() {
         String commonDirectory = Settings.instance().getCommonDirectory();

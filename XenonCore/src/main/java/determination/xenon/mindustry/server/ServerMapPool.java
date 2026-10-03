@@ -17,6 +17,7 @@
  */
 package determination.xenon.mindustry.server;
 
+import determination.xenon.util.io.FileUtils;
 import determination.xenon.util.logging.Logger;
 
 import java.io.IOException;
@@ -114,10 +115,10 @@ public final class ServerMapPool {
         return dst;
     }
 
-    /** Permanently delete one map archive. No-op if it's already gone. */
+    /** Delete one map archive, preferring the platform trash. No-op if it's already gone. */
     public void delete(Path map) throws IOException {
         Objects.requireNonNull(map, "map");
-        Files.deleteIfExists(map);
+        FileUtils.deleteSafely(map);
     }
 
     /**

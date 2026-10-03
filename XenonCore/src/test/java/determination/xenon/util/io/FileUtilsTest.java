@@ -18,13 +18,30 @@
 package determination.xenon.util.io;
 
 import determination.xenon.util.platform.OperatingSystem;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /// @author Glavo
 public class FileUtilsTest {
+
+    /// `deleteSafely` removes the file (trash or permanent) and tolerates absent paths.
+    @Test
+    public void testDeleteSafely(@TempDir Path tempDir) throws IOException {
+        Path file = tempDir.resolve("victim.txt");
+        Files.writeString(file, "content");
+        assertTrue(FileUtils.deleteSafely(file));
+        assertFalse(Files.exists(file));
+        // Deleting a missing path is idempotent.
+        assertTrue(FileUtils.deleteSafely(file));
+    }
 
     @ParameterizedTest
     @EnumSource(OperatingSystem.class)

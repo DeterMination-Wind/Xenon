@@ -687,6 +687,23 @@ public final class Config extends ObservableSetting {
         this.proxyPass.set(proxyPass);
     }
 
+    @SerializedName("githubToken")
+    private final StringProperty githubToken = new SimpleStringProperty();
+
+    /// The optional GitHub personal access token used for API requests.
+    public StringProperty githubTokenProperty() {
+        return githubToken;
+    }
+
+    /// The configured GitHub token, or an empty string for anonymous access.
+    public String getGithubToken() {
+        return githubToken.get();
+    }
+
+    public void setGithubToken(String githubToken) {
+        this.githubToken.set(githubToken);
+    }
+
     // Game
 
     @SerializedName("disableAutoGameOptions")

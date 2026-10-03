@@ -102,10 +102,11 @@ public final class MindustryVersionPage extends DecoratorAnimatedPage implements
         AdvancedListBox toolbar = new AdvancedListBox()
                 .addNavigationDrawerItem(i18n("version.launch.test"), SVG.ROCKET_LAUNCH, this::launch)
                 .addNavigationDrawerItem(i18n("settings.game.exploration"), SVG.FOLDER_OPEN, () -> FXUtils.openFolder(workingDirectory))
+                .addNavigationDrawerItem(i18n("xenon.mindustry.migrate.button"), SVG.CONTENT_COPY, this::migrateFromInstance)
                 .addNavigationDrawerItem(i18n("modpack.export"), SVG.OUTPUT, () -> MindustryRoutes.exportModpack(version))
                 .addNavigationDrawerItem(i18n("version.manage.remove"), SVG.DELETE, this::deleteVersion);
         toolbar.getStyleClass().add("advanced-list-box-clear-padding");
-        FXUtils.setLimitHeight(toolbar, 40 * 4 + 12 * 2);
+        FXUtils.setLimitHeight(toolbar, 40 * 5 + 12 * 2);
 
         setLeft(sideBar, toolbar);
         setCenter(transitionPane);
@@ -132,6 +133,11 @@ public final class MindustryVersionPage extends DecoratorAnimatedPage implements
 
     private void launch() {
         MindustryRoutes.launch(version);
+    }
+
+    /// Opens the cross-instance data migration dialog for this instance.
+    private void migrateFromInstance() {
+        Controllers.dialog(new MindustryMigrationDialog(version));
     }
 
     private void refreshModPaneAfterProcessExit() {
