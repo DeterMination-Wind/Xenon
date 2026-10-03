@@ -135,6 +135,25 @@ public class AdvancedListItem extends Control {
         this.active.set(active);
     }
 
+    private final BooleanProperty wrapText = new SimpleBooleanProperty(this, "wrapText");
+
+    /// Whether the title and subtitle wrap instead of being clipped.
+    public BooleanProperty wrapTextProperty() {
+        return wrapText;
+    }
+
+    /// Returns whether the title and subtitle wrap instead of being clipped.
+    public boolean isWrapText() {
+        return wrapText.get();
+    }
+
+    /// Enables or disables wrapping for the title and subtitle.
+    ///
+    /// @param wrapText whether long text should wrap instead of being clipped
+    public void setWrapText(boolean wrapText) {
+        this.wrapText.set(wrapText);
+    }
+
     private final ObjectProperty<EventHandler<ActionEvent>> onAction = new SimpleObjectProperty<>(this, "onAction") {
         @Override
         protected void invalidated() {

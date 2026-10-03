@@ -112,6 +112,11 @@ public final class MindustryClientRuntimeRegistry {
         } catch (IOException ex) {
             emit(listener, new LaunchFailed(id, ex));
             throw ex;
+        } catch (RuntimeException ex) {
+            // Emitted before propagating so a relaunch after a windowless
+            // process termination can close its still-open playtime session.
+            emit(listener, new LaunchFailed(id, ex));
+            throw ex;
         }
         handles.put(id, handle);
         emit(listener, new Started(id, handle.pid()));
@@ -147,7 +152,9 @@ public final class MindustryClientRuntimeRegistry {
                 handle.listener, handle.stdout, handle.stderr);
         try {
             replacement.start();
-        } catch (IOException ex) {
+        } catch (IOException | RuntimeException ex) {
+            // Unchecked launcher errors must reach the listener too, so a
+            // still-open playtime session can be closed instead of leaking.
             emit(handle.listener, new LaunchFailed(handle.id, ex));
             return true;
         }

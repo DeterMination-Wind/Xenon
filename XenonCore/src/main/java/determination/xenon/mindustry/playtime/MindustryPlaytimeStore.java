@@ -24,7 +24,9 @@ import org.jetbrains.annotations.Nullable;
 
 import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.nio.ByteBuffer;
+import java.nio.channels.Channels;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
 import java.nio.charset.StandardCharsets;
@@ -62,10 +64,10 @@ public final class MindustryPlaytimeStore {
     /// JSON codec shared by all appends.
     private static final Gson GSON = new Gson();
 
-    /// Process-wide serialization of appends so threads of this JVM never try
-    /// to hold overlapping locks on one file region; cross-process exclusion is
-    /// provided by the file lock itself.
-    private static final Object APPEND_MONITOR = new Object();
+    /// Process-wide serialization of file lock acquisitions so threads of this
+    /// JVM never try to hold overlapping locks on one file region; cross-process
+    /// exclusion is provided by the file lock itself.
+    private static final Object FILE_LOCK_MONITOR = new Object();
 
     /// Path of the JSONL file backing this store.
     private final Path file;
@@ -93,23 +95,66 @@ public final class MindustryPlaytimeStore {
 
     /// Builds the playtime summary of this instance.
     ///
-    /// Missing files, unreadable lines and malformed events are skipped
-    /// silently, so this method never throws and may return [PlaytimeSummary#EMPTY]
-    /// or a partial summary.
+    /// The log is read while holding a shared file lock, so an append from
+    /// another launcher process is waited out instead of being observed as a
+    /// half-written line. Missing files, unreadable lines and malformed events
+    /// are skipped silently, so this method never throws and may return
+    /// [PlaytimeSummary#EMPTY] or a partial summary.
     public PlaytimeSummary readSummary() {
-        List<Event> events = new ArrayList<>();
-        try (BufferedReader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                Event event = parse(line);
-                if (event != null) {
-                    events.add(event);
-                }
+        synchronized (FILE_LOCK_MONITOR) {
+            try {
+                return summarize(readLocked());
+            } catch (IOException | RuntimeException ignored) {
+                // Byte-range locks are unavailable on a few filesystems, so
+                // fall back to an unlocked read instead of reporting nothing.
             }
-        } catch (IOException | RuntimeException ignored) {
-            // A missing or partially corrupted log must not break the UI.
+            try {
+                return summarize(readUnlocked());
+            } catch (IOException | RuntimeException ignored) {
+                // A missing or partially corrupted log must not break the UI.
+                return PlaytimeSummary.EMPTY;
+            }
         }
-        return summarize(events);
+    }
+
+    /// Reads every valid event while holding a shared lock on the log.
+    ///
+    /// Waiting for the lock is what turns a concurrent append into an
+    /// all-or-nothing read; without it Windows byte-range locks make the read
+    /// fail outright while another process is writing.
+    private List<Event> readLocked() throws IOException {
+        try (FileChannel channel = FileChannel.open(file, StandardOpenOption.READ)) {
+            FileLock lock = channel.lock(0L, Long.MAX_VALUE, true);
+            BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(Channels.newInputStream(channel), StandardCharsets.UTF_8));
+            try {
+                return readAll(reader);
+            } finally {
+                // Release before closing the reader, which closes the channel.
+                lock.release();
+                reader.close();
+            }
+        }
+    }
+
+    /// Reads every valid event without locking the log.
+    private List<Event> readUnlocked() throws IOException {
+        try (BufferedReader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+            return readAll(reader);
+        }
+    }
+
+    /// Reads all valid events from an open log reader.
+    private static List<Event> readAll(BufferedReader reader) throws IOException {
+        List<Event> events = new ArrayList<>();
+        String line;
+        while ((line = reader.readLine()) != null) {
+            Event event = parse(line);
+            if (event != null) {
+                events.add(event);
+            }
+        }
+        return events;
     }
 
     /// Opens the file in append mode and writes one locked JSONL event.
@@ -120,7 +165,7 @@ public final class MindustryPlaytimeStore {
         }
         String line = GSON.toJson(new Event(type, pid, at)) + System.lineSeparator();
         byte[] bytes = line.getBytes(StandardCharsets.UTF_8);
-        synchronized (APPEND_MONITOR) {
+        synchronized (FILE_LOCK_MONITOR) {
             try (FileChannel channel = FileChannel.open(file,
                     StandardOpenOption.CREATE, StandardOpenOption.APPEND, StandardOpenOption.WRITE)) {
                 FileLock lock = channel.lock();

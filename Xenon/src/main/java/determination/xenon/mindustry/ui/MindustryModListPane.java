@@ -241,8 +241,10 @@ public final class MindustryModListPane extends BorderPane {
         Schedulers.io().execute(() -> {
             try {
                 Files.createDirectories(modsDir);
+                List<MindustryCompatibility.Issue> before = evaluateAfterInstall();
                 manager.install(f.toPath());
-                List<MindustryCompatibility.Issue> issues = evaluateAfterInstall();
+                List<MindustryCompatibility.Issue> issues =
+                        MindustryCompatibility.newlyIntroduced(before, evaluateAfterInstall());
                 if (!issues.isEmpty()) {
                     Platform.runLater(() -> MindustryCompatibility.showIssues(
                             i18n("xenon.mindustry.install.compat.title"), issues));
@@ -266,13 +268,7 @@ public final class MindustryModListPane extends BorderPane {
         if (version == null || versionRoot == null) {
             return List.of();
         }
-        try {
-            return MindustryCompatibility.forInstance(version, versionRoot, dataDir);
-        } catch (RuntimeException ex) {
-            // A failed evaluation must never block the post-install refresh.
-            LOG.warning("Failed to evaluate Mindustry compatibility after install", ex);
-            return List.of();
-        }
+        return MindustryCompatibility.forInstanceOrEmpty(version, versionRoot, dataDir);
     }
 
     private void showError(Throwable ex) {

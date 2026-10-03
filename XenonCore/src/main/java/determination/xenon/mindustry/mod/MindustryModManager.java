@@ -256,8 +256,14 @@ public final class MindustryModManager {
         Files.copy(zipOrJar, dst, StandardCopyOption.REPLACE_EXISTING);
     }
 
-    private static boolean isModArchive(Path p) {
-        String name = p.getFileName().toString().toLowerCase(Locale.ROOT);
+    /// Returns whether the file name selects a Mindustry mod archive.
+    ///
+    /// A trailing `.disabled` is ignored; both `.jar` and `.zip` archives count.
+    ///
+    /// @param file file to classify by name
+    /// @return whether `file` is a mod archive, enabled or disabled
+    public static boolean isModArchive(Path file) {
+        String name = file.getFileName().toString().toLowerCase(Locale.ROOT);
         if (name.endsWith(".disabled")) {
             name = name.substring(0, name.length() - ".disabled".length());
         }

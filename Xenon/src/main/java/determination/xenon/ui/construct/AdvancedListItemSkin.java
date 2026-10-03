@@ -43,6 +43,7 @@ public class AdvancedListItemSkin extends SkinBase<AdvancedListItem> {
         item.setMouseTransparent(true);
         item.titleProperty().bind(skinnable.titleProperty());
         item.subtitleProperty().bind(skinnable.subtitleProperty());
+        FXUtils.onChangeAndOperate(skinnable.wrapTextProperty(), item::setWrapText);
 
         root.leftProperty().bind(skinnable.leftGraphicProperty());
         root.rightProperty().bind(skinnable.rightGraphicProperty());

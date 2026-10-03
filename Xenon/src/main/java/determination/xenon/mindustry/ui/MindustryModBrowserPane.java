@@ -580,12 +580,18 @@ public final class MindustryModBrowserPane extends BorderPane implements PageAwa
         Task<Path> download = resolve.thenComposeAsync(Schedulers.io(), pick ->
                 new ModDownloadTask(pick, label));
 
-        // Stage 3: copy the downloaded archive into <dataDir>/mods/, then
-        // delete the staging file regardless of outcome.
-        Task<Void> install = download.thenComposeAsync(Schedulers.io(), staging ->
-                Task.runAsync(Schedulers.io(), () -> {
+        // Stage 3: capture the pre-install findings, copy the downloaded
+        // archive into <dataDir>/mods/, and report only what the install
+        // introduced. The staging file is deleted regardless of outcome.
+        Task<List<MindustryCompatibility.Issue>> install = download.thenComposeAsync(Schedulers.io(), staging ->
+                Task.supplyAsync(Schedulers.io(), () -> {
                     try {
+                        List<MindustryCompatibility.Issue> before =
+                                MindustryCompatibility.forInstanceOrEmpty(target, versionRoot, dataDir);
                         new MindustryModManager(modsDir).install(staging);
+                        List<MindustryCompatibility.Issue> after =
+                                MindustryCompatibility.forInstanceOrEmpty(target, versionRoot, dataDir);
+                        return MindustryCompatibility.newlyIntroduced(before, after);
                     } finally {
                         try { Files.deleteIfExists(staging); } catch (IOException ignored) {}
                     }
@@ -594,20 +600,14 @@ public final class MindustryModBrowserPane extends BorderPane implements PageAwa
         // Toast on success (with the destination so the user knows where it
         // landed) / dialog on failure.
         String targetName = target.getName() == null ? target.getId() : target.getName();
-        Task<Void> pipeline = install.whenComplete(Schedulers.javafx(), ex -> {
+        Task<Void> pipeline = install.whenComplete(Schedulers.javafx(), (issues, ex) -> {
             if (ex == null) {
                 Controllers.showToast(i18n("xenon.mindustry.mod.browser.installed.into",
                         label, targetName));
-                Schedulers.io().execute(() -> {
-                    try {
-                        List<MindustryCompatibility.Issue> issues =
-                                MindustryCompatibility.forInstance(target, versionRoot, dataDir);
-                        Platform.runLater(() -> MindustryCompatibility.showIssues(
-                                i18n("xenon.mindustry.install.compat.title"), issues));
-                    } catch (RuntimeException evaluationError) {
-                        LOG.warning("Failed to evaluate Mindustry compatibility after install", evaluationError);
-                    }
-                });
+                if (issues != null && !issues.isEmpty()) {
+                    MindustryCompatibility.showIssues(
+                            i18n("xenon.mindustry.install.compat.title"), issues);
+                }
             } else {
                 String msg = ex.getMessage() == null ? ex.toString() : ex.getMessage();
                 LOG.warning("Failed to install mod " + ownerRepo + " into " + target.getId(), ex);

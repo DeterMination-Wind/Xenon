@@ -79,8 +79,11 @@ public final class MindustryCompatibility {
     /// Evaluates the compatibility of `version` as installed under `versionRoot`.
     ///
     /// Uses `dataDir` to locate `mods/` and the per-instance mod enable
-    /// settings. The returned list is sorted by severity (ERROR, then
-    /// WARNING, then INFO) and is stable within one severity level.
+    /// settings. Only mods the game would actually load (enabled and not
+    /// overridden by a duplicate) are checked for their own build and
+    /// dependency requirements; disabled or overridden archives still show up
+    /// as duplicate findings. The returned list is sorted by severity (ERROR,
+    /// then WARNING, then INFO) and is stable within one severity level.
     ///
     /// Performs file IO; call from a background thread.
     ///
@@ -105,6 +108,9 @@ public final class MindustryCompatibility {
 
         if (targetBuild > 0) {
             for (MindustryLocalMod mod : mods) {
+                if (!loads(mod)) {
+                    continue;
+                }
                 if (mod.getMinGameVersion() > targetBuild) {
                     issues.add(new Issue(Severity.WARNING, i18n(
                             "xenon.mindustry.health.issue.min_game_version",
@@ -130,6 +136,37 @@ public final class MindustryCompatibility {
         return List.copyOf(issues);
     }
 
+    /// Evaluates [#forInstance] and returns an empty list when the evaluation
+    /// itself fails, so a broken scan can never block a launcher flow.
+    ///
+    /// Performs file IO; call from a background thread.
+    public static @Unmodifiable List<Issue> forInstanceOrEmpty(MindustryVersion version, Path versionRoot, Path dataDir) {
+        try {
+            return forInstance(version, versionRoot, dataDir);
+        } catch (RuntimeException ex) {
+            LOG.warning("Failed to evaluate Mindustry compatibility for " + version.getId(), ex);
+            return List.of();
+        }
+    }
+
+    /// Returns the issues in `after` that were not present in `before`.
+    ///
+    /// Used after a mod install so the warning only mentions findings the
+    /// installation actually introduced instead of every pre-existing problem.
+    public static @Unmodifiable List<Issue> newlyIntroduced(List<Issue> before, List<Issue> after) {
+        if (before.isEmpty() || after.isEmpty()) {
+            return List.copyOf(after);
+        }
+        Set<Issue> known = Set.copyOf(before);
+        List<Issue> added = new ArrayList<>();
+        for (Issue issue : after) {
+            if (!known.contains(issue)) {
+                added.add(issue);
+            }
+        }
+        return List.copyOf(added);
+    }
+
     /// Returns the localized label of `severity`.
     public static String severityLabel(Severity severity) {
         return switch (severity) {
@@ -152,18 +189,23 @@ public final class MindustryCompatibility {
             if (body.length() > 0) {
                 body.append('\n');
             }
-            body.append(severityLabel(issue.severity())).append(": ").append(issue.message());
+            body.append(i18n("xenon.mindustry.health.issue.line",
+                    severityLabel(issue.severity()), issue.message()));
         }
         Controllers.dialog(body.toString(), heading, MessageDialogPane.MessageType.WARNING);
     }
 
-    /// Appends one issue per unresolved dependency of every parsed mod.
+    /// Appends one issue per unresolved dependency of every parsed mod that
+    /// will actually load.
     ///
     /// Names are compared case-insensitively against mod internal names;
     /// built-in loader names and a mod's own name are skipped. A dependency
     /// counts as satisfied as soon as one matching mod is enabled.
     private static void collectDependencyIssues(List<MindustryLocalMod> mods, List<Issue> issues) {
         for (MindustryLocalMod mod : mods) {
+            if (!loads(mod)) {
+                continue;
+            }
             for (String rawDependency : mod.getDependencies()) {
                 String dependency = rawDependency == null ? "" : rawDependency.trim();
                 if (dependency.isEmpty()) {
@@ -211,7 +253,11 @@ public final class MindustryCompatibility {
         }
         try (DirectoryStream<Path> stream = Files.newDirectoryStream(modsDir)) {
             for (Path file : stream) {
-                if (!Files.isRegularFile(file) || !isModArchiveName(file)) {
+                if (!Files.isRegularFile(file) || !MindustryModManager.isModArchive(file)) {
+                    continue;
+                }
+                if (isDisabledArchive(file)) {
+                    // Disabled archives never load, so a broken one is not a problem.
                     continue;
                 }
                 if (!parsed.contains(file.toAbsolutePath().normalize())) {
@@ -225,15 +271,16 @@ public final class MindustryCompatibility {
         }
     }
 
-    /// Returns whether the file name selects a Mindustry mod archive.
+    /// Returns whether the file name carries Mindustry's disabled suffix.
+    private static boolean isDisabledArchive(Path file) {
+        return file.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".disabled");
+    }
+
+    /// Returns whether the game will actually load `mod`.
     ///
-    /// Mirrors `MindustryModManager`: a trailing `.disabled` is ignored and
-    /// both `.jar` and `.zip` archives count.
-    private static boolean isModArchiveName(Path file) {
-        String name = file.getFileName().toString().toLowerCase(Locale.ROOT);
-        if (name.endsWith(".disabled")) {
-            name = name.substring(0, name.length() - ".disabled".length());
-        }
-        return name.endsWith(".jar") || name.endsWith(".zip");
+    /// Disabled archives and duplicate losers never load, so their own
+    /// requirements are not reported as instance problems.
+    private static boolean loads(MindustryLocalMod mod) {
+        return mod.isEnabled() && !mod.isIgnoredByDuplicate();
     }
 }

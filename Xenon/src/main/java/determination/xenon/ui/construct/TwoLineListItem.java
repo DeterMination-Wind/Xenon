@@ -40,6 +40,9 @@ public class TwoLineListItem extends VBox {
     private final Label lblTitle;
     private Label lblSubtitle;
 
+    /// Whether both text lines wrap their content instead of being clipped.
+    private boolean wrapText;
+
     public TwoLineListItem() {
         getStyleClass().add(DEFAULT_STYLE_CLASS);
         setMouseTransparent(true);
@@ -65,6 +68,7 @@ public class TwoLineListItem extends VBox {
         if (secondLine == null) {
             lblSubtitle = new Label();
             lblSubtitle.getStyleClass().add("subtitle");
+            lblSubtitle.setWrapText(wrapText);
 
             secondLine = new HBox(lblSubtitle);
         }
@@ -100,6 +104,20 @@ public class TwoLineListItem extends VBox {
     }
 
     private StringProperty subtitle;
+
+    /// Enables or disables text wrapping for both lines.
+    ///
+    /// Useful for rows whose text can be arbitrarily long, such as health
+    /// findings that embed file paths.
+    ///
+    /// @param wrapText whether long text should wrap instead of being clipped
+    public void setWrapText(boolean wrapText) {
+        this.wrapText = wrapText;
+        lblTitle.setWrapText(wrapText);
+        if (lblSubtitle != null) {
+            lblSubtitle.setWrapText(wrapText);
+        }
+    }
 
     public StringProperty subtitleProperty() {
         if (subtitle == null) {

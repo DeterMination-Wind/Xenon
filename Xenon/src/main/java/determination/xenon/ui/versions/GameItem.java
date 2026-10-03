@@ -24,6 +24,7 @@ import determination.xenon.mindustry.MindustryImportFlow;
 import determination.xenon.mindustry.MindustryVersion;
 import determination.xenon.mindustry.MindustryVersionDisplay;
 import determination.xenon.mindustry.playtime.MindustryPlaytimeStore;
+import determination.xenon.mindustry.playtime.PlaytimeFormat;
 import determination.xenon.mindustry.playtime.PlaytimeSummary;
 import determination.xenon.mindustry.ui.MindustryRoutes;
 import determination.xenon.mod.ModpackConfiguration;
@@ -92,18 +93,8 @@ public class GameItem {
                 String buildLabel = MindustryVersionDisplay.buildLabel(
                         v.getVariant(), v.getBuild(), v.getBuildType(), v.getId(), v.getJarPath());
                 if (!buildLabel.isEmpty()) sub.append("  ·  ").append(buildLabel);
-                try {
-                    Path versionRoot = MindustryImportFlow.repositoryForVersion(v).getVersionRoot(v);
-                    PlaytimeSummary s = new MindustryPlaytimeStore(versionRoot).readSummary();
-                    if (s.lastLaunchEpochMillis() > 0) {
-                        sub.append("  ·  ").append(i18n("xenon.mindustry.playtime.line",
-                                I18n.formatDateTime(Instant.ofEpochMilli(s.lastLaunchEpochMillis())),
-                                formatDuration(s.totalActiveMillis())));
-                    }
-                } catch (RuntimeException ex) {
-                    LOG.warning("Failed to read Mindustry playtime for " + id, ex);
-                }
                 subtitle.set(sub.toString());
+                appendPlaytimeAsync(v, sub.toString());
                 tag.set("Mindustry");
             }
             image.set(determination.xenon.game.TexturesLoader.getDefaultSkinImage());
@@ -178,14 +169,30 @@ public class GameItem {
         image.set(profile.getRepository().getVersionIconImage(id));
     }
 
-    /// Formats a playtime duration as localized hours/minutes or minutes.
-    private static String formatDuration(long millis) {
-        long hours = millis / 3_600_000;
-        long minutes = (millis % 3_600_000) / 60_000;
-        if (hours > 0) {
-            return i18n("xenon.mindustry.playtime.duration.hm", hours, minutes);
-        }
-        return i18n("xenon.mindustry.playtime.duration.m", minutes);
+    /// Appends the recorded playtime line to `base` once the log has been read
+    /// off the JavaFX thread.
+    ///
+    /// The log grows with every recorded session, so reading it synchronously
+    /// while a list cell binds the subtitle would stall the UI thread.
+    ///
+    /// @param version the Mindustry instance whose log is read
+    /// @param base subtitle text the playtime line is appended to
+    private void appendPlaytimeAsync(MindustryVersion version, String base) {
+        CompletableFuture.supplyAsync(() -> {
+            try {
+                Path versionRoot = MindustryImportFlow.repositoryForVersion(version).getVersionRoot(version);
+                return new MindustryPlaytimeStore(versionRoot).readSummary();
+            } catch (RuntimeException ex) {
+                LOG.warning("Failed to read Mindustry playtime for " + id, ex);
+                return PlaytimeSummary.EMPTY;
+            }
+        }, POOL_VERSION_RESOLVE).whenCompleteAsync((summary, ex) -> {
+            if (ex == null && summary.lastLaunchEpochMillis() > 0) {
+                subtitle.set(base + "  ·  " + i18n("xenon.mindustry.playtime.line",
+                        I18n.formatDateTime(Instant.ofEpochMilli(summary.lastLaunchEpochMillis())),
+                        PlaytimeFormat.duration(summary.totalActiveMillis())));
+            }
+        }, Schedulers.javafx());
     }
 
     public ReadOnlyStringProperty titleProperty() {

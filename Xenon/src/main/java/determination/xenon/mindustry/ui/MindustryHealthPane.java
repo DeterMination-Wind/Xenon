@@ -20,6 +20,7 @@ package determination.xenon.mindustry.ui;
 import com.jfoenix.controls.JFXButton;
 import determination.xenon.mindustry.MindustryVersion;
 import determination.xenon.mindustry.playtime.MindustryPlaytimeStore;
+import determination.xenon.mindustry.playtime.PlaytimeFormat;
 import determination.xenon.mindustry.playtime.PlaytimeSummary;
 import determination.xenon.task.Schedulers;
 import determination.xenon.ui.Controllers;
@@ -73,6 +74,10 @@ public final class MindustryHealthPane extends BorderPane {
     /// Scrollable container for [#listBox].
     private final ScrollPane scroll = new ScrollPane(listBox);
 
+    /// Monotonic token of the newest reload request; results of an older
+    /// evaluation are dropped so a slow refresh cannot overwrite a newer one.
+    private long reloadGeneration;
+
     /// Creates a health report pane for one Mindustry instance.
     ///
     /// @param version the Mindustry instance descriptor
@@ -110,6 +115,7 @@ public final class MindustryHealthPane extends BorderPane {
 
     /// Recomputes playtime and compatibility data on the IO scheduler.
     private void reload() {
+        long generation = ++reloadGeneration;
         status.setText(i18n("xenon.mindustry.health.loading"));
         listBox.getChildren().clear();
         Schedulers.io().execute(() -> {
@@ -117,10 +123,18 @@ public final class MindustryHealthPane extends BorderPane {
                 PlaytimeSummary playtime = new MindustryPlaytimeStore(versionRoot).readSummary();
                 List<MindustryCompatibility.Issue> issues =
                         MindustryCompatibility.forInstance(version, versionRoot, dataDir);
-                Platform.runLater(() -> populate(playtime, issues));
+                Platform.runLater(() -> {
+                    if (generation == reloadGeneration) {
+                        populate(playtime, issues);
+                    }
+                });
             } catch (RuntimeException ex) {
                 LOG.warning("Failed to evaluate Mindustry instance health for " + version.getId(), ex);
-                Platform.runLater(() -> showError(ex));
+                Platform.runLater(() -> {
+                    if (generation == reloadGeneration) {
+                        showError(ex);
+                    }
+                });
             }
         });
     }
@@ -159,7 +173,7 @@ public final class MindustryHealthPane extends BorderPane {
         if (playtime.lastLaunchEpochMillis() <= 0) {
             return i18n("xenon.mindustry.health.playtime.none");
         }
-        return i18n("xenon.mindustry.health.playtime.total", formatDuration(playtime.totalActiveMillis()))
+        return i18n("xenon.mindustry.health.playtime.total", PlaytimeFormat.duration(playtime.totalActiveMillis()))
                 + " · " + i18n("xenon.mindustry.health.playtime.last",
                         I18n.formatDateTime(Instant.ofEpochMilli(playtime.lastLaunchEpochMillis())))
                 + " · " + i18n("xenon.mindustry.health.playtime.sessions", playtime.sessions());
@@ -181,24 +195,16 @@ public final class MindustryHealthPane extends BorderPane {
         }
         for (MindustryCompatibility.Issue issue : issues) {
             AdvancedListItem item = new AdvancedListItem();
+            item.setWrapText(true);
             item.setLeftIcon(switch (issue.severity()) {
                 case ERROR -> SVG.ERROR;
                 case WARNING -> SVG.WARNING;
                 case INFO -> SVG.INFO;
             });
-            item.setTitle(MindustryCompatibility.severityLabel(issue.severity()) + "：" + issue.message());
+            item.setTitle(i18n("xenon.mindustry.health.issue.line",
+                    MindustryCompatibility.severityLabel(issue.severity()), issue.message()));
             listBox.getChildren().add(item);
         }
-    }
-
-    /// Formats a duration as hours + minutes, or minutes when under one hour.
-    private static String formatDuration(long millis) {
-        long hours = millis / 3_600_000;
-        long minutes = (millis % 3_600_000) / 60_000;
-        if (hours > 0) {
-            return i18n("xenon.mindustry.playtime.duration.hm", hours, minutes);
-        }
-        return i18n("xenon.mindustry.playtime.duration.m", minutes);
     }
 
     /// Reports an evaluation failure with an error dialog.

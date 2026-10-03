@@ -160,4 +160,48 @@ public final class MindustryPlaytimeStoreTest {
         assertEquals((long) threads * pairsPerThread * 1_000L, summary.totalActiveMillis());
         assertEquals(threads * pairsPerThread, summary.sessions());
     }
+
+    /// Reads racing with appends report whole sessions and never throw.
+    @Test
+    public void concurrentReadsSeeCompleteSessions(@TempDir Path versionRoot) throws Exception {
+        MindustryPlaytimeStore store = new MindustryPlaytimeStore(versionRoot);
+        int writers = 2;
+        int sessionsPerWriter = 20;
+        long expectedTotal = (long) writers * sessionsPerWriter * 1_000L;
+        long expectedSessions = (long) writers * sessionsPerWriter;
+
+        CountDownLatch start = new CountDownLatch(1);
+        CountDownLatch done = new CountDownLatch(writers);
+        for (int writer = 0; writer < writers; writer++) {
+            long pid = 500L + writer;
+            long base = 1_000_000L * (writer + 1);
+            Thread worker = new Thread(() -> {
+                try {
+                    start.await();
+                    for (int i = 0; i < sessionsPerWriter; i++) {
+                        long at = base + i * 10_000L;
+                        store.recordStart(pid, at);
+                        store.recordEnd(pid, at + 1_000L);
+                    }
+                } catch (IOException | InterruptedException ex) {
+                    throw new RuntimeException(ex);
+                } finally {
+                    done.countDown();
+                }
+            });
+            worker.start();
+        }
+
+        start.countDown();
+        do {
+            PlaytimeSummary snapshot = store.readSummary();
+            assertTrue(snapshot.totalActiveMillis() >= 0L);
+            assertTrue(snapshot.totalActiveMillis() <= expectedTotal);
+            assertTrue(snapshot.sessions() <= expectedSessions);
+        } while (!done.await(2, TimeUnit.MILLISECONDS));
+
+        PlaytimeSummary summary = store.readSummary();
+        assertEquals(expectedTotal, summary.totalActiveMillis());
+        assertEquals((int) expectedSessions, summary.sessions());
+    }
 }

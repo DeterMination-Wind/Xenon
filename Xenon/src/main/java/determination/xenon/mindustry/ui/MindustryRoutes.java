@@ -299,14 +299,7 @@ public final class MindustryRoutes {
             LOG.info("Mindustry process started: id=" + started.id() + ", pid=" + started.pid());
             CommunityServices.presence().publishPlaying(started.id(), null, null);
             if (ACTIVE_SESSIONS.putIfAbsent(started.id(), started.pid()) == null) {
-                Schedulers.io().execute(() -> {
-                    try {
-                        new MindustryPlaytimeStore(versionRoot)
-                                .recordStart(started.pid(), System.currentTimeMillis());
-                    } catch (IOException ex) {
-                        LOG.warning("Failed to record Mindustry playtime start for " + started.id(), ex);
-                    }
-                });
+                openPlaytimeSession(versionRoot, started.id(), started.pid());
             }
         } else if (event instanceof MindustryClientRuntimeRegistry.AlreadyRunning alreadyRunning) {
             LOG.info("Ignored duplicate Mindustry launch request for " + alreadyRunning.id()
@@ -315,6 +308,11 @@ public final class MindustryRoutes {
         } else if (event instanceof MindustryClientRuntimeRegistry.Exited exited) {
             LOG.info("Mindustry process exited: id=" + exited.id() + ", pid=" + exited.pid()
                     + ", code=" + exited.exitCode());
+            if (!exited.reloadExit()) {
+                // Mindustry restarts itself after mod changes; the session stays
+                // open until the replacement process exits for good.
+                closePlaytimeSession(versionRoot, exited.id());
+            }
             CommunityServices.presence().clearPlaying();
             refreshOpenModPanes(exited.id());
             if (exited.exitCode() != 0) {
@@ -327,25 +325,12 @@ public final class MindustryRoutes {
                         .ok(null)
                         .build()));
             }
-            if (exited.reloadExit()) {
-                // Mindustry restarts itself after mod changes; keep the playtime
-                // session open because a replacement Started event follows.
-                return;
-            }
-            Long sessionPid = ACTIVE_SESSIONS.remove(exited.id());
-            if (sessionPid != null) {
-                Schedulers.io().execute(() -> {
-                    try {
-                        new MindustryPlaytimeStore(versionRoot)
-                                .recordEnd(sessionPid, System.currentTimeMillis());
-                    } catch (IOException ex) {
-                        LOG.warning("Failed to record Mindustry playtime end for " + exited.id(), ex);
-                    }
-                });
-            }
         } else if (event instanceof MindustryClientRuntimeRegistry.WindowlessProcessTerminated terminated) {
             LOG.warning("Terminated windowless Mindustry process: id=" + terminated.id()
                     + ", pid=" + terminated.pid());
+            if (!terminated.relaunching()) {
+                closePlaytimeSession(versionRoot, terminated.id());
+            }
             Platform.runLater(() -> {
                 if (terminated.relaunching()) {
                     Controllers.showToast(i18n("xenon.mindustry.launch.windowless.relaunching"));
@@ -355,37 +340,48 @@ public final class MindustryRoutes {
                             i18n("message.error"), MessageDialogPane.MessageType.ERROR);
                 }
             });
-            if (!terminated.relaunching()) {
-                Long sessionPid = ACTIVE_SESSIONS.remove(terminated.id());
-                if (sessionPid != null) {
-                    Schedulers.io().execute(() -> {
-                        try {
-                            new MindustryPlaytimeStore(versionRoot)
-                                    .recordEnd(sessionPid, System.currentTimeMillis());
-                        } catch (IOException ex) {
-                            LOG.warning("Failed to record Mindustry playtime end for "
-                                    + terminated.id(), ex);
-                        }
-                    });
-                }
-            }
         } else if (event instanceof MindustryClientRuntimeRegistry.LaunchFailed failed) {
             LOG.warning("Mindustry runtime launch failed: id=" + failed.id(), failed.error());
-            // A relaunch after a windowless-process termination may fail
-            // before the replacement starts; close the still-open session so
-            // it cannot absorb the duration of a later play run.
-            Long sessionPid = ACTIVE_SESSIONS.remove(failed.id());
-            if (sessionPid != null) {
-                Schedulers.io().execute(() -> {
-                    try {
-                        new MindustryPlaytimeStore(versionRoot)
-                                .recordEnd(sessionPid, System.currentTimeMillis());
-                    } catch (IOException ex) {
-                        LOG.warning("Failed to record Mindustry playtime end for " + failed.id(), ex);
-                    }
-                });
-            }
+            // A relaunch may fail before the replacement starts; close the
+            // still-open session so it cannot absorb a later play run.
+            closePlaytimeSession(versionRoot, failed.id());
         }
+    }
+
+    /// Records the start of one play session on the IO scheduler.
+    ///
+    /// @param versionRoot instance root that owns the playtime log
+    /// @param id Mindustry instance id the session belongs to
+    /// @param pid process id reported by the [MindustryClientRuntimeRegistry.Started] event
+    private static void openPlaytimeSession(Path versionRoot, String id, long pid) {
+        Schedulers.io().execute(() -> {
+            try {
+                new MindustryPlaytimeStore(versionRoot).recordStart(pid, System.currentTimeMillis());
+            } catch (IOException ex) {
+                LOG.warning("Failed to record Mindustry playtime start for " + id, ex);
+            }
+        });
+    }
+
+    /// Closes the open play session of `id` on the IO scheduler.
+    ///
+    /// Does nothing when no session is open and never throws.
+    ///
+    /// @param versionRoot instance root that owns the playtime log
+    /// @param id Mindustry instance id whose session is closed
+    private static void closePlaytimeSession(Path versionRoot, String id) {
+        Long sessionPid = ACTIVE_SESSIONS.remove(id);
+        if (sessionPid == null) {
+            return;
+        }
+        Schedulers.io().execute(() -> {
+            try {
+                new MindustryPlaytimeStore(versionRoot)
+                        .recordEnd(sessionPid, System.currentTimeMillis());
+            } catch (IOException ex) {
+                LOG.warning("Failed to record Mindustry playtime end for " + id, ex);
+            }
+        });
     }
 
     private static void refreshOpenModPanes(String id) {
