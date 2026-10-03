@@ -130,7 +130,7 @@ public final class MdtbbsSocialDialog {
         HBox.setHgrow(meta, Priority.ALWAYS);
 
         JFXButton accept = FXUtils.newRaisedButton(i18n("xenon.social.accept"));
-        accept.setOnAction(e -> respond(layout, () -> CommunityServices.social().acceptInvite(invite.id())));
+        accept.setOnAction(e -> acceptInvite(layout, invite));
         JFXButton decline = FXUtils.newRaisedButton(i18n("xenon.social.decline"));
         decline.setOnAction(e -> respond(layout, () -> CommunityServices.social().declineInvite(invite.id())));
 
@@ -141,6 +141,31 @@ public final class MdtbbsSocialDialog {
         row.setPadding(new Insets(6));
         row.getStyleClass().add("community-reply");
         return row;
+    }
+
+    /// Accepts an invite and joins the bound session through the netplay manager.
+    ///
+    /// The server returns a Join Intent bound to this client; consuming it
+    /// attaches the peer and prepares the relay loopback address.
+    private static void acceptInvite(JFXDialogLayout layout, Invite invite) {
+        Schedulers.io().execute(() -> {
+            try {
+                String intentId = CommunityServices.social().acceptInvite(invite.id());
+                Platform.runLater(() -> {
+                    Controllers.navigate(new MindustryNetplayPane());
+                    if (intentId != null && !intentId.isBlank()) {
+                        CommunityServices.netplay().joinByIntent(intentId);
+                    } else {
+                        CommunityServices.netplay().joinByCode(invite.sessionId());
+                    }
+                    reload(layout);
+                });
+            } catch (IOException e) {
+                Platform.runLater(() -> Controllers.dialog(
+                        MdtbbsMessages.describe(e),
+                        i18n("message.error"), MessageDialogPane.MessageType.ERROR));
+            }
+        });
     }
 
     /// Runs an invite mutation and reloads the dialog.

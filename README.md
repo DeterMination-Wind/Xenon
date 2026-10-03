@@ -54,7 +54,7 @@ Mod、地图、蓝图和存档都可以围绕具体实例整理、备份和导�
 
 #### 联机与实例小工具
 
-「联机」页内置官方公共服务器列表，也可以用六位房号通过 EasyTier 快速组建 P2P 房间；实例页的「迁移数据」可以从其他实例复制存档、mod、蓝图、地图与游玩统计；启动内存会结合已启用 mod 的体积自动推荐；便携版还能用启动器目录下的 `Xenon.portable` 标记把所有数据保存在程序目录中。
+「联机」页内置官方公共服务器列表，支持 MDTBBS 联机会话（创建 / 加入房间、好友邀请与 Join Intent，数据经官方中继），也可以用六位房号通过 EasyTier 快速组建 P2P 房间；实例页的「迁移数据」可以从其他实例复制存档、mod、蓝图、地图与游玩统计；启动内存会结合已启用 mod 的体积自动推荐；便携版还能用启动器目录下的 `Xenon.portable` 标记把所有数据保存在程序目录中。
 
 #### 出现问题时更容易找到原因
 
@@ -164,7 +164,7 @@ Xenon also manages multiple Mindustry server instances. Server owners can handle
 
 #### Netplay and instance tools
 
-The Netplay page ships the official public server list and creates EasyTier P2P rooms from a six-digit code. Each instance gains a Migrate data dialog that copies saves, mods, schematics, maps and playtime from another instance; launch memory is suggested from the enabled mod set; and the portable build can keep all data next to the launcher through the `Xenon.portable` marker.
+The Netplay page ships the official public server list, supports MDTBBS multiplayer sessions (create/join rooms, friend invites and Join Intents over the official relay) and creates EasyTier P2P rooms from a six-digit code. Each instance gains a Migrate data dialog that copies saves, mods, schematics, maps and playtime from another instance; launch memory is suggested from the enabled mod set; and the portable build can keep all data next to the launcher through the `Xenon.portable` marker.
 
 #### Make troubleshooting less painful
 

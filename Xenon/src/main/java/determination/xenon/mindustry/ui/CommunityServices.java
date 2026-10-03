@@ -16,7 +16,10 @@ import determination.xenon.mindustry.community.MdtbbsForumClient;
 import determination.xenon.mindustry.community.MdtbbsGameContentClient;
 import determination.xenon.mindustry.community.MdtbbsPresenceService;
 import determination.xenon.mindustry.community.MdtbbsSocialClient;
+import determination.xenon.mindustry.netplay.MdtbbsNetplayManager;
 import org.jetbrains.annotations.NotNullByDefault;
+
+import static determination.xenon.util.i18n.I18n.i18n;
 
 /// Shared MDTBBS account and forum services for the launcher UI.
 ///
@@ -39,6 +42,10 @@ public final class CommunityServices {
     private static final MdtbbsSocialClient SOCIAL = new MdtbbsSocialClient(COMMUNITY.api());
     /// Presence heartbeat service bound to the account coordinator.
     private static final MdtbbsPresenceService PRESENCE = new MdtbbsPresenceService(COMMUNITY);
+    /// Shared MDTBBS multiplayer session manager.
+    private static final MdtbbsNetplayManager NETPLAY = new MdtbbsNetplayManager(COMMUNITY);
+    /// Whether the netplay activity sink has been installed.
+    private static volatile boolean netplayWired;
 
     /// Shared account coordinator.
     public static MdtbbsCommunity community() { return COMMUNITY; }
@@ -57,6 +64,28 @@ public final class CommunityServices {
 
     /// Shared presence heartbeat service.
     public static MdtbbsPresenceService presence() { return PRESENCE; }
+
+    /// Shared MDTBBS multiplayer session manager.
+    ///
+    /// The activity sink is installed on first access because it needs the
+    /// localised activity name, which is only available after I18n starts.
+    public static MdtbbsNetplayManager netplay() {
+        if (!netplayWired) {
+            synchronized (CommunityServices.class) {
+                if (!netplayWired) {
+                    NETPLAY.setActivitySink((sessionId, hosting) -> {
+                        if (sessionId == null || sessionId.isBlank()) {
+                            PRESENCE.clearPlaying();
+                        } else {
+                            PRESENCE.publishPlaying(i18n("xenon.netplay.mdtbbs.activity"), null, sessionId);
+                        }
+                    });
+                    netplayWired = true;
+                }
+            }
+        }
+        return NETPLAY;
+    }
 
     private CommunityServices() {
     }

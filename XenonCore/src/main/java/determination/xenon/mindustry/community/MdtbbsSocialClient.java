@@ -162,9 +162,23 @@ public final class MdtbbsSocialClient {
     /// Accepts an invite.
     ///
     /// @param inviteId invite id
+    /// @return the Join Intent id the accepting client should consume, or an
+    ///         empty string when the server omitted it
     /// @throws IOException when the request fails
-    public void acceptInvite(String inviteId) throws IOException {
-        api.post("/multiplayer/invites/" + inviteId + "/accept", new JsonObject());
+    public String acceptInvite(String inviteId) throws IOException {
+        JsonObject data = MdtbbsJson.dataObject(
+                api.post("/multiplayer/invites/" + inviteId + "/accept", new JsonObject()));
+        String intent = MdtbbsJson.stringOf(data, "intent_id");
+        if (intent.isBlank()) {
+            intent = MdtbbsJson.stringOf(data, "join_intent");
+        }
+        if (intent.isBlank()) {
+            JsonObject nested = MdtbbsJson.objectOf(data, "join_intent");
+            if (nested != null) {
+                intent = MdtbbsJson.stringOf(nested, "intent_id");
+            }
+        }
+        return intent;
     }
 
     /// Declines an invite.

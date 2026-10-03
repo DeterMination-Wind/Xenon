@@ -17,29 +17,23 @@
  */
 package determination.xenon.mindustry.ui;
 
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
-import determination.xenon.task.Schedulers;
 import determination.xenon.ui.Controllers;
 import determination.xenon.ui.construct.MessageDialogPane;
-import javafx.application.Platform;
 import org.jetbrains.annotations.NotNullByDefault;
 import org.jetbrains.annotations.Nullable;
 
-import java.io.IOException;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static determination.xenon.util.i18n.I18n.i18n;
-import static determination.xenon.util.logging.Logger.LOG;
 
 /// Handles `xenon://join?intent=...` deep links from MDTBBS.
 ///
 /// The link is captured from launcher arguments before JavaFX starts and from
-/// in-app hyperlinks afterwards, then consumed as a session Join Intent. The
-/// current release only performs the signalling step; entering the game still
-/// requires joining the server inside Mindustry.
+/// in-app hyperlinks afterwards. After the user confirms, the intent is
+/// consumed through the netplay manager, which joins the MDTBBS session and
+/// prepares the relay so the game can connect to the shown loopback address.
 @NotNullByDefault
 public final class MdtbbsJoinIntentHandler {
     /// Deep-link scheme and host handled by the launcher.
@@ -65,6 +59,9 @@ public final class MdtbbsJoinIntentHandler {
 
     /// Handles one join link.
     ///
+    /// Asks the user before jumping into the session, then leaves consumption
+    /// and session preparation to the netplay manager.
+    ///
     /// @param uri deep link such as `xenon://join?intent=abc`
     public static void handle(String uri) {
         String intentId = parseIntentId(uri);
@@ -74,21 +71,13 @@ public final class MdtbbsJoinIntentHandler {
                     MessageDialogPane.MessageType.WARNING);
             return;
         }
-        Schedulers.io().execute(() -> {
-            try {
-                JsonObject data = CommunityServices.social().consumeJoinIntent(intentId);
-                String sessionId = sessionIdOf(data);
-                Platform.runLater(() -> Controllers.dialog(
-                        i18n("xenon.join.consumed", sessionId),
-                        i18n("xenon.join.title"), MessageDialogPane.MessageType.INFO));
-            } catch (IOException e) {
-                LOG.warning("Failed to consume MDTBBS join intent " + intentId, e);
-                String message = MdtbbsMessages.describe(e);
-                Platform.runLater(() -> Controllers.dialog(
-                        i18n("xenon.join.failed", message),
-                        i18n("xenon.join.title"), MessageDialogPane.MessageType.ERROR));
-            }
-        });
+        Controllers.confirm(i18n("xenon.join.confirm"), i18n("xenon.join.title"),
+                MessageDialogPane.MessageType.QUESTION,
+                () -> {
+                    Controllers.navigate(new MindustryNetplayPane());
+                    CommunityServices.netplay().joinByIntent(intentId);
+                },
+                () -> {});
     }
 
     /// Extracts the `intent` query parameter from a join link.
@@ -106,18 +95,6 @@ public final class MdtbbsJoinIntentHandler {
             }
         }
         return null;
-    }
-
-    /// Reads the session id from a consume response.
-    private static String sessionIdOf(JsonObject data) {
-        JsonObject session = data.get("session") instanceof JsonObject object ? object : null;
-        JsonElement direct = data.get("session_id");
-        if (direct != null && !direct.isJsonNull()) return direct.getAsString();
-        if (session != null) {
-            JsonElement id = session.get("id");
-            if (id != null && !id.isJsonNull()) return id.getAsString();
-        }
-        return "?";
     }
 
     private MdtbbsJoinIntentHandler() {
