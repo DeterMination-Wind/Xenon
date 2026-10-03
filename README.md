@@ -56,6 +56,29 @@ Mod、地图、蓝图和存档都可以围绕具体实例整理、备份和导�
 
 每个实例都有对应的日志和崩溃记录。游戏退出或 Mod 冲突时，可以直接打开相关日志并查看可疑的 Mod 信息，减少在多个版本和文件夹之间排查的时间。
 
+### 与竞品的比较
+
+> 官方发行版与 Steam 版不提供启动器，Java、数据目录和 Mod/存档整理都需要手动完成。下表按各项目公开文档整理（截至 2026-10），竞品能力可能随版本变化，请以各自项目为准。
+
+| 能力 | Xenon | [BookMdtLauncher](https://github.com/ch-BookBanana/BookMdtLauncher) | [Copper Launcher](https://github.com/MDTCopper/launcher) | [MDL](https://github.com/colorgarden/mindustry_launcherMDL) | [MindustryLauncher](https://github.com/BalaM314/MindustryLauncher) |
+| --- | --- | --- | --- | --- | --- |
+| 平台 / 形态 | Windows / Linux / macOS · 图形界面 | Windows · 图形界面（PySide6） | Windows / Linux / macOS / Android · 图形界面（Flutter，开发阶段） | Windows 7+ · 图形界面（WPF，需 .NET 10） | Windows / Linux / macOS · 命令行（需 Node.js） |
+| 游戏来源 | 原版 / Bleeding-Edge / MindustryX / CN-ARC / Foo Client，本地 jar 与 Steam 导入 | 原版 / MindustryX / MindustryARC | 原版 / Bleeding-Edge | 原版（GitHub Release） | 原版 / Bleeding-Edge / Foo Client，自定义 jar 与源码目录 |
+| 实例隔离 | ✅ 独立数据目录 | ✅ | ✅ | ✅ | ⚠️ 仅版本目录，数据目录未说明 |
+| Mod 管理 | ✅ 社区索引、GitHub 直装、启停、依赖补齐 | ❌ | ✅ 浏览、启停、批量管理 | ✅ 浏览、搜索、安装卸载 | ⚠️ 面向 Mod 开发 |
+| 地图 / 蓝图 | ✅ mindustry.top 浏览安装，.msch 与分享码导入导出 | ❌ | ✅ 导入导出 | ✅ 社区蓝图下载 | ❌ |
+| 存档 | ✅ 备份 / 导出，云存档 | ❌ | ✅ 导入导出、跨版本迁移 | ✅ 扫描 / 解析 / 删除 | ❌ |
+| 社区与联机 | ✅ MDTBBS 社区、好友与联机邀请 | ❌ | ❌ | ✅ EasyTier P2P 联机大厅 | ❌ |
+| 国内下载 | ✅ 多镜像自动回退 | ⚠️ JDK 走清华镜像，游戏本体依赖 GitHub 网络 | ✅ GitHub 镜像节点测速切换 | ✅ 内置 6 种 GitHub 代理 | ❌ |
+| 服务器管理 | ✅ 控制台、自动重启、ScriptAgent | ❌ | ❌ | ❌ | ❌ |
+| 许可 | GPLv3 | GPL-3.0 | MIT | AGPL-3.0 | 未标注 |
+
+✅ 支持 ｜ ❌ 未提供或未在项目中说明 ｜ ⚠️ 部分支持或形态不同
+
+其他同样支持 Windows 的 Mindustry 启动器：[GIML](https://github.com/SquareCM2/GIML)（WinUI 3，开发中）、[zenonet/MindustryLauncher](https://github.com/zenonet/MindustryLauncher)（Avalonia，Windows/Linux 实例管理）、[GXFQE/mindustry-launcher](https://github.com/GXFQE/mindustry-launcher)（Python 标准库 + tkinter，CAS 去重与备份）、[Walker196/Mindustry-Launcher](https://github.com/Walker196/Mindustry-Launcher)（Tauri + React + Rust）、[NixaVulpi/MindustryLauncher](https://github.com/NixaVulpi/MindustryLauncher)（便携包装，需自备 Mindustry.jar 与 JRE）。截至 2026-10，表中的 BookMdtLauncher、Copper Launcher、MDL 分别发布到 v10000.03、v0.2.0-alpha2、v0.2.4-beta，MindustryLauncher 通过 npm 分发。
+
+Xenon 的差异在于把整条链路放进同一个界面：镜像下载与回退、实例隔离、Mod/地图/蓝图/存档、云存档、MDTBBS 社区与好友联机、服务器管理，以及 `.xenon` 打包和 `xenon://` 链接。
+
 ### 快速开始
 
 1. 下载 [最新版 Xenon-portable](https://github.com/DeterMination-Wind/Xenon/releases) 并解压。
@@ -138,6 +161,29 @@ Xenon also manages multiple Mindustry server instances. Server owners can handle
 #### Make troubleshooting less painful
 
 Every instance has its own logs and crash records. When a game exits or a mod causes trouble, Xenon can open the relevant log and surface suspicious mod information, making it easier to find the cause.
+
+### Comparison with alternatives
+
+> Official builds and Steam do not ship a launcher: Java, data directories, and mod/save organization are all manual there. The table below is compiled from each project's public documentation (as of 2026-10); competitor features can change between releases, so check the respective projects for the current state.
+
+| Capability | Xenon | [BookMdtLauncher](https://github.com/ch-BookBanana/BookMdtLauncher) | [Copper Launcher](https://github.com/MDTCopper/launcher) | [MDL](https://github.com/colorgarden/mindustry_launcherMDL) | [MindustryLauncher](https://github.com/BalaM314/MindustryLauncher) |
+| --- | --- | --- | --- | --- | --- |
+| Platforms / form | Windows / Linux / macOS · GUI | Windows · GUI (PySide6) | Windows / Linux / macOS / Android · GUI (Flutter, in development) | Windows 7+ · GUI (WPF, requires .NET 10) | Windows / Linux / macOS · CLI (requires Node.js) |
+| Game sources | Vanilla / Bleeding-Edge / MindustryX / CN-ARC / Foo Client, local jar and Steam import | Vanilla / MindustryX / MindustryARC | Vanilla / Bleeding-Edge | Vanilla (GitHub releases) | Vanilla / Bleeding-Edge / Foo Client, custom jars and source directories |
+| Instance isolation | ✅ Separate data directories | ✅ | ✅ | ✅ | ⚠️ Version folders only; data isolation not documented |
+| Mod management | ✅ Community index, GitHub install, enable/disable, dependency resolution | ❌ | ✅ Browse, toggle, batch manage | ✅ Browse, search, install/uninstall | ⚠️ Mod development focused |
+| Maps / schematics | ✅ Browse and install from mindustry.top, .msch and share-code import/export | ❌ | ✅ Import/export | ✅ Community schematic downloads | ❌ |
+| Saves | ✅ Backup/export plus cloud saves | ❌ | ✅ Import/export, cross-version migration | ✅ Scan / parse / delete | ❌ |
+| Community & multiplayer | ✅ MDTBBS community, friends and invites | ❌ | ❌ | ✅ EasyTier P2P lobby | ❌ |
+| China-friendly downloads | ✅ Automatic mirror fallback | ⚠️ Tsinghua mirror for the JDK; game downloads depend on GitHub | ✅ Speed-tested GitHub mirrors | ✅ Six built-in GitHub proxies | ❌ |
+| Server management | ✅ Console, auto-restart, ScriptAgent | ❌ | ❌ | ❌ | ❌ |
+| License | GPLv3 | GPL-3.0 | MIT | AGPL-3.0 | Not declared |
+
+✅ supported ｜ ❌ not offered or not documented ｜ ⚠️ partial or different shape
+
+Other Windows-capable Mindustry launchers: [GIML](https://github.com/SquareCM2/GIML) (WinUI 3, in development), [zenonet/MindustryLauncher](https://github.com/zenonet/MindustryLauncher) (Avalonia, Windows/Linux instance management), [GXFQE/mindustry-launcher](https://github.com/GXFQE/mindustry-launcher) (Python standard library + tkinter, CAS deduplication and backups), [Walker196/Mindustry-Launcher](https://github.com/Walker196/Mindustry-Launcher) (Tauri + React + Rust), and [NixaVulpi/MindustryLauncher](https://github.com/NixaVulpi/MindustryLauncher) (portable wrapper, needs your own Mindustry.jar and JRE). As of 2026-10, BookMdtLauncher, Copper Launcher, and MDL have released v10000.03, v0.2.0-alpha2, and v0.2.4-beta respectively, while MindustryLauncher is distributed via npm.
+
+What sets Xenon apart is keeping the whole pipeline in one window: mirror downloads and fallback, instance isolation, mods/maps/schematics/saves, cloud saves, the MDTBBS community with friends and invites, server management, plus `.xenon` packaging and `xenon://` links.
 
 ### Quick Start
 
