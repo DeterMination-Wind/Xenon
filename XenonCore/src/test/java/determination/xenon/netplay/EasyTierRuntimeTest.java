@@ -22,7 +22,11 @@ import determination.xenon.util.platform.Architecture;
 import determination.xenon.util.platform.OperatingSystem;
 import org.jetbrains.annotations.NotNullByDefault;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -99,5 +103,19 @@ public final class EasyTierRuntimeTest {
         assertFalse(first.equals(EasyTierRuntime.deriveSecret("483921")));
         assertNotNull(first);
         assertEquals(32, first.length());
+    }
+
+    /// Executables nested inside the release folder are still found.
+    @Test
+    public void binaryLookupSearchesNestedArchiveLayout(@TempDir Path tempDir) throws IOException {
+        Path nested = tempDir.resolve("v2.6.4/easytier-windows-x86_64");
+        Files.createDirectories(nested);
+        Files.writeString(nested.resolve("easytier-core.exe"), "binary");
+        Files.writeString(nested.resolve("easytier-cli.exe"), "binary");
+
+        assertNotNull(EasyTierRuntime.binaryIn(tempDir, "easytier-core.exe"));
+        assertNotNull(EasyTierRuntime.binaryIn(tempDir, "easytier-cli.exe"));
+        assertNull(EasyTierRuntime.binaryIn(tempDir, "missing.exe"));
+        assertNull(EasyTierRuntime.binaryIn(tempDir.resolve("absent"), "easytier-core.exe"));
     }
 }

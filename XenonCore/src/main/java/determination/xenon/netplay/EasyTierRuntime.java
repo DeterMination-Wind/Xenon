@@ -44,6 +44,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
 /// Manages a managed EasyTier installation and one P2P room process.
 ///
@@ -151,6 +152,11 @@ public final class EasyTierRuntime {
         if (coreBinary(versionDir) == null) {
             throw new IOException("EasyTier archive did not contain easytier-core");
         }
+        if (binaryIn(versionDir, cliBinaryName()) == null) {
+            // The peer list relies on the CLI; fail at install time rather
+            // than at the first room refresh.
+            throw new IOException("EasyTier archive did not contain easytier-cli");
+        }
         Logger.LOG.info("Installed EasyTier " + release.getTagName() + " into " + versionDir);
         return release.getTagName();
     }
@@ -202,6 +208,12 @@ public final class EasyTierRuntime {
         ProcessBuilder builder = new ProcessBuilder(command);
         builder.redirectErrorStream(true);
         builder.redirectOutput(logFile.toFile());
+        // Run next to the binary so sibling DLLs (wintun.dll) and any files
+        // the tool writes stay inside the EasyTier install directory.
+        Path coreDir = core.getParent();
+        if (coreDir != null) {
+            builder.directory(coreDir.toFile());
+        }
         Process started = builder.start();
         try {
             if (!started.waitFor(2, TimeUnit.SECONDS) || started.isAlive()) {
@@ -251,6 +263,10 @@ public final class EasyTierRuntime {
         }
         ProcessBuilder builder = new ProcessBuilder(cli.toString(), "peer");
         builder.redirectErrorStream(true);
+        Path cliDir = cli.getParent();
+        if (cliDir != null) {
+            builder.directory(cliDir.toFile());
+        }
         Process cliProcess = builder.start();
         try {
             if (!cliProcess.waitFor(CLI_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
@@ -382,17 +398,43 @@ public final class EasyTierRuntime {
     /// The `easytier-cli` binary of the newest installation, or `null`.
     private @Nullable Path cliBinary() {
         Path dir = latestVersionDir();
-        if (dir == null) {
-            return null;
-        }
-        Path binary = dir.resolve(cliBinaryName());
-        return Files.isRegularFile(binary) ? binary : null;
+        return dir == null ? null : binaryIn(dir, cliBinaryName());
     }
 
     /// Resolves `easytier-core` inside one installation directory.
     private static @Nullable Path coreBinary(Path versionDir) {
-        Path binary = versionDir.resolve(coreBinaryName());
-        return Files.isRegularFile(binary) ? binary : null;
+        return binaryIn(versionDir, coreBinaryName());
+    }
+
+    /// Maximum directory depth searched for the EasyTier binaries.
+    ///
+    /// Release archives nest the executables one level deep (for example
+    /// `easytier-windows-x86_64/easytier-core.exe`), so the lookup must not
+    /// assume they sit at the extraction root.
+    private static final int BINARY_SEARCH_DEPTH = 3;
+
+    /// Finds a named executable at or below `root`.
+    ///
+    /// @param root directory to search
+    /// @param name file name, matched case-insensitively
+    /// @return the first matching regular file, or `null`
+    static @Nullable Path binaryIn(Path root, String name) {
+        if (!Files.isDirectory(root)) {
+            return null;
+        }
+        Path direct = root.resolve(name);
+        if (Files.isRegularFile(direct)) {
+            return direct;
+        }
+        try (Stream<Path> stream = Files.walk(root, BINARY_SEARCH_DEPTH)) {
+            return stream.filter(Files::isRegularFile)
+                    .filter(path -> path.getFileName().toString().equalsIgnoreCase(name))
+                    .findFirst()
+                    .orElse(null);
+        } catch (IOException e) {
+            Logger.LOG.warning("Cannot search " + root + " for " + name + ": " + e.getMessage());
+            return null;
+        }
     }
 
     /// Newest installation directory that contains the core binary.
@@ -423,12 +465,15 @@ public final class EasyTierRuntime {
 
     /// Marks the EasyTier executables runnable on POSIX systems.
     private static void makeExecutable(Path versionDir) {
-        for (String name : List.of("easytier-core", "easytier-cli")) {
-            Path binary = versionDir.resolve(name);
-            if (Files.isRegularFile(binary)) {
-                //noinspection ResultOfMethodCallIgnored
-                binary.toFile().setExecutable(true, false);
-            }
+        Path core = binaryIn(versionDir, coreBinaryName());
+        if (core != null) {
+            //noinspection ResultOfMethodCallIgnored
+            core.toFile().setExecutable(true, false);
+        }
+        Path cli = binaryIn(versionDir, cliBinaryName());
+        if (cli != null) {
+            //noinspection ResultOfMethodCallIgnored
+            cli.toFile().setExecutable(true, false);
         }
     }
 
