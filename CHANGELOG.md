@@ -1,6 +1,29 @@
-﻿# Changelog
+# Changelog
 
 All notable changes to Xenon will be documented in this file.
+
+## [1.14.0] — 2026-10-04
+
+### Added
+- MDTBBS multiplayer: create or join rooms, join codes, friend invites, `xenon://join?intent=` links and an official relay data plane, with a one-click copy for the join code.
+- Netplay page public server directory (mirror-backed) and EasyTier six-digit P2P rooms.
+- GitHub account settings: paste a token to raise the API limit from 60 to 5000 requests per hour and see the remaining quota.
+- Resumable downloads with pause/resume and cancel cleanup.
+- Version lists tag eras and Java requirements and fall back to bundled offline snapshots; release notes render tables and images.
+- Cross-instance data migration, both as a dialog and as an install-wizard seeding option.
+- Automatic heap sizing from the enabled mod set, shown in the instance health check.
+- Per-instance playtime statistics and a health check report.
+- Trash-first deletion for saves, mods, schematics, maps and whole instances.
+- Portable data mode through a `Xenon.portable` marker next to the launcher.
+
+### Fixed
+- EasyTier archives whose executables live in a nested folder no longer fail with "did not contain easytier-core".
+- MDTBBS sessions are serialised: starting a new room leaves the previous one first, cancelled attempts clean up the session they created, stale relay failures report stable error codes, and a join code copy button was added.
+
+### Changed
+- Rewrote the user guide (`docs/USAGE.md`) for the current workflows and updated the README sections about netplay and instance tools.
+
+See the [bilingual release notes](release-notes/v1.14.0.md) for details.
 
 ## [1.13.1] — 2026-10-02
 
