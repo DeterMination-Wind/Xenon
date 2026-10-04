@@ -87,6 +87,7 @@ public final class MindustryNetplayPane extends BorderPane {
     private final JFXButton mdtbbsLeave = FXUtils.newRaisedButton(i18n("xenon.netplay.mdtbbs.leave"));
     private final JFXButton mdtbbsJoin = FXUtils.newRaisedButton(i18n("xenon.netplay.mdtbbs.join"));
     private final JFXButton mdtbbsCopyAddress = FXUtils.newRaisedButton(i18n("xenon.netplay.mdtbbs.copy_address"));
+    private final JFXButton mdtbbsCopyCode = FXUtils.newRaisedButton(i18n("xenon.netplay.mdtbbs.copy_code"));
 
     /// Returns the process-wide EasyTier runtime, installing the shutdown
     /// hook that stops the room when the launcher exits.
@@ -156,7 +157,13 @@ public final class MindustryNetplayPane extends BorderPane {
         invite.setOnAction(e -> openInviteDialog());
         JFXButton leave = mdtbbsLeave;
         leave.setOnAction(e -> mdtbbs.leave());
-        HBox createRow = new HBox(8, mdtbbsMode, create, invite, leave);
+        mdtbbsCopyCode.setOnAction(e -> {
+            String code = mdtbbs.joinCode();
+            if (!code.isBlank()) {
+                FXUtils.copyText(code);
+            }
+        });
+        HBox createRow = new HBox(8, mdtbbsMode, create, invite, mdtbbsCopyCode, leave);
         createRow.setAlignment(Pos.CENTER_LEFT);
 
         mdtbbsCodeField.setPromptText(i18n("xenon.netplay.mdtbbs.code.prompt"));
@@ -206,6 +213,7 @@ public final class MindustryNetplayPane extends BorderPane {
         mdtbbsLeave.setDisable(!attached && !working);
         mdtbbsInvite.setDisable(!ready || !mdtbbs.hosting());
         mdtbbsCopyAddress.setDisable(mdtbbs.localAddress().isBlank());
+        mdtbbsCopyCode.setDisable(mdtbbs.joinCode().isBlank());
         if (!ready) {
             mdtbbsStatus.setText(i18n("xenon.netplay.mdtbbs.login"));
             mdtbbsAddress.setText("");
