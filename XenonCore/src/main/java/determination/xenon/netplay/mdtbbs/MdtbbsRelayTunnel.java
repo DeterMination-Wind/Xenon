@@ -237,14 +237,14 @@ public final class MdtbbsRelayTunnel {
                     .buildAsync(URI.create(config.endpoint()), new Listener())
                     .whenComplete((webSocket, throwable) -> {
                         if (throwable != null) {
-                            fail("MDTBBS Relay 连接失败: " + rootMessage(throwable));
+                            fail("MDTBBS Relay 连接失败 (CONNECT_FAILED): " + rootMessage(throwable));
                             return;
                         }
                         socket = webSocket;
                         sendAuth();
                     });
         } catch (RuntimeException e) {
-            fail("MDTBBS Relay 地址无效: " + e.getMessage());
+            fail("MDTBBS Relay 地址无效 (ENDPOINT_INVALID): " + e.getMessage());
         }
     }
 
@@ -266,7 +266,7 @@ public final class MdtbbsRelayTunnel {
         try {
             message = JsonParser.parseString(text).getAsJsonObject();
         } catch (RuntimeException e) {
-            fail("MDTBBS Relay 返回了无效响应");
+            fail("MDTBBS Relay 返回了无效响应 (BAD_RESPONSE)");
             return;
         }
         String op = string(message, "op");
@@ -281,7 +281,7 @@ public final class MdtbbsRelayTunnel {
                 int streamId = integer(message, "stream_id");
                 Socket waiting = pendingGuestSocket;
                 if (streamId <= 0 || waiting == null) {
-                    fail("MDTBBS Relay TCP 握手无效");
+                    fail("MDTBBS Relay TCP 握手无效 (HANDSHAKE_INVALID)");
                     return;
                 }
                 tcpStreams.put(streamId, waiting);
@@ -327,7 +327,7 @@ public final class MdtbbsRelayTunnel {
                 && config.peerId().equals(string(message, "peer_id"))
                 && (config.owner() ? "owner" : "member").equals(string(message, "peer_role"));
         if (!identityMatches) {
-            fail("MDTBBS Relay 身份校验失败");
+            fail("MDTBBS Relay 身份校验失败 (IDENTITY_MISMATCH)");
             return;
         }
         authenticated.set(true);
@@ -343,7 +343,7 @@ public final class MdtbbsRelayTunnel {
             onStatus.accept("MDTBBS Relay 已连接，本地代理端口 " + proxy.port());
             onGuestReady.accept(proxy.port());
         } catch (IOException e) {
-            fail("无法创建本地联机代理: " + e.getMessage());
+            fail("无法创建本地联机代理 (PROXY_BIND_FAILED): " + e.getMessage());
         }
     }
 
@@ -354,7 +354,7 @@ public final class MdtbbsRelayTunnel {
         }
         MdtbbsRelayFrames.Frame parsed = MdtbbsRelayFrames.parse(frame);
         if (parsed == null) {
-            fail("MDTBBS Relay 数据帧无效");
+            fail("MDTBBS Relay 数据帧无效 (FRAME_INVALID)");
             return;
         }
         switch (parsed.type()) {
@@ -389,7 +389,7 @@ public final class MdtbbsRelayTunnel {
     /// Owner side: opens one stream to the local Mindustry server.
     private void openOwnerTcp(int streamId) {
         if (streamId <= 0) {
-            fail("MDTBBS Relay TCP 流 id 无效");
+            fail("MDTBBS Relay TCP 流 id 无效 (HANDSHAKE_INVALID)");
             return;
         }
         worker.execute(() -> {
@@ -530,7 +530,7 @@ public final class MdtbbsRelayTunnel {
             sendText(reauth.toString());
         } catch (IOException e) {
             if (expiresAtMillis <= System.currentTimeMillis() + 8000L) {
-                fail("MDTBBS Relay 授权已过期");
+                fail("MDTBBS Relay 授权已过期 (AUTH_EXPIRED)");
                 return;
             }
             renewal = worker.schedule(this::renewAllocation, 5, TimeUnit.SECONDS);
@@ -569,7 +569,7 @@ public final class MdtbbsRelayTunnel {
                 .handle((webSocket, throwable) -> null)
                 .thenCompose(ignored -> action.apply(current))
                 .exceptionally(throwable -> {
-                    fail("MDTBBS Relay 发送失败: " + rootMessage(throwable));
+                    fail("MDTBBS Relay 发送失败 (SEND_FAILED): " + rootMessage(throwable));
                     return null;
                 });
     }
@@ -679,7 +679,7 @@ public final class MdtbbsRelayTunnel {
         @Override
         public CompletionStage<?> onClose(WebSocket webSocket, int statusCode, String reason) {
             if (!closed.get()) {
-                fail("MDTBBS Relay 连接已断开 (" + statusCode + ")");
+                fail("MDTBBS Relay 连接已断开 (DISCONNECTED, " + statusCode + ")");
             }
             return null;
         }
@@ -687,7 +687,7 @@ public final class MdtbbsRelayTunnel {
         @Override
         public void onError(WebSocket webSocket, Throwable error) {
             if (!closed.get()) {
-                fail("MDTBBS Relay 安全连接失败: " + rootMessage(error));
+                fail("MDTBBS Relay 安全连接失败 (CONNECT_FAILED): " + rootMessage(error));
             }
         }
     }

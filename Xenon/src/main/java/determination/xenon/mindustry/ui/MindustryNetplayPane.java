@@ -82,6 +82,11 @@ public final class MindustryNetplayPane extends BorderPane {
     private final Label mdtbbsStatus = new Label();
     private final Label mdtbbsAddress = new Label();
     private final TextField mdtbbsCodeField = new TextField();
+    private final JFXButton mdtbbsCreate = FXUtils.newRaisedButton(i18n("xenon.netplay.mdtbbs.create"));
+    private final JFXButton mdtbbsInvite = FXUtils.newRaisedButton(i18n("xenon.netplay.mdtbbs.invite"));
+    private final JFXButton mdtbbsLeave = FXUtils.newRaisedButton(i18n("xenon.netplay.mdtbbs.leave"));
+    private final JFXButton mdtbbsJoin = FXUtils.newRaisedButton(i18n("xenon.netplay.mdtbbs.join"));
+    private final JFXButton mdtbbsCopyAddress = FXUtils.newRaisedButton(i18n("xenon.netplay.mdtbbs.copy_address"));
 
     /// Returns the process-wide EasyTier runtime, installing the shutdown
     /// hook that stops the room when the launcher exits.
@@ -145,25 +150,25 @@ public final class MindustryNetplayPane extends BorderPane {
         mdtbbsMode.getSelectionModel().selectFirst();
         FXUtils.setLimitWidth(mdtbbsMode, 260);
 
-        JFXButton create = FXUtils.newRaisedButton(i18n("xenon.netplay.mdtbbs.create"));
+        JFXButton create = mdtbbsCreate;
         create.setOnAction(e -> createMdtbbsRoom());
-        JFXButton invite = FXUtils.newRaisedButton(i18n("xenon.netplay.mdtbbs.invite"));
+        JFXButton invite = mdtbbsInvite;
         invite.setOnAction(e -> openInviteDialog());
-        JFXButton leave = FXUtils.newRaisedButton(i18n("xenon.netplay.mdtbbs.leave"));
+        JFXButton leave = mdtbbsLeave;
         leave.setOnAction(e -> mdtbbs.leave());
         HBox createRow = new HBox(8, mdtbbsMode, create, invite, leave);
         createRow.setAlignment(Pos.CENTER_LEFT);
 
         mdtbbsCodeField.setPromptText(i18n("xenon.netplay.mdtbbs.code.prompt"));
         FXUtils.setLimitWidth(mdtbbsCodeField, 200);
-        JFXButton join = FXUtils.newRaisedButton(i18n("xenon.netplay.mdtbbs.join"));
+        JFXButton join = mdtbbsJoin;
         join.setOnAction(e -> {
             String code = mdtbbsCodeField.getText();
             if (code != null && !code.isBlank()) {
                 mdtbbs.joinByCode(code.trim());
             }
         });
-        JFXButton copyAddress = FXUtils.newRaisedButton(i18n("xenon.netplay.mdtbbs.copy_address"));
+        JFXButton copyAddress = mdtbbsCopyAddress;
         copyAddress.setOnAction(e -> {
             String address = mdtbbs.localAddress();
             if (!address.isBlank()) {
@@ -193,7 +198,15 @@ public final class MindustryNetplayPane extends BorderPane {
 
     /// Refreshes the MDTBBS status block from the session manager.
     private void refreshMdtbbs() {
-        if (!mdtbbs.isLoggedIn()) {
+        boolean working = mdtbbs.phase() == MdtbbsNetplayManager.Phase.WORKING;
+        boolean attached = mdtbbs.hasSession();
+        boolean ready = mdtbbs.isLoggedIn();
+        mdtbbsCreate.setDisable(!ready || working || attached);
+        mdtbbsJoin.setDisable(!ready || working || attached);
+        mdtbbsLeave.setDisable(!attached && !working);
+        mdtbbsInvite.setDisable(!ready || !mdtbbs.hosting());
+        mdtbbsCopyAddress.setDisable(mdtbbs.localAddress().isBlank());
+        if (!ready) {
             mdtbbsStatus.setText(i18n("xenon.netplay.mdtbbs.login"));
             mdtbbsAddress.setText("");
             return;
@@ -229,6 +242,8 @@ public final class MindustryNetplayPane extends BorderPane {
             case "JOIN_INTENT_CLIENT_MISMATCH" -> "xenon.netplay.mdtbbs.error.client";
             case "JOIN_INTENT_EXPIRED", "JOIN_INTENT_RECOVERY_EXPIRED", "JOIN_INTENT_INVALID" -> "xenon.netplay.mdtbbs.error.intent";
             case "PEER_EXPIRED" -> "xenon.netplay.mdtbbs.error.peer";
+            case "AUTH_INVALID" -> "xenon.netplay.mdtbbs.error.credential";
+            case "AUTH_EXPIRED" -> "xenon.netplay.mdtbbs.error.expired";
             default -> "xenon.netplay.mdtbbs.error.generic";
         };
         return i18n(key, detail == null ? "" : detail);

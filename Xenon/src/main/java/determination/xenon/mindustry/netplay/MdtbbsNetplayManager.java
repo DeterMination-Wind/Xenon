@@ -244,10 +244,15 @@ public final class MdtbbsNetplayManager {
     /// @param joinPolicy `open`, `friends`, `request` or `invite_only`
     /// @param gameVersion version text shown to friends, or empty
     public void createRoom(String visibility, String joinPolicy, String gameVersion) {
+        if (phase == Phase.WORKING) {
+            return;
+        }
         long token = generation.incrementAndGet();
+        String previous = detachLocalSession();
         setPhase(Phase.WORKING, null, null);
         Schedulers.io().execute(() -> {
             try {
+                leaveQuietly(previous);
                 requireCapabilities();
                 Joined joined = multiplayer.createSession(visibility, joinPolicy, 8,
                         "Mindustry", gameVersion);
@@ -266,10 +271,15 @@ public final class MdtbbsNetplayManager {
     ///
     /// @param codeOrId ten-character join code or an opaque session id
     public void joinByCode(String codeOrId) {
+        if (phase == Phase.WORKING) {
+            return;
+        }
         long token = generation.incrementAndGet();
+        String previous = detachLocalSession();
         setPhase(Phase.WORKING, null, null);
         Schedulers.io().execute(() -> {
             try {
+                leaveQuietly(previous);
                 requireCapabilities();
                 String text = codeOrId == null ? "" : codeOrId.trim();
                 String id = text;
@@ -295,10 +305,15 @@ public final class MdtbbsNetplayManager {
     ///
     /// @param intentId intent id from a deep link or an accepted invite
     public void joinByIntent(String intentId) {
+        if (phase == Phase.WORKING) {
+            return;
+        }
         long token = generation.incrementAndGet();
+        String previous = detachLocalSession();
         setPhase(Phase.WORKING, null, null);
         Schedulers.io().execute(() -> {
             try {
+                leaveQuietly(previous);
                 requireCapabilities();
                 Joined joined = multiplayer.consumeJoinIntent(intentId);
                 if (isStale(token)) {
@@ -336,15 +351,35 @@ public final class MdtbbsNetplayManager {
 
     /// Leaves the current session and tears the tunnel down.
     public void leave() {
-        long token = generation.incrementAndGet();
+        generation.incrementAndGet();
+        boolean wasHosting = hosting;
+        String previous = detachLocalSession();
+        setPhase(Phase.IDLE, null, null);
+        publishActivity();
+        if (previous.isEmpty()) {
+            return;
+        }
+        Schedulers.io().execute(() -> leaveQuietly(previous));
+        Logger.LOG.info("MDTBBS multiplayer session closed" + (wasHosting ? " (host)" : ""));
+    }
+
+    /// Stops the tunnel and heartbeat without network calls (launcher exit).
+    public void shutdown() {
+        generation.incrementAndGet();
+        detachLocalSession();
+        scheduler.shutdownNow();
+    }
+
+    /// Closes the active tunnel/heartbeat, clears session state and returns the
+    /// previous session id for an optional server-side leave.
+    private String detachLocalSession() {
         stopHeartbeat();
         MdtbbsRelayTunnel current = tunnel;
         tunnel = null;
         if (current != null) {
             current.close();
         }
-        String id = sessionId;
-        boolean wasHosting = hosting;
+        String previous = sessionId;
         sessionId = "";
         joinCode = "";
         localAddress = "";
@@ -354,31 +389,19 @@ public final class MdtbbsNetplayManager {
         hosting = false;
         playerCount = 0;
         maxPlayers = 0;
-        setPhase(Phase.IDLE, null, null);
-        publishActivity();
-        if (id.isEmpty() || !isLoggedIn()) {
-            return;
-        }
-        Schedulers.io().execute(() -> {
-            try {
-                multiplayer.leave(id);
-            } catch (IOException e) {
-                Logger.LOG.info("MDTBBS session leave failed for " + id + ": " + e.getMessage());
-            }
-        });
-        Logger.LOG.info("MDTBBS multiplayer session closed" + (wasHosting ? " (host)" : ""));
+        return previous;
     }
 
-    /// Stops the tunnel and heartbeat without network calls (launcher exit).
-    public void shutdown() {
-        generation.incrementAndGet();
-        stopHeartbeat();
-        MdtbbsRelayTunnel current = tunnel;
-        tunnel = null;
-        if (current != null) {
-            current.close();
+    /// Asks the server to leave a session, ignoring failures.
+    private void leaveQuietly(String sessionId) {
+        if (sessionId == null || sessionId.isEmpty() || !isLoggedIn()) {
+            return;
         }
-        scheduler.shutdownNow();
+        try {
+            multiplayer.leave(sessionId);
+        } catch (IOException e) {
+            Logger.LOG.info("MDTBBS session leave failed for " + sessionId + ": " + e.getMessage());
+        }
     }
 
     /// Verifies capabilities before any session operation.
@@ -401,6 +424,13 @@ public final class MdtbbsNetplayManager {
 
     /// Stores the joined session and starts the heartbeat.
     private void attach(Joined joined, boolean owner) {
+        // Any previous tunnel must not outlive the new session; the caller
+        // normally detached already, this is a safety net.
+        MdtbbsRelayTunnel previous = tunnel;
+        tunnel = null;
+        if (previous != null) {
+            previous.close();
+        }
         sessionId = joined.session().id();
         peerId = joined.peer().peerId();
         resumeToken = joined.resumeToken();
@@ -572,12 +602,25 @@ public final class MdtbbsNetplayManager {
         }
     }
 
-    /// Reports a tunnel failure.
+    /// Reports a tunnel failure, preserving the relay's stable error code.
     private void handleTunnelFailure(long token, String message) {
         if (isStale(token)) {
             return;
         }
-        setPhase(Phase.ERROR, "RELAY_ERROR", message);
+        setPhase(Phase.ERROR, tunnelErrorCode(message), message);
+    }
+
+    /// Extracts a stable relay error code from a tunnel failure message.
+    private static String tunnelErrorCode(String message) {
+        int open = message.indexOf('(');
+        int close = open < 0 ? -1 : message.indexOf(')', open + 1);
+        if (open > 0 && close > open) {
+            String candidate = message.substring(open + 1, close).trim();
+            if (candidate.matches("[A-Z][A-Z0-9_]{2,31}")) {
+                return candidate;
+            }
+        }
+        return "RELAY_ERROR";
     }
 
     /// Reports an operation failure with a stable code when available.

@@ -165,6 +165,28 @@ public final class MdtbbsNetplayManagerTest {
         manager.leave();
     }
 
+    /// Starting a new room while hosting leaves the previous session first.
+    @Test
+    public void createRoomWhileHostingLeavesPreviousSession() throws Exception {
+        FakeMultiplayer fake = new FakeMultiplayer();
+        fake.created = ownerJoined();
+        FakeTunnels tunnels = new FakeTunnels();
+        MdtbbsNetplayManager manager = new MdtbbsNetplayManager(() -> true, fake, tunnels, 30);
+
+        manager.createRoom("friends", "friends", "");
+        assertTrue(await(5000, () -> manager.phase() == MdtbbsNetplayManager.Phase.HOSTING));
+
+        fake.created = new Joined(
+                new Session("ses_2", 7, "friends", "friends", "build 160", "Mindustry", 1, 8, "active"),
+                new Peer("peer_owner_2", 7, "owner", "active"), "rt_2", "");
+        manager.createRoom("friends", "friends", "");
+
+        assertTrue(await(5000, () -> "ses_2".equals(manager.sessionId())));
+        assertTrue(await(5000, () -> fake.left.contains("ses_1")),
+                "the previous session should be left before the new one starts");
+        manager.leave();
+    }
+
     /// Polls a condition until it holds or the timeout expires.
     private static boolean await(long timeoutMs, BooleanSupplier condition) throws InterruptedException {
         long deadline = System.currentTimeMillis() + timeoutMs;
