@@ -257,6 +257,9 @@ public final class MdtbbsNetplayManager {
                 Joined joined = multiplayer.createSession(visibility, joinPolicy, 8,
                         "Mindustry", gameVersion);
                 if (isStale(token)) {
+                    // The user left while the session was being created; do not
+                    // leave an orphan session behind.
+                    leaveQuietly(joined.session().id());
                     return;
                 }
                 attach(joined, true);
@@ -291,6 +294,7 @@ public final class MdtbbsNetplayManager {
                 }
                 Joined joined = multiplayer.join(id, code);
                 if (isStale(token)) {
+                    leaveQuietly(joined.session().id());
                     return;
                 }
                 attach(joined, false);
@@ -317,6 +321,7 @@ public final class MdtbbsNetplayManager {
                 requireCapabilities();
                 Joined joined = multiplayer.consumeJoinIntent(intentId);
                 if (isStale(token)) {
+                    leaveQuietly(joined.session().id());
                     return;
                 }
                 attach(joined, false);
@@ -450,13 +455,19 @@ public final class MdtbbsNetplayManager {
 
     /// Allocates the relay and starts the owner bridge.
     private void startOwnerTunnel(long token) throws IOException {
-        RelayAllocation allocation = multiplayer.allocateRelay(sessionId);
+        String id = sessionId;
+        String peer = peerId;
+        if (id.isEmpty() || peer.isEmpty()) {
+            return;
+        }
+        RelayAllocation allocation = multiplayer.allocateRelay(id);
         if (isStale(token)) {
+            leaveQuietly(id);
             return;
         }
         MdtbbsRelayTunnel.Config config = new MdtbbsRelayTunnel.Config(
                 allocation.endpoint(), allocation.credential(), allocation.allocationId(),
-                allocation.agentId(), sessionId, peerId, null, true,
+                allocation.agentId(), id, peer, null, true,
                 MINDUSTRY_PORT, 0, allocation.expiresInSeconds());
         tunnel = tunnelFactory.create(config, this::renewRelay,
                 detail -> updateDetail(token, detail),
@@ -469,27 +480,33 @@ public final class MdtbbsNetplayManager {
 
     /// Joins the session as a guest and starts the loopback proxy.
     private void startGuestTunnel(long token) throws IOException {
-        List<Peer> peers = multiplayer.peers(sessionId);
+        String id = sessionId;
+        String peer = peerId;
+        if (id.isEmpty() || peer.isEmpty()) {
+            return;
+        }
+        List<Peer> peers = multiplayer.peers(id);
         String owner = "";
-        for (Peer peer : peers) {
-            if (peer.owner()) {
-                owner = peer.peerId();
+        for (Peer candidate : peers) {
+            if (candidate.owner()) {
+                owner = candidate.peerId();
                 break;
             }
         }
         if (owner.isEmpty()) {
             throw new IOException("The session host is not online yet");
         }
-        ownerPeerId = owner;
-        playerCount = peers.size();
-        RelayAllocation allocation = multiplayer.allocateRelay(sessionId);
+        RelayAllocation allocation = multiplayer.allocateRelay(id);
         if (isStale(token)) {
+            leaveQuietly(id);
             return;
         }
+        ownerPeerId = owner;
+        playerCount = peers.size();
         setPhase(Phase.GUEST_WAITING, null, null);
         MdtbbsRelayTunnel.Config config = new MdtbbsRelayTunnel.Config(
                 allocation.endpoint(), allocation.credential(), allocation.allocationId(),
-                allocation.agentId(), sessionId, peerId, owner, false,
+                allocation.agentId(), id, peer, owner, false,
                 0, MINDUSTRY_PORT, allocation.expiresInSeconds());
         tunnel = tunnelFactory.create(config, this::renewRelay,
                 detail -> updateDetail(token, detail),

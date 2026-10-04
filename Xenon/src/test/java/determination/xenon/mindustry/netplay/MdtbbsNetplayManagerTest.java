@@ -184,7 +184,31 @@ public final class MdtbbsNetplayManagerTest {
         assertTrue(await(5000, () -> "ses_2".equals(manager.sessionId())));
         assertTrue(await(5000, () -> fake.left.contains("ses_1")),
                 "the previous session should be left before the new one starts");
+        int leaveIndex = fake.calls.indexOf("leave:ses_1");
+        int createIndex = fake.calls.lastIndexOf("create");
+        assertTrue(leaveIndex >= 0 && createIndex > leaveIndex,
+                () -> "leave must precede create on the wire: " + fake.calls);
         manager.leave();
+    }
+
+    /// Cancelling while a create is in flight leaves the created session.
+    @Test
+    public void cancelDuringCreateLeavesCreatedSession() throws Exception {
+        FakeMultiplayer fake = new FakeMultiplayer();
+        fake.created = ownerJoined();
+        fake.createGate = new CountDownLatch(1);
+        FakeTunnels tunnels = new FakeTunnels();
+        MdtbbsNetplayManager manager = new MdtbbsNetplayManager(() -> true, fake, tunnels, 30);
+
+        manager.createRoom("friends", "friends", "");
+        assertTrue(fake.createStarted.await(5, TimeUnit.SECONDS));
+        manager.leave();
+        fake.createGate.countDown();
+
+        assertTrue(await(5000, () -> fake.left.contains("ses_1")),
+                () -> "the created session must be left after a cancel: " + fake.calls);
+        assertTrue(await(5000, () -> manager.phase() == MdtbbsNetplayManager.Phase.IDLE));
+        assertNull(tunnels.lastConfig);
     }
 
     /// Polls a condition until it holds or the timeout expires.
@@ -234,6 +258,7 @@ public final class MdtbbsNetplayManagerTest {
         final CountDownLatch resumeCalled = new CountDownLatch(1);
         final List<String> left = new CopyOnWriteArrayList<>();
         final List<String> invited = new CopyOnWriteArrayList<>();
+        final List<String> calls = new CopyOnWriteArrayList<>();
 
         @Override
         public Capabilities capabilities() {
@@ -243,6 +268,7 @@ public final class MdtbbsNetplayManagerTest {
         @Override
         public Joined createSession(String visibility, String joinPolicy, int maxPlayers,
                                     String activityName, String gameVersion) throws IOException {
+            calls.add("create");
             createStarted.countDown();
             CountDownLatch gate = createGate;
             if (gate != null) {
@@ -266,6 +292,7 @@ public final class MdtbbsNetplayManagerTest {
 
         @Override
         public Joined join(String sessionId, @Nullable String joinCode) throws IOException {
+            calls.add("join:" + sessionId);
             if (joined == null) {
                 throw new IOException("no join result");
             }
@@ -283,6 +310,7 @@ public final class MdtbbsNetplayManagerTest {
 
         @Override
         public void leave(String sessionId) {
+            calls.add("leave:" + sessionId);
             left.add(sessionId);
         }
 
@@ -302,6 +330,7 @@ public final class MdtbbsNetplayManagerTest {
 
         @Override
         public RelayAllocation allocateRelay(String sessionId) {
+            calls.add("relay:" + sessionId);
             return relay;
         }
 
