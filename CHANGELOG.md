@@ -2,6 +2,15 @@
 
 All notable changes to Xenon will be documented in this file.
 
+## [1.14.1] — 2026-10-05
+
+### Fixed
+- Community mod installs keep the release asset name and replace the previous archive of the same mod instead of stacking duplicates; archives without a `mod.hjson`/`mod.json` are listed as unrecognized and refused at install time.
+- MDTBBS cloud saves upload and download against the current `/api/v1` contract, including the doubled URL prefix, slot size/revision display and cursor pagination.
+- MDTBBS notifications, friend presence, map detail preview/mode and Rich Activity parsing now match the current server responses, with legacy-shape fallbacks.
+
+See the [bilingual release notes](release-notes/v1.14.1.md) for details.
+
 ## [1.14.0] — 2026-10-04
 
 ### Added
