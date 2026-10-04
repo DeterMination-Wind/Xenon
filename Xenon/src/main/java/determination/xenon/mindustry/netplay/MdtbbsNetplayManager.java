@@ -34,6 +34,8 @@ import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -121,6 +123,11 @@ public final class MdtbbsNetplayManager {
 
     /// Monotonic operation counter; stale async results are discarded.
     private final AtomicLong generation = new AtomicLong();
+
+    /// Serialises server-side leaves so a new session can never be created
+    /// before an older one finished leaving.
+    private final Object cleanupLock = new Object();
+    private CompletableFuture<Void> pendingCleanup = CompletableFuture.completedFuture(null);
 
     private volatile @Nullable ActivitySink activitySink;
     private volatile @Nullable Runnable stateListener;
@@ -252,6 +259,7 @@ public final class MdtbbsNetplayManager {
         setPhase(Phase.WORKING, null, null);
         Schedulers.io().execute(() -> {
             try {
+                awaitCleanup();
                 leaveQuietly(previous);
                 requireCapabilities();
                 Joined joined = multiplayer.createSession(visibility, joinPolicy, 8,
@@ -259,7 +267,7 @@ public final class MdtbbsNetplayManager {
                 if (isStale(token)) {
                     // The user left while the session was being created; do not
                     // leave an orphan session behind.
-                    leaveQuietly(joined.session().id());
+                    enqueueCleanup(joined.session().id());
                     return;
                 }
                 attach(joined, true);
@@ -282,6 +290,7 @@ public final class MdtbbsNetplayManager {
         setPhase(Phase.WORKING, null, null);
         Schedulers.io().execute(() -> {
             try {
+                awaitCleanup();
                 leaveQuietly(previous);
                 requireCapabilities();
                 String text = codeOrId == null ? "" : codeOrId.trim();
@@ -294,7 +303,7 @@ public final class MdtbbsNetplayManager {
                 }
                 Joined joined = multiplayer.join(id, code);
                 if (isStale(token)) {
-                    leaveQuietly(joined.session().id());
+                    enqueueCleanup(joined.session().id());
                     return;
                 }
                 attach(joined, false);
@@ -317,11 +326,12 @@ public final class MdtbbsNetplayManager {
         setPhase(Phase.WORKING, null, null);
         Schedulers.io().execute(() -> {
             try {
+                awaitCleanup();
                 leaveQuietly(previous);
                 requireCapabilities();
                 Joined joined = multiplayer.consumeJoinIntent(intentId);
                 if (isStale(token)) {
-                    leaveQuietly(joined.session().id());
+                    enqueueCleanup(joined.session().id());
                     return;
                 }
                 attach(joined, false);
@@ -364,7 +374,7 @@ public final class MdtbbsNetplayManager {
         if (previous.isEmpty()) {
             return;
         }
-        Schedulers.io().execute(() -> leaveQuietly(previous));
+        enqueueCleanup(previous);
         Logger.LOG.info("MDTBBS multiplayer session closed" + (wasHosting ? " (host)" : ""));
     }
 
@@ -406,6 +416,34 @@ public final class MdtbbsNetplayManager {
             multiplayer.leave(sessionId);
         } catch (IOException e) {
             Logger.LOG.info("MDTBBS session leave failed for " + sessionId + ": " + e.getMessage());
+        }
+    }
+
+    /// Queues one server-side leave and chains it after earlier cleanups.
+    ///
+    /// A following create/join awaits the chain, so the server never observes
+    /// a new session before an older one finished leaving.
+    private void enqueueCleanup(String sessionId) {
+        if (sessionId == null || sessionId.isEmpty() || !isLoggedIn()) {
+            return;
+        }
+        synchronized (cleanupLock) {
+            pendingCleanup = pendingCleanup
+                    .handle((value, error) -> null)
+                    .thenRunAsync(() -> leaveQuietly(sessionId), Schedulers.io());
+        }
+    }
+
+    /// Waits until every queued cleanup finished.
+    private void awaitCleanup() {
+        CompletableFuture<Void> current;
+        synchronized (cleanupLock) {
+            current = pendingCleanup;
+        }
+        try {
+            current.join();
+        } catch (CompletionException ignored) {
+            // leaveQuietly already swallows failures.
         }
     }
 
@@ -462,7 +500,7 @@ public final class MdtbbsNetplayManager {
         }
         RelayAllocation allocation = multiplayer.allocateRelay(id);
         if (isStale(token)) {
-            leaveQuietly(id);
+            enqueueCleanup(id);
             return;
         }
         MdtbbsRelayTunnel.Config config = new MdtbbsRelayTunnel.Config(
@@ -498,7 +536,7 @@ public final class MdtbbsNetplayManager {
         }
         RelayAllocation allocation = multiplayer.allocateRelay(id);
         if (isStale(token)) {
-            leaveQuietly(id);
+            enqueueCleanup(id);
             return;
         }
         ownerPeerId = owner;

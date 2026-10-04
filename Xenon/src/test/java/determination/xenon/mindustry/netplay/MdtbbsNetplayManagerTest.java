@@ -211,6 +211,84 @@ public final class MdtbbsNetplayManagerTest {
         assertNull(tunnels.lastConfig);
     }
 
+    /// Cancelling while a join is in flight leaves the joined session.
+    @Test
+    public void cancelDuringJoinLeavesJoinedSession() throws Exception {
+        FakeMultiplayer fake = new FakeMultiplayer();
+        fake.joined = new Joined(session(), memberPeer(), "rt_member", "");
+        fake.joinGate = new CountDownLatch(1);
+        FakeTunnels tunnels = new FakeTunnels();
+        MdtbbsNetplayManager manager = new MdtbbsNetplayManager(() -> true, fake, tunnels, 30);
+
+        manager.joinByCode("ses_1");
+        assertTrue(fake.joinStarted.await(5, TimeUnit.SECONDS));
+        manager.leave();
+        fake.joinGate.countDown();
+
+        assertTrue(await(5000, () -> fake.left.contains("ses_1")),
+                () -> "the joined session must be left after a cancel: " + fake.calls);
+        assertTrue(await(5000, () -> manager.phase() == MdtbbsNetplayManager.Phase.IDLE));
+        assertNull(tunnels.lastConfig);
+    }
+
+    /// Cancelling while an intent consume is in flight leaves the session.
+    @Test
+    public void cancelDuringIntentConsumeLeavesSession() throws Exception {
+        FakeMultiplayer fake = new FakeMultiplayer();
+        fake.joined = new Joined(session(), memberPeer(), "rt_member", "");
+        fake.consumeGate = new CountDownLatch(1);
+        FakeTunnels tunnels = new FakeTunnels();
+        MdtbbsNetplayManager manager = new MdtbbsNetplayManager(() -> true, fake, tunnels, 30);
+
+        manager.joinByIntent("intent_1");
+        assertTrue(fake.consumeStarted.await(5, TimeUnit.SECONDS));
+        manager.leave();
+        fake.consumeGate.countDown();
+
+        assertTrue(await(5000, () -> fake.left.contains("ses_1")),
+                () -> "the consumed session must be left after a cancel: " + fake.calls);
+        assertNull(tunnels.lastConfig);
+    }
+
+    /// Cancelling while the owner relay allocation is blocked leaves the session.
+    @Test
+    public void cancelDuringOwnerRelayAllocationLeavesSession() throws Exception {
+        FakeMultiplayer fake = new FakeMultiplayer();
+        fake.created = ownerJoined();
+        fake.allocateGate = new CountDownLatch(1);
+        FakeTunnels tunnels = new FakeTunnels();
+        MdtbbsNetplayManager manager = new MdtbbsNetplayManager(() -> true, fake, tunnels, 30);
+
+        manager.createRoom("friends", "friends", "");
+        assertTrue(fake.allocateStarted.await(5, TimeUnit.SECONDS));
+        manager.leave();
+        fake.allocateGate.countDown();
+
+        assertTrue(await(5000, () -> fake.left.contains("ses_1")),
+                () -> "the session must be left when the relay allocation is cancelled: " + fake.calls);
+        assertNull(tunnels.lastConfig);
+    }
+
+    /// Cancelling while the guest relay allocation is blocked leaves the session.
+    @Test
+    public void cancelDuringGuestRelayAllocationLeavesSession() throws Exception {
+        FakeMultiplayer fake = new FakeMultiplayer();
+        fake.joined = new Joined(session(), memberPeer(), "rt_member", "");
+        fake.peers = List.of(ownerPeer(), memberPeer());
+        fake.allocateGate = new CountDownLatch(1);
+        FakeTunnels tunnels = new FakeTunnels();
+        MdtbbsNetplayManager manager = new MdtbbsNetplayManager(() -> true, fake, tunnels, 30);
+
+        manager.joinByCode("ses_1");
+        assertTrue(fake.allocateStarted.await(5, TimeUnit.SECONDS));
+        manager.leave();
+        fake.allocateGate.countDown();
+
+        assertTrue(await(5000, () -> fake.left.contains("ses_1")),
+                () -> "the guest session must be left when the relay allocation is cancelled: " + fake.calls);
+        assertNull(tunnels.lastConfig);
+    }
+
     /// Polls a condition until it holds or the timeout expires.
     private static boolean await(long timeoutMs, BooleanSupplier condition) throws InterruptedException {
         long deadline = System.currentTimeMillis() + timeoutMs;
@@ -255,6 +333,12 @@ public final class MdtbbsNetplayManagerTest {
         @Nullable IOException heartbeatError;
         @Nullable CountDownLatch createGate;
         final CountDownLatch createStarted = new CountDownLatch(1);
+        @Nullable CountDownLatch joinGate;
+        final CountDownLatch joinStarted = new CountDownLatch(1);
+        @Nullable CountDownLatch consumeGate;
+        final CountDownLatch consumeStarted = new CountDownLatch(1);
+        @Nullable CountDownLatch allocateGate;
+        final CountDownLatch allocateStarted = new CountDownLatch(1);
         final CountDownLatch resumeCalled = new CountDownLatch(1);
         final List<String> left = new CopyOnWriteArrayList<>();
         final List<String> invited = new CopyOnWriteArrayList<>();
@@ -293,6 +377,8 @@ public final class MdtbbsNetplayManagerTest {
         @Override
         public Joined join(String sessionId, @Nullable String joinCode) throws IOException {
             calls.add("join:" + sessionId);
+            joinStarted.countDown();
+            waitGate(joinGate);
             if (joined == null) {
                 throw new IOException("no join result");
             }
@@ -329,13 +415,18 @@ public final class MdtbbsNetplayManagerTest {
         }
 
         @Override
-        public RelayAllocation allocateRelay(String sessionId) {
+        public RelayAllocation allocateRelay(String sessionId) throws IOException {
             calls.add("relay:" + sessionId);
+            allocateStarted.countDown();
+            waitGate(allocateGate);
             return relay;
         }
 
         @Override
         public Joined consumeJoinIntent(String intentId) throws IOException {
+            calls.add("consume:" + intentId);
+            consumeStarted.countDown();
+            waitGate(consumeGate);
             if (joined == null) {
                 throw new IOException("no intent result");
             }
@@ -346,6 +437,19 @@ public final class MdtbbsNetplayManagerTest {
         public String createInvite(String sessionId, long targetUserId) {
             invited.add(sessionId + ":" + targetUserId);
             return "inv_1";
+        }
+
+        /// Waits for the optional gate of the current request.
+        private void waitGate(@Nullable CountDownLatch gate) throws IOException {
+            if (gate == null) {
+                return;
+            }
+            try {
+                gate.await(5, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IOException("interrupted", e);
+            }
         }
     }
 
