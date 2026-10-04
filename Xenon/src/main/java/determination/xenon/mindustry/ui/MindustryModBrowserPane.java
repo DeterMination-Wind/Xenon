@@ -30,6 +30,7 @@ import determination.xenon.mindustry.download.GitHubReleaseClient;
 import determination.xenon.mindustry.download.MirrorDownloader;
 import determination.xenon.mindustry.mod.GitHubDirectInstaller;
 import determination.xenon.mindustry.mod.MindustryModManager;
+import determination.xenon.mindustry.mod.MindustryModParser;
 import determination.xenon.mindustry.mod.MindustryModsIndexRepository;
 import determination.xenon.mindustry.mod.MindustryRemoteMod;
 import determination.xenon.setting.Profiles;
@@ -541,9 +542,9 @@ public final class MindustryModBrowserPane extends BorderPane implements PageAwa
         Path dataDir = target.resolveDataDir(versionRoot);
         Path modsDir = dataDir.resolve("mods");
 
-        // Stage 1: hit GitHub /releases/latest, pick the right asset, and
-        // hand off (asset, stagingPath) to the download stage. Wrapped in a
-        // Task so the dialog can show "Resolving..." before the bar starts.
+        // Stage 1: hit GitHub /releases/latest and collect every asset worth
+        // trying, in the order the download stage should try them. Wrapped in
+        // a Task so the dialog can show "Resolving..." before the bar starts.
         Task<AssetPick> resolve = Task.supplyAsync(Schedulers.io(), () -> {
             Files.createDirectories(modsDir);
             GitHubRelease release = specificRelease != null
@@ -552,61 +553,67 @@ public final class MindustryModBrowserPane extends BorderPane implements PageAwa
             if (release == null) {
                 throw new IOException("No published releases for " + ownerRepo);
             }
-            GitHubAsset asset = GitHubDirectInstaller.pickAsset(release.getAssets());
-            if (asset == null) {
+            List<AssetCandidate> candidates = new ArrayList<>();
+            for (GitHubAsset asset : GitHubDirectInstaller.pickAssets(release.getAssets())) {
+                String directDownloadUrl = asset.getDownloadUrl();
+                String primaryDownloadUrl = directDownloadUrl;
+                if (HighStarModCache.shouldTryCacheFirst(mod.getStars(), directDownloadUrl)) {
+                    String cacheUrl = HighStarModCache.toCacheUrl(directDownloadUrl);
+                    if (cacheUrl != null) {
+                        primaryDownloadUrl = cacheUrl;
+                    }
+                }
+                candidates.add(new AssetCandidate(asset, primaryDownloadUrl, directDownloadUrl));
+            }
+            if (candidates.isEmpty()) {
                 throw new IOException("No installable .zip/.jar asset in "
                         + ownerRepo + " release " + release.getTagName());
             }
-            String directDownloadUrl = asset.getDownloadUrl();
-            String primaryDownloadUrl = directDownloadUrl;
-            if (HighStarModCache.shouldTryCacheFirst(mod.getStars(), directDownloadUrl)) {
-                String cacheUrl = HighStarModCache.toCacheUrl(directDownloadUrl);
-                if (cacheUrl != null) {
-                    primaryDownloadUrl = cacheUrl;
-                }
-            }
-            String assetName = asset.getName();
-            String ext = assetName.toLowerCase(Locale.ROOT).endsWith(".jar") ? ".jar" : ".zip";
-            String safeRepo = ownerRepo.replace('/', '_').replaceAll("[^A-Za-z0-9._-]", "_");
-            Path staging = Path.of(System.getProperty("java.io.tmpdir", "."),
-                    "xenon-mod-" + safeRepo + "-" + System.nanoTime() + ext);
-            return new AssetPick(asset, staging, primaryDownloadUrl, directDownloadUrl);
+            return new AssetPick(candidates, ownerRepo, release.getTagName());
         }).setName(i18n("xenon.mindustry.mod.browser.task.resolve", label));
 
-        // Stage 2: high-star mods try the 121 cache first when the chosen
-        // asset is a canonical GitHub release URL, then fall back to the
-        // usual MirrorDownloader GitHub race. Everything else keeps the
-        // existing mirror-racing path unchanged.
-        Task<Path> download = resolve.thenComposeAsync(Schedulers.io(), pick ->
+        // Stage 2: download the candidates in order and keep the first one
+        // that really is a Mindustry mod archive. Releases that publish a
+        // bundle zip next to the mod jar therefore still install a loadable
+        // mod instead of dumping an unloadable archive into mods/.
+        Task<DownloadedAsset> download = resolve.thenComposeAsync(Schedulers.io(), pick ->
                 new ModDownloadTask(pick, label));
 
         // Stage 3: capture the pre-install findings, copy the downloaded
-        // archive into <dataDir>/mods/, and report only what the install
-        // introduced. The staging file is deleted regardless of outcome.
-        Task<List<MindustryCompatibility.Issue>> install = download.thenComposeAsync(Schedulers.io(), staging ->
+        // archive into <dataDir>/mods/ under its release asset name, and
+        // report only what the install introduced. The staging file is
+        // deleted regardless of outcome.
+        Task<InstallOutcome> install = download.thenComposeAsync(Schedulers.io(), downloaded ->
                 Task.supplyAsync(Schedulers.io(), () -> {
                     try {
                         List<MindustryCompatibility.Issue> before =
                                 MindustryCompatibility.forInstanceOrEmpty(target, versionRoot, dataDir);
-                        new MindustryModManager(modsDir).install(staging);
+                        MindustryModManager.InstallResult result = new MindustryModManager(modsDir)
+                                .install(downloaded.file(), downloaded.asset().getName());
                         List<MindustryCompatibility.Issue> after =
                                 MindustryCompatibility.forInstanceOrEmpty(target, versionRoot, dataDir);
-                        return MindustryCompatibility.newlyIntroduced(before, after);
+                        return new InstallOutcome(
+                                MindustryCompatibility.newlyIntroduced(before, after),
+                                result.replacedFiles());
                     } finally {
-                        try { Files.deleteIfExists(staging); } catch (IOException ignored) {}
+                        try { Files.deleteIfExists(downloaded.file()); } catch (IOException ignored) {}
                     }
                 }).setName(i18n("xenon.mindustry.mod.browser.task.install", label)));
 
         // Toast on success (with the destination so the user knows where it
         // landed) / dialog on failure.
         String targetName = target.getName() == null ? target.getId() : target.getName();
-        Task<Void> pipeline = install.whenComplete(Schedulers.javafx(), (issues, ex) -> {
+        Task<Void> pipeline = install.whenComplete(Schedulers.javafx(), (outcome, ex) -> {
             if (ex == null) {
                 Controllers.showToast(i18n("xenon.mindustry.mod.browser.installed.into",
                         label, targetName));
-                if (issues != null && !issues.isEmpty()) {
+                if (outcome != null && !outcome.replacedFiles().isEmpty()) {
+                    Controllers.showToast(i18n("xenon.mindustry.mod.browser.replaced",
+                            joinFileNames(outcome.replacedFiles())));
+                }
+                if (outcome != null && !outcome.issues().isEmpty()) {
                     MindustryCompatibility.showIssues(
-                            i18n("xenon.mindustry.install.compat.title"), issues);
+                            i18n("xenon.mindustry.install.compat.title"), outcome.issues());
                 }
             } else {
                 String msg = ex.getMessage() == null ? ex.toString() : ex.getMessage();
@@ -633,19 +640,74 @@ public final class MindustryModBrowserPane extends BorderPane implements PageAwa
         executor.start();
     }
 
-    /** Tuple returned by the resolve stage and consumed by the download stage. */
-    private static final class AssetPick {
+    /** One release asset plus the URLs the download stage should try for it. */
+    private static final class AssetCandidate {
         final GitHubAsset asset;
-        final Path staging;
         final String primaryDownloadUrl;
         final String fallbackDownloadUrl;
 
-        AssetPick(GitHubAsset asset, Path staging, String primaryDownloadUrl, String fallbackDownloadUrl) {
+        AssetCandidate(GitHubAsset asset, String primaryDownloadUrl, String fallbackDownloadUrl) {
             this.asset = asset;
-            this.staging = staging;
             this.primaryDownloadUrl = primaryDownloadUrl;
             this.fallbackDownloadUrl = fallbackDownloadUrl;
         }
+    }
+
+    /** All candidate assets of one release, consumed by the download stage. */
+    private static final class AssetPick {
+        final List<AssetCandidate> candidates;
+        final String ownerRepo;
+        final String tag;
+
+        AssetPick(List<AssetCandidate> candidates, String ownerRepo, String tag) {
+            this.candidates = candidates;
+            this.ownerRepo = ownerRepo;
+            this.tag = tag;
+        }
+    }
+
+    /** A verified mod archive together with the release asset it came from. */
+    private static final class DownloadedAsset {
+        private final Path file;
+        private final GitHubAsset asset;
+
+        DownloadedAsset(Path file, GitHubAsset asset) {
+            this.file = file;
+            this.asset = asset;
+        }
+
+        Path file() { return file; }
+
+        GitHubAsset asset() { return asset; }
+    }
+
+    /** Result of the install stage: fresh compatibility findings plus replaced archives. */
+    private static final class InstallOutcome {
+        private final List<MindustryCompatibility.Issue> issues;
+        private final List<Path> replacedFiles;
+
+        InstallOutcome(List<MindustryCompatibility.Issue> issues, List<Path> replacedFiles) {
+            this.issues = issues;
+            this.replacedFiles = replacedFiles;
+        }
+
+        List<MindustryCompatibility.Issue> issues() { return issues; }
+
+        List<Path> replacedFiles() { return replacedFiles; }
+    }
+
+    /** Joins replaced archive file names for the toast text. */
+    private static String joinFileNames(List<Path> files) {
+        StringBuilder out = new StringBuilder();
+        for (Path file : files) {
+            if (out.length() > 0) out.append(", ");
+            out.append(file.getFileName());
+            if (out.length() > 120) {
+                out.append(", ...");
+                break;
+            }
+        }
+        return out.toString();
     }
 
     /**
@@ -653,43 +715,80 @@ public final class MindustryModBrowserPane extends BorderPane implements PageAwa
      * mirror race + per-second speed counter with the Mindustry-jar
      * installer, and reports progress through HMCL's Task system so the
      * task dialog draws a determinate bar.
+     *
+     * <p>Each candidate asset is downloaded to a fresh staging file and
+     * must parse as a Mindustry mod archive; the first one that does wins,
+     * and the others are logged and skipped.</p>
      */
-    private final class ModDownloadTask extends Task<Path> {
-        private final GitHubAsset asset;
-        private final Path target;
-        private final String primaryDownloadUrl;
-        private final String fallbackDownloadUrl;
+    private final class ModDownloadTask extends Task<DownloadedAsset> {
+        private final AssetPick pick;
 
         ModDownloadTask(AssetPick pick, String label) {
-            this.asset = pick.asset;
-            this.target = pick.staging;
-            this.primaryDownloadUrl = pick.primaryDownloadUrl;
-            this.fallbackDownloadUrl = pick.fallbackDownloadUrl;
+            this.pick = pick;
             setName(i18n("xenon.mindustry.mod.browser.task.download",
-                    label, asset.getName()));
+                    label, pick.candidates.get(0).asset.getName()));
         }
 
         @Override
         public void execute() throws Exception {
             MirrorDownloader downloader = new MirrorDownloader(MindustryImportFlow.cachesDirectory());
+            IOException lastFailure = null;
+            for (AssetCandidate candidate : pick.candidates) {
+                Path staging = stagingPath(pick.ownerRepo, candidate.asset);
+                try {
+                    downloadCandidate(downloader, candidate, staging);
+                    // Reject release bundles and source archives the game would
+                    // ignore, so the install never drops an unusable file into
+                    // mods/ instead of trying the next candidate asset.
+                    if (!MindustryModParser.containsDescriptor(staging)) {
+                        throw new IOException("No mod.json / mod.hjson in " + candidate.asset.getName());
+                    }
+                    setResult(new DownloadedAsset(staging, candidate.asset));
+                    return;
+                } catch (IOException ex) {
+                    lastFailure = ex;
+                    LOG.warning("Skipping mod asset " + candidate.asset.getName()
+                            + " of " + pick.ownerRepo + " " + pick.tag
+                            + ": " + ex.getMessage());
+                    try { Files.deleteIfExists(staging); } catch (IOException ignored) {}
+                }
+            }
+            throw new IOException("No loadable Mindustry mod archive in "
+                    + pick.ownerRepo + " release " + pick.tag
+                    + (lastFailure == null ? "" : " (" + lastFailure.getMessage() + ")"),
+                    lastFailure);
+        }
+
+        /** Staging path for one candidate; the extension decides how the game classifies it later. */
+        private Path stagingPath(String ownerRepo, GitHubAsset asset) {
+            String assetName = asset.getName();
+            String ext = assetName.toLowerCase(Locale.ROOT).endsWith(".jar") ? ".jar" : ".zip";
+            String safeRepo = ownerRepo.replace('/', '_').replaceAll("[^A-Za-z0-9._-]", "_");
+            return Path.of(System.getProperty("java.io.tmpdir", "."),
+                    "xenon-mod-" + safeRepo + "-" + System.nanoTime() + ext);
+        }
+
+        /** High-star mods try the 121 cache first, then the mirror-race GitHub path. */
+        private void downloadCandidate(MirrorDownloader downloader, AssetCandidate candidate,
+                                       Path staging) throws IOException {
             try {
-                downloadAndVerify(downloader, primaryDownloadUrl);
+                downloadAndVerify(downloader, candidate.asset, staging, candidate.primaryDownloadUrl);
             } catch (IOException primaryFailure) {
-                if (Objects.equals(primaryDownloadUrl, fallbackDownloadUrl)) {
+                if (Objects.equals(candidate.primaryDownloadUrl, candidate.fallbackDownloadUrl)) {
                     throw primaryFailure;
                 }
                 LOG.warning("High-star mod cache download failed for "
-                        + asset.getName() + " via " + primaryDownloadUrl
+                        + candidate.asset.getName() + " via " + candidate.primaryDownloadUrl
                         + ": " + primaryFailure.getMessage()
                         + " — falling back to mirror-race GitHub path",
                         primaryFailure);
-                Files.deleteIfExists(target);
-                downloadAndVerify(downloader, fallbackDownloadUrl);
+                Files.deleteIfExists(staging);
+                downloadAndVerify(downloader, candidate.asset, staging, candidate.fallbackDownloadUrl);
             }
-            setResult(target);
         }
 
-        private void downloadAndVerify(MirrorDownloader downloader, String sourceUrl) throws IOException {
+        private void downloadAndVerify(MirrorDownloader downloader, GitHubAsset asset, Path target,
+                                       String sourceUrl) throws IOException {
             downloader.download(sourceUrl, target, asset.getSize(), (read, total) -> {
                 if (total > 0 && read >= 0) {
                     updateProgress(Math.min(read, total), total);

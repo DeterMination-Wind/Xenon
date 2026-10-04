@@ -27,6 +27,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -124,6 +125,9 @@ public final class GitHubDirectInstaller {
      * Choose the asset most likely to be a runnable Mindustry mod from
      * {@code assets}. Returns {@code null} if no candidate qualifies.
      *
+     * <p>Source bundles ({@code Mod-v1-sources.zip}, {@code ModSources.zip})
+     * are skipped.</p>
+     *
      * <p>Visible for callers that want to inspect the selection without
      * triggering a download (e.g. confirmation UI).</p>
      */
@@ -134,7 +138,7 @@ public final class GitHubDirectInstaller {
         for (GitHubAsset a : assets) {
             if (a == null || a.getName() == null) continue;
             String name = a.getName().toLowerCase(Locale.ROOT);
-            if (name.contains("-source") || name.contains("-sources")) continue;
+            if (isSourceBundle(name)) continue;
             if (zip == null && name.endsWith(".zip")) {
                 zip = a;
             } else if (jar == null && name.endsWith(".jar")) {
@@ -145,6 +149,56 @@ public final class GitHubDirectInstaller {
         // usually plugins or library duplicates.
         if (zip != null) return zip;
         return jar;
+    }
+
+    /**
+     * Every asset worth trying for a mod install, most likely first.
+     *
+     * <p>Jars come before zips: a release that ships both usually ships
+     * the mod itself as a jar next to a release bundle zip that contains
+     * the jar plus README assets. Callers should download the candidates
+     * in order and keep the first archive that parses as a Mindustry mod,
+     * which also covers releases that only publish a loadable zip.</p>
+     *
+     * @param assets release assets as returned by the GitHub API; may be {@code null}
+     * @return candidate assets in try order; never {@code null}
+     */
+    public static List<GitHubAsset> pickAssets(List<GitHubAsset> assets) {
+        if (assets == null || assets.isEmpty()) return List.of();
+        List<GitHubAsset> jars = new ArrayList<>();
+        List<GitHubAsset> zips = new ArrayList<>();
+        for (GitHubAsset a : assets) {
+            if (a == null || a.getName() == null) continue;
+            String name = a.getName().toLowerCase(Locale.ROOT);
+            if (isSourceBundle(name)) continue;
+            if (name.endsWith(".jar")) {
+                jars.add(a);
+            } else if (name.endsWith(".zip")) {
+                zips.add(a);
+            }
+        }
+        List<GitHubAsset> ordered = new ArrayList<>(jars.size() + zips.size());
+        ordered.addAll(jars);
+        ordered.addAll(zips);
+        return List.copyOf(ordered);
+    }
+
+    /**
+     * Returns whether an asset name looks like a source-only archive.
+     *
+     * <p>Matches the historical {@code -source} / {@code -sources} markers
+     * plus bare {@code ModSource(s).zip} bundles produced by release
+     * scripts, without tripping over names such as {@code ResourcePack.zip}.</p>
+     *
+     * @param lowerCaseName asset name already lower-cased
+     * @return whether the asset should be ignored when choosing a mod archive
+     */
+    private static boolean isSourceBundle(String lowerCaseName) {
+        String stem = lowerCaseName;
+        int dot = stem.lastIndexOf('.');
+        if (dot > 0) stem = stem.substring(0, dot);
+        stem = stem.replace('_', '-').replace(' ', '-');
+        return stem.endsWith("-source") || stem.endsWith("-sources") || stem.endsWith("sources");
     }
 
     private static Path stagingFile(String ownerRepo, String tag, String assetName) {

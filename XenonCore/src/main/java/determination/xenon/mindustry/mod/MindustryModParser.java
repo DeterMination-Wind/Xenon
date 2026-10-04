@@ -84,6 +84,23 @@ public final class MindustryModParser {
                 "No mod.json / mod.hjson / plugin.json / plugin.hjson in " + file);
     }
 
+    /// Returns whether an archive carries a mod descriptor the game would accept.
+    ///
+    /// Checks the archive root and a single archive-wide wrapper directory,
+    /// mirroring Mindustry's own descriptor lookup without reading the
+    /// descriptor itself. Use this to reject release bundles (`Mod.zip`
+    /// wrapping `Mod.jar`) before installing them: such archives look like
+    /// mods by name but the game ignores them.
+    ///
+    /// @param file archive to inspect
+    /// @return whether a `mod.json` / `mod.hjson` / `plugin.json` / `plugin.hjson` entry exists
+    /// @throws IOException if the archive cannot be opened or listed
+    public static boolean containsDescriptor(Path file) throws IOException {
+        try (ZipFile zip = new ZipFile(file.toFile())) {
+            return !findDescriptorEntries(zip).isEmpty();
+        }
+    }
+
     /// Finds root descriptors or descriptors inside one archive-wide wrapper directory.
     private static @Unmodifiable List<ZipEntry> findDescriptorEntries(ZipFile zip) {
         List<ZipEntry> rootEntries = findDescriptorEntries(zip, "");

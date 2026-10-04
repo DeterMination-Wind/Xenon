@@ -66,6 +66,21 @@ public final class MindustryModManager {
      * Archives that fail to parse are logged and skipped, never thrown.
      */
     public synchronized List<MindustryLocalMod> scan() {
+        return scan(false);
+    }
+
+    /**
+     * Like {@link #scan()}, but keeps archives whose descriptor cannot be
+     * read as {@link MindustryLocalMod#isUnparsable() unparsable} entries
+     * instead of dropping them. Callers that mirror the mods folder for the
+     * user should use this so a folder full of broken archives never looks
+     * empty.
+     */
+    public synchronized List<MindustryLocalMod> scanAll() {
+        return scan(true);
+    }
+
+    private List<MindustryLocalMod> scan(boolean includeUnparsable) {
         List<MindustryLocalMod> result = new ArrayList<>();
         if (!Files.isDirectory(modsDir)) return result;
         Map<String, Object> settings = MindustrySettingsBin.readValues(dataDir);
@@ -78,6 +93,9 @@ public final class MindustryModManager {
                 } catch (IOException ex) {
                     Logger.LOG.log(System.Logger.Level.WARNING,
                             "Failed to parse Mindustry mod " + p + ": " + ex.getMessage());
+                    if (includeUnparsable) {
+                        result.add(MindustryLocalMod.unparsable(p, ex.getMessage()));
+                    }
                 }
             }
         } catch (IOException ex) {
@@ -111,6 +129,12 @@ public final class MindustryModManager {
         int enabled = Boolean.compare(b.isEnabled(), a.isEnabled());
         if (enabled != 0) {
             return enabled;
+        }
+        // Readable mods come first; broken archives are listed after them so
+        // the installable content stays at the top of the mod list.
+        int unparsable = Boolean.compare(a.isUnparsable(), b.isUnparsable());
+        if (unparsable != 0) {
+            return unparsable;
         }
         int displayName = a.displayName().compareToIgnoreCase(b.displayName());
         if (displayName != 0) {
@@ -242,9 +266,35 @@ public final class MindustryModManager {
     /**
      * Copy a {@code .jar} / {@code .zip} into {@link #getModsDir()},
      * creating the directory if needed. The destination keeps the source
-     * file name; existing mods with that name are overwritten.
+     * file name; existing mods with that name are overwritten and older
+     * archives of the same mod are removed.
      */
     public void install(Path zipOrJar) throws IOException {
+        Objects.requireNonNull(zipOrJar, "zipOrJar");
+        install(zipOrJar, zipOrJar.getFileName().toString());
+    }
+
+    /**
+     * Copy a mod archive into {@link #getModsDir()} under
+     * {@code preferredFileName}.
+     *
+     * <p>Downloads are staged under temporary names, so callers pass the
+     * release asset name (or the picked file name) to keep the installed
+     * archive recognizable. Archives that provide the same mod - the same
+     * internal name - are removed first, so installing an update replaces
+     * the previous copy instead of leaving two archives of which Mindustry
+     * silently loads only one.</p>
+     *
+     * <p>When {@code preferredFileName} would overwrite an archive of a
+     * <em>different</em> mod, the existing file is kept and a numbered
+     * sibling name is used instead.</p>
+     *
+     * @param zipOrJar archive to copy; must exist and end in {@code .jar} or {@code .zip}
+     * @param preferredFileName destination file name; falls back to the source name when blank
+     * @return the installed file together with the archives removed as part of the install
+     * @throws IOException if the source cannot be read or the copy fails
+     */
+    public InstallResult install(Path zipOrJar, String preferredFileName) throws IOException {
         Objects.requireNonNull(zipOrJar, "zipOrJar");
         if (!Files.isRegularFile(zipOrJar)) {
             throw new IOException("Not a regular file: " + zipOrJar);
@@ -252,9 +302,121 @@ public final class MindustryModManager {
         if (!isModArchive(zipOrJar)) {
             throw new IOException("Not a Mindustry mod archive: " + zipOrJar);
         }
+        if (!MindustryModParser.containsDescriptor(zipOrJar)) {
+            // Release bundles (Mod.zip wrapping Mod.jar) and source archives
+            // look like mods by name, but Mindustry never loads them.
+            throw new MindustryModParseException("No mod.json / mod.hjson / plugin.json / plugin.hjson in "
+                    + zipOrJar);
+        }
         Files.createDirectories(modsDir);
-        Path dst = modsDir.resolve(zipOrJar.getFileName().toString());
+
+        String internalName = internalNameOf(zipOrJar);
+        String desiredName = destinationName(preferredFileName, zipOrJar.getFileName().toString());
+
+        List<Path> replaced = new ArrayList<>();
+        if (!internalName.isEmpty()) {
+            for (MindustryLocalMod existing : scan()) {
+                Path file = existing.getFile();
+                if (!internalName.equals(existing.getInternalName())) continue;
+                // The destination itself is overwritten in place below.
+                if (file.getFileName().toString().equalsIgnoreCase(desiredName)) continue;
+                if (FileUtils.deleteSafely(file)) {
+                    replaced.add(file);
+                }
+            }
+        }
+
+        Path dst = modsDir.resolve(desiredName);
+        if (Files.exists(dst) && !internalName.isEmpty()
+                && !internalName.equals(internalNameOf(dst))) {
+            // Same file name, different mod: never clobber the other archive.
+            dst = numberedSibling(dst);
+        }
         Files.copy(zipOrJar, dst, StandardCopyOption.REPLACE_EXISTING);
+        return new InstallResult(dst, List.copyOf(replaced));
+    }
+
+    /**
+     * Reads the archive's internal mod name without keeping the parsed metadata.
+     *
+     * @param archive archive to inspect
+     * @return the normalized internal name, or an empty string when unreadable
+     */
+    private static String internalNameOf(Path archive) {
+        try {
+            return MindustryModParser.parse(archive).getInternalName();
+        } catch (IOException | RuntimeException ex) {
+            return "";
+        }
+    }
+
+    /**
+     * Builds a safe destination file name for an installed archive.
+     *
+     * @param preferredName name requested by the caller; may be blank
+     * @param sourceName name of the staged download used as fallback
+     * @return a sanitized name that still looks like a mod archive
+     */
+    private static String destinationName(String preferredName, String sourceName) {
+        String name = sanitizeFileName(preferredName);
+        if (name.isEmpty()) name = sanitizeFileName(sourceName);
+        if (name.isEmpty()) name = "mod";
+        return ensureArchiveExtension(name, sourceName);
+    }
+
+    /**
+     * Removes path fragments and characters Windows refuses in a file name.
+     *
+     * @param raw candidate name, possibly a path or {@code null}
+     * @return the bare file name, or an empty string when nothing usable remains
+     */
+    private static String sanitizeFileName(String raw) {
+        if (raw == null) return "";
+        String name = raw.replace('\\', '/');
+        int slash = name.lastIndexOf('/');
+        if (slash >= 0) name = name.substring(slash + 1);
+        StringBuilder out = new StringBuilder(name.length());
+        for (int i = 0; i < name.length(); i++) {
+            char c = name.charAt(i);
+            out.append(c < 0x20 || "<>:\"/\\|?*".indexOf(c) >= 0 ? '_' : c);
+        }
+        String cleaned = out.toString().trim();
+        while (cleaned.endsWith(".")) {
+            cleaned = cleaned.substring(0, cleaned.length() - 1).trim();
+        }
+        return cleaned.equals(".") || cleaned.equals("..") ? "" : cleaned;
+    }
+
+    /**
+     * Guarantees the installed file is a mod archive by name, because the
+     * game only scans {@code .jar} and {@code .zip} entries.
+     *
+     * @param name sanitized destination name
+     * @param sourceName staged download name used to pick the extension
+     * @return {@code name}, with the source extension appended when it has none
+     */
+    private static String ensureArchiveExtension(String name, String sourceName) {
+        String lower = name.toLowerCase(Locale.ROOT);
+        if (lower.endsWith(".jar") || lower.endsWith(".zip")) return name;
+        return name + (sourceName.toLowerCase(Locale.ROOT).endsWith(".jar") ? ".jar" : ".zip");
+    }
+
+    /**
+     * Finds a free {@code <stem>-<n><ext>} sibling for a taken destination.
+     *
+     * @param destination desired destination that already exists
+     * @return the first free sibling name, or the destination itself when every candidate is taken
+     */
+    private static Path numberedSibling(Path destination) {
+        String fileName = destination.getFileName().toString();
+        int dot = fileName.lastIndexOf('.');
+        String stem = dot > 0 ? fileName.substring(0, dot) : fileName;
+        String extension = dot > 0 ? fileName.substring(dot) : "";
+        for (int index = 2; index < 1000; index++) {
+            Path candidate = destination.resolveSibling(stem + "-" + index + extension);
+            if (!Files.exists(candidate)) return candidate;
+        }
+        return destination;
     }
 
     /// Returns whether the file name selects a Mindustry mod archive.
@@ -285,5 +447,14 @@ public final class MindustryModManager {
             return null;
         }
         return "mod-" + internalName + "-enabled";
+    }
+
+    /**
+     * Outcome of one archive install.
+     *
+     * @param installedFile file that now holds the mod
+     * @param replacedFiles archives removed during the install, usually the previous version
+     */
+    public record InstallResult(Path installedFile, List<Path> replacedFiles) {
     }
 }

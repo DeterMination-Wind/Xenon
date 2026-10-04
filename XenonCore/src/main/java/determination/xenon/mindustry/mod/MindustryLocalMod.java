@@ -34,6 +34,11 @@ import java.util.Objects;
  * <p>{@link #file} may end with {@code .disabled}; in that case the mod
  * is considered {@linkplain #isEnabled() disabled} and Mindustry will
  * skip it on startup.</p>
+ *
+ * <p>An entry may also describe an archive whose descriptor could not be
+ * read ({@link #isUnparsable()}). Such entries only carry the file name and
+ * the parse failure, which lets the UI show what is really inside the mods
+ * folder instead of silently hiding broken archives.</p>
  */
 public final class MindustryLocalMod {
     private final Path file;
@@ -49,6 +54,7 @@ public final class MindustryLocalMod {
     private final boolean enabled;
     private final String internalName;
     private final String ignoredByFileName;
+    private final String parseError;
 
     public MindustryLocalMod(Path file,
                              String name,
@@ -61,7 +67,7 @@ public final class MindustryLocalMod {
                              boolean java,
                              List<String> dependencies) {
         this(file, name, displayName, author, version, description, main, minGameVersion,
-                java, dependencies, isArchiveEnabled(file), null);
+                java, dependencies, isArchiveEnabled(file), null, null);
     }
 
     private MindustryLocalMod(Path file,
@@ -75,7 +81,8 @@ public final class MindustryLocalMod {
                               boolean java,
                               List<String> dependencies,
                               boolean enabled,
-                              String ignoredByFileName) {
+                              String ignoredByFileName,
+                              String parseError) {
         this.file = Objects.requireNonNull(file, "file");
         this.name = name;
         this.displayName = displayName;
@@ -91,6 +98,19 @@ public final class MindustryLocalMod {
         this.enabled = enabled;
         this.internalName = normalizeInternalName(name);
         this.ignoredByFileName = ignoredByFileName;
+        this.parseError = parseError;
+    }
+
+    /**
+     * Creates an entry for an archive the parser could not read.
+     *
+     * @param file archive that failed to parse
+     * @param reason human-readable parse failure, kept for display and diagnostics
+     * @return an unparsable entry carrying only the file name and the failure reason
+     */
+    public static MindustryLocalMod unparsable(Path file, String reason) {
+        return new MindustryLocalMod(file, null, null, null, null, null, null, 0, false,
+                Collections.emptyList(), isArchiveEnabled(file), null, reason);
     }
 
     public Path getFile() { return file; }
@@ -123,19 +143,33 @@ public final class MindustryLocalMod {
     public String getIgnoredByFileName() { return ignoredByFileName; }
 
     /**
+     * Returns whether this archive's descriptor could not be read.
+     *
+     * @return {@code true} when the entry only describes a broken archive
+     */
+    public boolean isUnparsable() { return parseError != null; }
+
+    /**
+     * Returns the parse failure that made this archive unusable to the launcher.
+     *
+     * @return the failure message, or {@code null} for a parsed mod
+     */
+    public String getParseError() { return parseError; }
+
+    /**
      * Return the same metadata with a launcher/game-derived enabled
      * state. Used when Mindustry's settings disable a normal archive.
      */
     public MindustryLocalMod withEnabled(boolean enabled) {
         if (this.enabled == enabled) return this;
         return new MindustryLocalMod(file, name, displayName, author, version, description,
-                main, minGameVersion, java, dependencies, enabled, ignoredByFileName);
+                main, minGameVersion, java, dependencies, enabled, ignoredByFileName, parseError);
     }
 
     public MindustryLocalMod ignoredBy(MindustryLocalMod winner) {
         return new MindustryLocalMod(file, name, displayName, author, version, description,
                 main, minGameVersion, java, dependencies,
-                enabled, winner.getFile().getFileName().toString());
+                enabled, winner.getFile().getFileName().toString(), parseError);
     }
 
     /**
@@ -164,6 +198,7 @@ public final class MindustryLocalMod {
         return "MindustryLocalMod{" + displayName()
                 + ", file=" + file.getFileName()
                 + ", enabled=" + enabled
-                + ", ignoredBy=" + ignoredByFileName + '}';
+                + ", ignoredBy=" + ignoredByFileName
+                + ", parseError=" + parseError + '}';
     }
 }

@@ -127,7 +127,9 @@ public final class MindustryModListPane extends BorderPane {
         status.setText(i18n("xenon.mindustry.modlist.loading"));
         listBox.getChildren().clear();
         Schedulers.io().execute(() -> {
-            List<MindustryLocalMod> mods = manager.scan();
+            // scanAll keeps unreadable archives visible: a folder holding only
+            // release zips or dev jars must not look like "no mods installed".
+            List<MindustryLocalMod> mods = manager.scanAll();
             Platform.runLater(() -> {
                 populate(mods);
                 Platform.runLater(() -> scroll.setVvalue(keepV));
@@ -146,12 +148,17 @@ public final class MindustryModListPane extends BorderPane {
                 ? ""
                 : search.getText().trim().toLowerCase(Locale.ROOT);
         List<MindustryLocalMod> visible = new ArrayList<>();
+        int unparsable = 0;
         for (MindustryLocalMod mod : allMods) {
             if (matches(mod, query)) {
                 visible.add(mod);
+                if (mod.isUnparsable()) unparsable++;
             }
         }
-        status.setText(i18n("xenon.mindustry.modlist.count", visible.size()));
+        int installed = visible.size() - unparsable;
+        status.setText(unparsable == 0
+                ? i18n("xenon.mindustry.modlist.count", installed)
+                : i18n("xenon.mindustry.modlist.count.unparsable", installed, unparsable));
         if (visible.isEmpty()) {
             Label empty = new Label(i18n("xenon.mindustry.modlist.empty"));
             empty.setPadding(new Insets(8));
@@ -165,13 +172,57 @@ public final class MindustryModListPane extends BorderPane {
 
     private AdvancedListItem buildRow(MindustryLocalMod mod) {
         AdvancedListItem item = new AdvancedListItem();
-        item.setLeftIcon(mod.isJava() ? SVG.DEPLOYED_CODE : SVG.EXTENSION);
+        if (mod.isUnparsable()) {
+            item.setLeftIcon(SVG.WARNING);
+        } else {
+            item.setLeftIcon(mod.isJava() ? SVG.DEPLOYED_CODE : SVG.EXTENSION);
+        }
         String label = mod.displayName();
-        if (mod.getVersion() != null && !mod.getVersion().isBlank()) label += "  v" + mod.getVersion();
-        if (!mod.isEnabled()) label += "  [" + i18n("xenon.mindustry.modlist.disabled") + "]";
-        if (mod.isIgnoredByDuplicate()) label += "  [" + i18n("xenon.mindustry.modlist.ignored") + "]";
+        if (mod.isUnparsable()) {
+            label += "  [" + i18n("xenon.mindustry.modlist.unparsable") + "]";
+        } else {
+            if (mod.getVersion() != null && !mod.getVersion().isBlank()) label += "  v" + mod.getVersion();
+            if (!mod.isEnabled()) label += "  [" + i18n("xenon.mindustry.modlist.disabled") + "]";
+            if (mod.isIgnoredByDuplicate()) label += "  [" + i18n("xenon.mindustry.modlist.ignored") + "]";
+        }
         item.setTitle(label);
 
+        if (mod.isUnparsable()) {
+            item.setSubtitle(unparsableSubtitle(mod));
+        } else {
+            item.setSubtitle(readableSubtitle(mod));
+        }
+
+        HBox actions = new HBox(4);
+        if (!mod.isUnparsable()) {
+            JFXButton toggle = FXUtils.newRaisedButton(
+                    mod.isEnabled() ? i18n("xenon.mindustry.modlist.disable") : i18n("xenon.mindustry.modlist.enable"));
+            toggle.setOnAction(e -> {
+                try {
+                    if (mod.isEnabled()) manager.disable(mod); else manager.enable(mod);
+                    reload();
+                } catch (IOException ex) {
+                    showError(ex);
+                }
+            });
+            actions.getChildren().add(toggle);
+        }
+        JFXButton delete = FXUtils.newRaisedButton(i18n("button.delete"));
+        delete.setOnAction(e -> {
+            try {
+                manager.delete(mod);
+                reload();
+            } catch (IOException ex) {
+                showError(ex);
+            }
+        });
+        actions.getChildren().add(delete);
+        item.setRightGraphic(actions);
+        return item;
+    }
+
+    /** Subtitle of a readable mod row: duplicate note, author and description. */
+    private static String readableSubtitle(MindustryLocalMod mod) {
         StringBuilder subtitle = new StringBuilder();
         if (mod.isIgnoredByDuplicate()) {
             subtitle.append(i18n("xenon.mindustry.modlist.ignored_by", mod.getIgnoredByFileName()));
@@ -186,31 +237,18 @@ public final class MindustryModListPane extends BorderPane {
             if (desc.length() > 100) desc = desc.substring(0, 100) + "...";
             subtitle.append(desc);
         }
-        item.setSubtitle(subtitle.toString());
+        return subtitle.toString();
+    }
 
-        HBox actions = new HBox(4);
-        JFXButton toggle = FXUtils.newRaisedButton(
-                mod.isEnabled() ? i18n("xenon.mindustry.modlist.disable") : i18n("xenon.mindustry.modlist.enable"));
-        toggle.setOnAction(e -> {
-            try {
-                if (mod.isEnabled()) manager.disable(mod); else manager.enable(mod);
-                reload();
-            } catch (IOException ex) {
-                showError(ex);
-            }
-        });
-        JFXButton delete = FXUtils.newRaisedButton(i18n("button.delete"));
-        delete.setOnAction(e -> {
-            try {
-                manager.delete(mod);
-                reload();
-            } catch (IOException ex) {
-                showError(ex);
-            }
-        });
-        actions.getChildren().setAll(toggle, delete);
-        item.setRightGraphic(actions);
-        return item;
+    /** Subtitle of a broken archive row: what failed, plus the raw parse error. */
+    private static String unparsableSubtitle(MindustryLocalMod mod) {
+        String reason = mod.getParseError();
+        if (reason == null || reason.isBlank()) {
+            return i18n("xenon.mindustry.modlist.unparsable.hint");
+        }
+        String compact = reason.replaceAll("\\s+", " ").trim();
+        if (compact.length() > 140) compact = compact.substring(0, 140) + "...";
+        return i18n("xenon.mindustry.modlist.unparsable.hint") + "  —  " + compact;
     }
 
     private boolean matches(MindustryLocalMod mod, String query) {

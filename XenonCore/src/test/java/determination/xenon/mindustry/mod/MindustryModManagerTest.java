@@ -34,6 +34,7 @@ import java.util.zip.ZipOutputStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /// Tests Mindustry local mod scanning behavior.
@@ -258,6 +259,110 @@ public final class MindustryModManagerTest {
 
         assertEquals(List.of("Alpha", "zulu", "Beta", "delta"),
                 mods.stream().map(MindustryLocalMod::displayName).toList());
+    }
+
+    /// Installing under the release asset name replaces the previous copy of the same mod.
+    @Test
+    public void installUsesPreferredFileNameAndReplacesSameMod(@TempDir Path tempDir)
+            throws IOException {
+        Path modsDir = tempDir.resolve("mods");
+        writeMod(modsDir.resolve("logic-sugar-v1.0.0.jar"), "logic-sugar", "Logic Sugar");
+        Path staged = writeMod(tempDir.resolve("xenon-mod-owner_repo-123456.jar"),
+                "logic-sugar", "Logic Sugar");
+
+        MindustryModManager.InstallResult result =
+                new MindustryModManager(modsDir).install(staged, "LogicSugar-v5.7.0.jar");
+
+        assertEquals("LogicSugar-v5.7.0.jar",
+                result.installedFile().getFileName().toString());
+        assertEquals(List.of("logic-sugar-v1.0.0.jar"),
+                result.replacedFiles().stream()
+                        .map(file -> file.getFileName().toString())
+                        .toList());
+        List<MindustryLocalMod> mods = new MindustryModManager(modsDir).scan();
+        assertEquals(1, mods.size());
+        assertEquals("LogicSugar-v5.7.0.jar",
+                mods.get(0).getFile().getFileName().toString());
+    }
+
+    /// Installing a different mod that shares the file name keeps the existing archive.
+    @Test
+    public void installKeepsDifferentModWithSameFileName(@TempDir Path tempDir) throws IOException {
+        Path modsDir = tempDir.resolve("mods");
+        writeMod(modsDir.resolve("mod.jar"), "alpha", "Alpha");
+        Path staged = writeMod(tempDir.resolve("staging.jar"), "beta", "Beta");
+
+        MindustryModManager.InstallResult result =
+                new MindustryModManager(modsDir).install(staged, "mod.jar");
+
+        assertEquals("mod-2.jar", result.installedFile().getFileName().toString());
+        assertTrue(result.replacedFiles().isEmpty());
+        assertEquals(2, new MindustryModManager(modsDir).scan().size());
+    }
+
+    /// scan() hides broken archives, while scanAll() lists them after the readable mods.
+    @Test
+    public void scanAllKeepsUnreadableArchives(@TempDir Path tempDir) throws IOException {
+        Path modsDir = tempDir.resolve("mods");
+        writeMod(modsDir.resolve("alpha.zip"), "alpha", "Alpha");
+        writeArchive(modsDir.resolve("release-bundle.zip"), "alpha.jar", "not a mod");
+
+        assertTrue(new MindustryModManager(modsDir).scan().stream()
+                .noneMatch(MindustryLocalMod::isUnparsable));
+
+        List<MindustryLocalMod> all = new MindustryModManager(modsDir).scanAll();
+
+        assertEquals(2, all.size());
+        assertEquals("Alpha", all.get(0).displayName());
+        MindustryLocalMod broken = all.get(1);
+        assertEquals("release-bundle.zip", broken.getFile().getFileName().toString());
+        assertEquals("release-bundle.zip", broken.displayName());
+        assertTrue(broken.isUnparsable());
+        assertTrue(broken.getParseError().contains("No mod.json"));
+    }
+
+    /// Archives without a descriptor are rejected instead of landing in mods/ as unloadable files.
+    @Test
+    public void installRejectsArchiveWithoutDescriptor(@TempDir Path tempDir) throws IOException {
+        Path modsDir = tempDir.resolve("mods");
+        Path staged = writeArchive(tempDir.resolve("bundle.zip"), "Mod.jar", "not a descriptor");
+
+        assertThrows(MindustryModParseException.class,
+                () -> new MindustryModManager(modsDir).install(staged, "bundle.zip"));
+        assertTrue(new MindustryModManager(modsDir).scanAll().isEmpty());
+    }
+
+    /// A descriptor inside a single wrapper directory stays installable, matching the game's lookup.
+    @Test
+    public void installAcceptsWrapperDirectoryDescriptor(@TempDir Path tempDir) throws IOException {
+        Path modsDir = tempDir.resolve("mods");
+        Path staged = writeArchive(tempDir.resolve("staged.zip"),
+                "wrapped/mod.json", """
+                        {
+                          "name": "wrapped",
+                          "displayName": "Wrapped",
+                          "version": "1"
+                        }
+                        """);
+
+        MindustryModManager.InstallResult result =
+                new MindustryModManager(modsDir).install(staged, "Wrapped-v1.zip");
+
+        assertEquals("Wrapped-v1.zip", result.installedFile().getFileName().toString());
+        assertEquals(1, new MindustryModManager(modsDir).scan().size());
+    }
+
+    /// containsDescriptor mirrors the game's descriptor lookup used for install decisions.
+    @Test
+    public void containsDescriptorMirrorsGameLookup(@TempDir Path tempDir) throws IOException {
+        Path root = writeMod(tempDir.resolve("root.zip"), "root", "Root");
+        Path wrapped = writeArchive(tempDir.resolve("wrapped.zip"),
+                "wrapped/mod.hjson", "name: wrapped");
+        Path bundle = writeArchive(tempDir.resolve("bundle.zip"), "Mod.jar", "not a descriptor");
+
+        assertTrue(MindustryModParser.containsDescriptor(root));
+        assertTrue(MindustryModParser.containsDescriptor(wrapped));
+        assertFalse(MindustryModParser.containsDescriptor(bundle));
     }
 
     private static Path writeMod(Path archive, String internalName, String displayName) throws IOException {
