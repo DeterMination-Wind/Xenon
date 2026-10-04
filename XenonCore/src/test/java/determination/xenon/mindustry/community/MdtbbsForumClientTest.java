@@ -11,6 +11,7 @@ package determination.xenon.mindustry.community;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
+import determination.xenon.mindustry.community.MdtbbsForumClient.Notification;
 import determination.xenon.mindustry.community.MdtbbsForumClient.Page;
 import determination.xenon.mindustry.community.MdtbbsForumClient.ThreadDetail;
 import determination.xenon.mindustry.community.MdtbbsForumClient.ThreadSummary;
@@ -24,6 +25,7 @@ import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -76,6 +78,21 @@ public final class MdtbbsForumClientTest {
         assertEquals("https://mdtbbs.cn/users/92", MdtbbsForumClient.profileUrl(92));
     }
 
+    @Test
+    public void parsesNotificationsFromDataItems() throws Exception {
+        try (ForumServer server = ForumServer.start()) {
+            Page<Notification> page = server.client().notifications(1, 20);
+
+            assertEquals(1, page.items().size());
+            assertEquals(1, page.page());
+            assertEquals(7, page.total());
+            assertTrue(page.hasMore());
+            assertEquals("reply", page.items().get(0).type());
+            assertEquals("有人回复了你", page.items().get(0).title());
+            assertFalse(page.items().get(0).read());
+        }
+    }
+
     private static final class ForumServer implements AutoCloseable {
         private final HttpServer server;
 
@@ -111,6 +128,8 @@ public final class MdtbbsForumClientTest {
                 body = "{\"data\":{\"id\":99}}";
             } else if (path.equals("/api/v1/threads/7/replies") && method.equals("POST")) {
                 body = "{\"data\":{\"id\":5}}";
+            } else if (path.equals("/api/v1/notifications") && method.equals("GET")) {
+                body = NOTIFICATIONS_JSON;
             } else {
                 body = "{\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"missing\"}}";
             }
@@ -139,6 +158,14 @@ public final class MdtbbsForumClientTest {
               "excerpt":"分享一套适合新手的建筑布局"
             }],
             "meta":{"request_id":"req-1","pagination":{"page":1,"limit":20,"total":2,"has_more":false}}}
+            """;
+
+    private static final String NOTIFICATIONS_JSON = """
+            {"data":{"items":[{
+              "id":11,"type":"reply","title":"有人回复了你","content":"看看新回复",
+              "is_read":false,"created_at":"2026-09-30T13:00:00.000Z"
+            }],"pagination":{"page":1,"limit":20,"total":7,"total_pages":1}},
+            "meta":{"request_id":"req-3","pagination":{"page":1,"limit":20,"total":7,"has_more":true}}}
             """;
 
     private static final String DETAIL_JSON = """

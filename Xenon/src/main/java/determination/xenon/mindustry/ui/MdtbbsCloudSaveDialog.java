@@ -155,7 +155,7 @@ public final class MdtbbsCloudSaveDialog {
         name.getStyleClass().add("title-label");
         name.setWrapText(true);
         Label meta = new Label(i18n("xenon.cloud.slot.meta",
-                DATE.format(slot.updatedAt()), formatSize(slot.size()), slot.snapshots()));
+                DATE.format(slot.updatedAt()), formatSize(slot.size()), slot.revision()));
         meta.getStyleClass().add("subtitle-label");
 
         VBox text = new VBox(2, name, meta);

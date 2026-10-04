@@ -54,8 +54,8 @@ public final class MdtbbsCloudSavesClient {
     /// @param name       display name
     /// @param updatedAt  last update time
     /// @param size       current snapshot size in bytes, or 0 when unknown
-    /// @param snapshots  number of retained snapshots, or 0 when unknown
-    public record Slot(String id, String name, Instant updatedAt, long size, long snapshots) {
+    /// @param revision   latest snapshot revision, or 0 when the slot has no snapshot
+    public record Slot(String id, String name, Instant updatedAt, long size, long revision) {
     }
 
     /// One immutable snapshot of a slot.
@@ -107,7 +107,8 @@ public final class MdtbbsCloudSavesClient {
         }
         JsonObject meta = MdtbbsJson.objectOf(root, "meta");
         String nextCursor = meta == null ? "" : MdtbbsJson.stringOf(meta, "next_cursor");
-        boolean hasMore = meta != null && MdtbbsJson.boolOf(meta, "has_more", false);
+        // The cursor list no longer reports `has_more`; a non-blank cursor means another page.
+        boolean hasMore = !nextCursor.isBlank();
         return new SlotPage(slots, nextCursor, hasMore);
     }
 
@@ -249,7 +250,7 @@ public final class MdtbbsCloudSavesClient {
         if (url.isBlank()) throw new IOException("Cloud save download URL is missing");
         String expectedHash = MdtbbsJson.stringOf(download, "sha256");
 
-        String absolute = url.startsWith("http") ? url : api.baseUrl() + url;
+        String absolute = api.resolveUrl(url);
         HttpResponse<InputStream> response = api.openRawUrl(absolute, true);
         response = api.followRedirect(response, true);
         if (response.statusCode() / 100 != 2) {
@@ -291,12 +292,16 @@ public final class MdtbbsCloudSavesClient {
         if (id.isBlank()) id = MdtbbsJson.stringOf(object, "slot_id");
         String name = MdtbbsJson.stringOf(object, "name");
         if (name.isBlank()) name = MdtbbsJson.stringOf(object, "title");
+        JsonObject current = MdtbbsJson.objectOf(object, "current_snapshot");
+        long legacySize = MdtbbsJson.longOf(object, "size",
+                MdtbbsJson.longOf(object, "current_size", 0));
+        long size = current == null ? legacySize
+                : MdtbbsJson.longOf(current, "size", legacySize);
+        long revision = current == null ? 0 : MdtbbsJson.longOf(current, "revision", 0);
         return new Slot(id, name,
                 MdtbbsJson.instantOf(object, "updated_at"),
-                MdtbbsJson.longOf(object, "size",
-                        MdtbbsJson.longOf(object, "current_size", 0)),
-                MdtbbsJson.longOf(object, "snapshot_count",
-                        MdtbbsJson.longOf(object, "snapshots_count", 0)));
+                size,
+                revision);
     }
 
     /// Parses one snapshot object with tolerant key names.

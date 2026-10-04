@@ -110,6 +110,19 @@ public final class MdtbbsApiClient {
     /// API origin including the version prefix.
     public String baseUrl() { return baseUrl; }
 
+    /// Resolves a URL returned by the API into an absolute URL.
+    ///
+    /// The server returns three shapes: absolute signed URLs, root-relative
+    /// paths that already include `/api/v1`, and plain API-relative paths.
+    ///
+    /// @param url URL returned by the API
+    /// @return the absolute URL to call
+    public String resolveUrl(String url) {
+        if (url.startsWith("http://") || url.startsWith("https://")) return url;
+        if (url.startsWith("/api/")) return origin() + url;
+        return baseUrl + (url.startsWith("/") ? url : "/" + url);
+    }
+
     /// Opens a raw response for a binary API path without following redirects.
     ///
     /// @param path          API path such as `/game-content/maps/1/download/file`
@@ -240,7 +253,7 @@ public final class MdtbbsApiClient {
             throw new MdtbbsApiException(401, "AUTH_REQUIRED",
                     "Not logged in to MDTBBS", false);
         }
-        String absolute = url.startsWith("http") ? url : baseUrl + url;
+        String absolute = resolveUrl(url);
         boolean sameOrigin = absolute.startsWith(origin());
         boolean csrfRetried = false;
         while (true) {

@@ -93,6 +93,23 @@ public final class MdtbbsApiClientTest {
         }
     }
 
+    @Test
+    public void resolvesApiReturnedUrls() {
+        MdtbbsApiClient api = new MdtbbsApiClient("https://mdtbbs.cn/api/v1",
+                HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build(), () -> null);
+
+        assertEquals("https://files.example/signed?sig=1",
+                api.resolveUrl("https://files.example/signed?sig=1"));
+        assertEquals("http://files.example/signed",
+                api.resolveUrl("http://files.example/signed"));
+        assertEquals("https://mdtbbs.cn/api/v1/game-saves/uploads/u1/file",
+                api.resolveUrl("/api/v1/game-saves/uploads/u1/file"));
+        assertEquals("https://mdtbbs.cn/api/v1/game-saves/uploads/u1/file",
+                api.resolveUrl("/game-saves/uploads/u1/file"));
+        assertEquals("https://mdtbbs.cn/api/v1/game-saves/uploads/u1/file",
+                api.resolveUrl("game-saves/uploads/u1/file"));
+    }
+
     private static MdtbbsApiClient client(ApiServer server, @Nullable String token) {
         return new MdtbbsApiClient(server.baseUrl(),
                 HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build(),

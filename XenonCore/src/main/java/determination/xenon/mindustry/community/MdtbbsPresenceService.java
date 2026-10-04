@@ -106,6 +106,9 @@ public final class MdtbbsPresenceService {
         activity.addProperty("name", trimTo(name, 160));
         if (version != null && !version.isBlank()) {
             JsonObject game = new JsonObject();
+            // `game.id` is required whenever `game` is present, otherwise the
+            // server rejects the whole activity with HTTP 400.
+            game.addProperty("id", "mindustry");
             game.addProperty("version", trimTo(version, 64));
             activity.add("game", game);
         }

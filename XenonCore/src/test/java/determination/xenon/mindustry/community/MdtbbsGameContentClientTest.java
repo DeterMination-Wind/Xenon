@@ -59,10 +59,22 @@ public final class MdtbbsGameContentClientTest {
             assertEquals("沙漠基地", map.title());
             assertEquals("mapper", map.author());
             assertEquals(7, map.authorId());
-            assertEquals("Survive", map.mode());
+            assertEquals("Survive, Attack", map.mode());
             assertEquals(1234, map.size());
             assertEquals("abc123", map.sha256());
             assertTrue(map.previewUrl().contains("/api/v1/game-content/maps/map_test/preview"));
+            assertTrue(map.previewUrl().startsWith("http://127.0.0.1:"));
+        }
+    }
+
+    @Test
+    public void parsesLegacyMapStringModeAndThumbnail() throws Exception {
+        try (ContentServer server = ContentServer.start()) {
+            MapItem map = server.client().mapDetail("map_legacy");
+
+            assertEquals("Survive", map.mode());
+            assertEquals(512, map.size());
+            assertTrue(map.previewUrl().contains("/api/v1/game-content/maps/map_legacy/preview"));
         }
     }
 
@@ -106,6 +118,7 @@ public final class MdtbbsGameContentClientTest {
                     yield "{\"data\":{\"id\":\"bp_test\",\"code\":\"bXNjaA==\"}}";
                 }
                 case "/api/v1/game-content/maps/map_test" -> MAP_JSON;
+                case "/api/v1/game-content/maps/map_legacy" -> LEGACY_MAP_JSON;
                 default -> "{\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"missing\"}}";
             };
             byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
@@ -138,11 +151,22 @@ public final class MdtbbsGameContentClientTest {
     private static final String MAP_JSON = """
             {"data":{
               "id":"map_test","title":"沙漠基地","summary":"","author":{"id":7,"username":"mapper"},
-              "map":{"mode":"Survive","players":2},
-              "preview":{"thumbnail":"/api/v1/game-content/maps/map_test/preview",
+              "map":{"mode":["Survive","Attack"],"players":2},
+              "preview":{"image":"/api/v1/game-content/maps/map_test/preview",
                          "width":246,"height":200},
               "file":{"size":1234,"sha256":"abc123"},
               "stats":{"downloads":5,"likes":1}
+            }}
+            """;
+
+    private static final String LEGACY_MAP_JSON = """
+            {"data":{
+              "id":"map_legacy","title":"旧地图","summary":"","author":{"id":7,"username":"mapper"},
+              "map":{"mode":"Survive","players":2},
+              "preview":{"thumbnail":"/api/v1/game-content/maps/map_legacy/preview",
+                         "width":246,"height":200},
+              "file":{"size":512,"sha256":"def456"},
+              "stats":{"downloads":1,"likes":0}
             }}
             """;
 }

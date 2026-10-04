@@ -99,7 +99,7 @@ public final class MdtbbsGameContentClient {
     /// @param previewUrl    server-rendered preview URL, or empty when absent
     /// @param previewWidth  map width in tiles, or 0 when unknown
     /// @param previewHeight map height in tiles, or 0 when unknown
-    /// @param mode          game mode, or empty
+    /// @param mode          game modes, comma-separated, or empty
     /// @param size          file size in bytes, or 0 when unknown
     /// @param sha256        SHA-256 of the map file, or empty
     /// @param tags          tag list
@@ -356,12 +356,31 @@ public final class MdtbbsGameContentClient {
                 previewUrlOf(object),
                 preview == null ? 0 : MdtbbsJson.longOf(preview, "width", 0),
                 preview == null ? 0 : MdtbbsJson.longOf(preview, "height", 0),
-                map == null ? "" : MdtbbsJson.stringOf(map, "mode"),
+                modeOf(map),
                 file == null ? 0 : MdtbbsJson.longOf(file, "size", 0),
                 file == null ? "" : MdtbbsJson.stringOf(file, "sha256"),
                 MdtbbsJson.stringListOf(object, "tags"),
                 statOf(object, "downloads"),
                 statOf(object, "likes"));
+    }
+
+    /// Reads the map mode list, accepting the v1 array shape and the legacy
+    /// plain string shape.
+    ///
+    /// @param map `map` object of an entry, or `null`
+    /// @return comma-separated modes, or an empty string
+    private static String modeOf(@Nullable JsonObject map) {
+        if (map == null) return "";
+        JsonElement mode = map.get("mode");
+        if (mode == null || mode.isJsonNull()) return "";
+        if (!mode.isJsonArray()) return mode.getAsString();
+        List<String> modes = new ArrayList<>();
+        for (JsonElement element : mode.getAsJsonArray()) {
+            if (element == null || element.isJsonNull()) continue;
+            String value = element.getAsString();
+            if (!value.isBlank()) modes.add(value);
+        }
+        return String.join(", ", modes);
     }
 
     /// Reads the stable public id, which may be a string or a number.
@@ -373,15 +392,21 @@ public final class MdtbbsGameContentClient {
         return id == null || id.isJsonNull() ? "" : id.getAsString();
     }
 
-    /// Reads the `preview.thumbnail` path of an entry and resolves it against
+    /// Reads the `preview.image` path of an entry and resolves it against
     /// the API origin.
+    ///
+    /// List responses expose `thumbnail` while detail responses expose
+    /// `image`, so both keys are accepted.
     ///
     /// @param object entry with an optional `preview` object
     /// @return absolute preview URL, or an empty string when absent
     private String previewUrlOf(JsonObject object) {
         JsonObject preview = MdtbbsJson.objectOf(object, "preview");
-        String thumbnail = preview == null ? "" : MdtbbsJson.stringOf(preview, "thumbnail");
-        return resolveAssetUrl(thumbnail);
+        String image = preview == null ? "" : MdtbbsJson.stringOf(preview, "image");
+        if (image.isBlank()) {
+            image = preview == null ? "" : MdtbbsJson.stringOf(preview, "thumbnail");
+        }
+        return resolveAssetUrl(image);
     }
 
     /// Resolves an API-relative asset path against the configured origin.

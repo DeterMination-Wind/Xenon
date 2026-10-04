@@ -127,8 +127,13 @@ public final class MdtbbsSocialClient {
         parameters.put("page", Integer.toString(Math.max(1, page)));
         parameters.put("limit", Integer.toString(Math.max(1, Math.min(50, limit))));
         JsonObject root = api.getAuth("/social/friends/presence", parameters);
+        // The aggregate response nests entries under `data.data`; older
+        // deployments returned `data` as a plain array.
+        JsonObject data = MdtbbsJson.dataObject(root);
+        JsonArray entries = MdtbbsJson.arrayOf(data, "data");
+        if (entries.isEmpty()) entries = MdtbbsJson.dataArray(root);
         List<FriendPresence> result = new ArrayList<>();
-        for (JsonElement element : MdtbbsJson.dataArray(root)) {
+        for (JsonElement element : entries) {
             JsonObject object = MdtbbsJson.asObject(element);
             if (object == null) continue;
             result.add(parsePresence(object));
@@ -209,8 +214,12 @@ public final class MdtbbsSocialClient {
                 : MdtbbsJson.stringOf(user, "username");
         JsonObject activity = MdtbbsJson.objectOf(object, "activity");
         String activityName = activity == null ? "" : MdtbbsJson.stringOf(activity, "name");
-        return new FriendPresence(userId, username,
-                MdtbbsJson.stringOf(object, "status"), activityName);
+        // Presence status moved into the nested `presence` object; keep the
+        // flat `status` fallback for older responses.
+        JsonObject presence = MdtbbsJson.objectOf(object, "presence");
+        String status = presence == null ? MdtbbsJson.stringOf(object, "status")
+                : MdtbbsJson.stringOf(presence, "status");
+        return new FriendPresence(userId, username, status, activityName);
     }
 
     /// Reads the inviter name from the various response shapes.

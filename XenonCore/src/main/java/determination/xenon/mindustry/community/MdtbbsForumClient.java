@@ -342,8 +342,12 @@ public final class MdtbbsForumClient {
         parameters.put("page", Integer.toString(Math.max(1, page)));
         parameters.put("limit", Integer.toString(Math.max(1, Math.min(50, limit))));
         JsonObject root = api.getAuth("/notifications", parameters);
+        // The current contract nests entries under `data.items`; older
+        // deployments returned `data` as a plain array.
+        JsonArray entries = MdtbbsJson.arrayOf(MdtbbsJson.dataObject(root), "items");
+        if (entries.isEmpty()) entries = dataArray(root);
         List<Notification> items = new ArrayList<>();
-        for (JsonElement element : dataArray(root)) {
+        for (JsonElement element : entries) {
             JsonObject object = asObject(element);
             if (object != null) items.add(parseNotification(object));
         }
