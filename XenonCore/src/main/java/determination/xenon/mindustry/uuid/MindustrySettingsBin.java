@@ -67,6 +67,23 @@ public final class MindustrySettingsBin {
     /** Filename Mindustry falls back to if the primary is corrupt. */
     public static final String BACKUP_NAME = "settings_backup.bin";
 
+    /** Whether {@code settings.bin} exists on disk. */
+    public enum ReadStatus {
+        /** No {@code settings.bin} in the data directory yet. */
+        MISSING,
+        /** The file exists and every entry was parsed. */
+        OK
+    }
+
+    /**
+     * Outcome of one {@link #read(Path)} call.
+     *
+     * @param status whether the file was missing or parsed successfully
+     * @param values every entry in file order; empty when {@code status} is {@link ReadStatus#MISSING}
+     */
+    public record ReadResult(ReadStatus status, LinkedHashMap<String, Object> values) {
+    }
+
     private static final byte TYPE_BOOL = 0;
     private static final byte TYPE_INT = 1;
     private static final byte TYPE_LONG = 2;
@@ -125,7 +142,9 @@ public final class MindustrySettingsBin {
         Files.createDirectories(dataDir);
         Path file = dataDir.resolve(FILE_NAME);
 
-        LinkedHashMap<String, Object> entries = readIfPresent(file);
+        // Strict read: a corrupt file must abort the write instead of being
+        // silently replaced by a file containing only the launcher values.
+        LinkedHashMap<String, Object> entries = readFileOrThrow(file);
         entries.putAll(values);
 
         writeAtomically(file, entries);
@@ -133,13 +152,28 @@ public final class MindustrySettingsBin {
         // Mindustry checks the backup if the primary is corrupt; keep
         // it in sync so a crash mid-write doesn't hand the user a
         // stale value.
-        Path backup = dataDir.resolve(BACKUP_NAME);
-        try {
-            Files.copy(file, backup, StandardCopyOption.REPLACE_EXISTING);
-        } catch (IOException ignored) {
-            // Best-effort; primary file is the source of truth.
-        }
+        syncBackup(dataDir, file);
         Logger.LOG.info("Mindustry settings.bin updated with " + values.size() + " launcher value(s)");
+    }
+
+    /**
+     * Replaces every entry in {@code settings.bin}, then mirrors the result
+     * into {@code settings_backup.bin}.
+     *
+     * <p>Unlike {@link #putValuesOrThrow(Path, Map)}, entries absent from
+     * {@code values} are removed. Use this for restores that must reproduce a
+     * previously captured file exactly.</p>
+     *
+     * @param dataDir Mindustry data directory that owns {@code settings.bin}
+     * @param values complete entry set to persist
+     * @throws IOException when the directory is not writable or a value uses an unsupported type
+     */
+    public static void replaceWith(Path dataDir, Map<String, Object> values) throws IOException {
+        if (dataDir == null || values == null) return;
+        Files.createDirectories(dataDir);
+        Path file = dataDir.resolve(FILE_NAME);
+        writeAtomically(file, values);
+        syncBackup(dataDir, file);
     }
 
     /**
@@ -150,7 +184,38 @@ public final class MindustrySettingsBin {
      */
     public static LinkedHashMap<String, Object> readValues(Path dataDir) {
         if (dataDir == null) return new LinkedHashMap<>();
-        return readIfPresent(dataDir.resolve(FILE_NAME));
+        try {
+            return readFileOrThrow(dataDir.resolve(FILE_NAME));
+        } catch (IOException ex) {
+            // Read-only callers (mod scanning, health checks) keep working on a
+            // corrupt file; writers must use read() so they can refuse to clobber it.
+            Logger.LOG.warning("Failed to parse settings.bin (" + ex.getMessage()
+                    + ") — treating it as empty for read-only callers");
+            return new LinkedHashMap<>();
+        }
+    }
+
+    /**
+     * Reads {@code settings.bin} while distinguishing a missing file from a
+     * parse failure.
+     *
+     * <p>A file that exists but cannot be parsed throws instead of returning
+     * an empty map, so callers never overwrite user settings with the result
+     * of an incomplete parse.</p>
+     *
+     * @param dataDir Mindustry data directory that owns {@code settings.bin}
+     * @return the read status plus every entry in file order
+     * @throws IOException when the file exists but its contents cannot be parsed
+     */
+    public static ReadResult read(Path dataDir) throws IOException {
+        if (dataDir == null) {
+            return new ReadResult(ReadStatus.MISSING, new LinkedHashMap<>());
+        }
+        Path file = dataDir.resolve(FILE_NAME);
+        if (!Files.isRegularFile(file)) {
+            return new ReadResult(ReadStatus.MISSING, new LinkedHashMap<>());
+        }
+        return new ReadResult(ReadStatus.OK, readFileOrThrow(file));
     }
 
     /**
@@ -173,7 +238,14 @@ public final class MindustrySettingsBin {
         return value instanceof Boolean ? (Boolean) value : defaultValue;
     }
 
-    private static LinkedHashMap<String, Object> readIfPresent(Path file) {
+    /**
+     * Strictly parses one settings file.
+     *
+     * <p>Package-private so the backup helpers can validate a snapshot before
+     * it is restored over the live file. A missing file yields an empty map;
+     * any malformed content throws.</p>
+     */
+    static LinkedHashMap<String, Object> readFileOrThrow(Path file) throws IOException {
         LinkedHashMap<String, Object> out = new LinkedHashMap<>();
         if (!Files.isRegularFile(file)) return out;
         try (DataInputStream in = new DataInputStream(openSettingsInput(file))) {
@@ -209,11 +281,10 @@ public final class MindustrySettingsBin {
                         break;
                     }
                     default:
-                        // Unknown type — bail out and start from a clean
-                        // slate rather than corrupt the file.
-                        Logger.LOG.warning("Unknown setting type " + type
-                                + " at key '" + key + "' — starting settings.bin fresh");
-                        return new LinkedHashMap<>();
+                        // Unknown type — abort so the caller never rewrites
+                        // the file from a partial parse.
+                        throw new IOException("Unknown setting type " + type
+                                + " at key '" + key + "'");
                 }
                 out.put(key, value);
             }
@@ -221,12 +292,18 @@ public final class MindustrySettingsBin {
             if (trailing != -1) {
                 throw new IOException("Trailing settings data; expected EOF, got " + trailing);
             }
-        } catch (IOException ex) {
-            Logger.LOG.warning("Failed to parse settings.bin (" + ex.getMessage()
-                    + ") — starting fresh");
-            return new LinkedHashMap<>();
         }
         return out;
+    }
+
+    /** Mirrors the freshly written primary file into Mindustry's recovery backup. */
+    private static void syncBackup(Path dataDir, Path file) {
+        Path backup = dataDir.resolve(BACKUP_NAME);
+        try {
+            Files.copy(file, backup, StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException ignored) {
+            // Best-effort; primary file is the source of truth.
+        }
     }
 
     private static InputStream openSettingsInput(Path file) throws IOException {

@@ -61,6 +61,8 @@ public final class MindustryVersionPage extends DecoratorAnimatedPage implements
     private final TabHeader.Tab<MindustrySchematicListPane> schematicTab = new TabHeader.Tab<>("schematicTab");
     private final TabHeader.Tab<MindustryCrashListPane> crashTab = new TabHeader.Tab<>("crashTab");
     private final TabHeader.Tab<MindustryHealthPane> healthTab = new TabHeader.Tab<>("healthTab");
+    private final TabHeader.Tab<MindustrySettingsEditorPane> settingsTab =
+            new TabHeader.Tab<>("settingsTab");
 
     private final MindustryVersion version;
     private final Path versionRoot;
@@ -86,8 +88,12 @@ public final class MindustryVersionPage extends DecoratorAnimatedPage implements
         schematicTab.setNodeSupplier(() -> new MindustrySchematicListPane(dataDir));
         crashTab.setNodeSupplier(() -> new MindustryCrashListPane(launchDataDir, versionRoot, version.getVariant()));
         healthTab.setNodeSupplier(() -> new MindustryHealthPane(version, versionRoot, dataDir));
+        String launchSaveFile = version.getLaunchSaveFile();
+        boolean archiveRuntime = launchSaveFile != null && !launchSaveFile.isBlank();
+        settingsTab.setNodeSupplier(() ->
+                new MindustrySettingsEditorPane(launchDataDir, version.getId(), archiveRuntime));
 
-        tab = new TabHeader(transitionPane, modTab, saveTab, schematicTab, crashTab, healthTab);
+        tab = new TabHeader(transitionPane, modTab, saveTab, schematicTab, crashTab, healthTab, settingsTab);
         tab.select(modTab);
 
         AdvancedListBox sideBar = new AdvancedListBox()
@@ -96,7 +102,8 @@ public final class MindustryVersionPage extends DecoratorAnimatedPage implements
                 .addNavigationDrawerTab(tab, saveTab, i18n("xenon.mindustry.save.title"), SVG.ARCHIVE, SVG.ARCHIVE_FILL)
                 .addNavigationDrawerTab(tab, schematicTab, i18n("xenon.mindustry.schematic.title"), SVG.SCHEMA, SVG.SCHEMA_FILL)
                 .addNavigationDrawerTab(tab, crashTab, i18n("xenon.mindustry.logs.title"), SVG.SCRIPT)
-                .addNavigationDrawerTab(tab, healthTab, i18n("xenon.mindustry.health.title"), SVG.CHECK, SVG.CHECK_CIRCLE);
+                .addNavigationDrawerTab(tab, healthTab, i18n("xenon.mindustry.health.title"), SVG.CHECK, SVG.CHECK_CIRCLE)
+                .addNavigationDrawerTab(tab, settingsTab, i18n("xenon.mindustry.settings.title"), SVG.SETTINGS, SVG.SETTINGS_FILL);
         VBox.setVgrow(sideBar, Priority.ALWAYS);
 
         AdvancedListBox toolbar = new AdvancedListBox()

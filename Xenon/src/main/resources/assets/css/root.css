@@ -206,6 +206,18 @@
     -fx-fill: -monet-on-secondary-container;
 }
 
+.settings-managed-tag {
+    -fx-background-color: -monet-secondary-container;
+    -fx-text-fill: -monet-on-secondary-container;
+    -fx-background-radius: 4;
+    -fx-font-size: 10px;
+    -fx-padding: 1 6 1 6;
+}
+
+.settings-running-hint {
+    -fx-text-fill: -monet-error;
+}
+
 .navigation-drawer-item > .rippler-container > .container > VBox {
     -fx-padding: 0 0 0 0;
 }
