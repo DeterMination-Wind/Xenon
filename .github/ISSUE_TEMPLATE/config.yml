@@ -1,11 +1,11 @@
 blank_issues_enabled: false
 contact_links:
   - name: QQ 群 | QQ Group
-    url: https://docs.hmcl.net/groups.html
-    about: Hello Minecraft! Launcher 的官方 QQ 交流群。| The official QQ group of Hello Minecraft! Launcher.
-  - name: Discord 服务器 | Discord Server
-    url: https://discord.gg/jVvC7HfM6U
-    about: Hello Minecraft! Launcher 的官方 Discord 服务器。| The official Discord server of Hello Minecraft! Launcher.
-  - name: 其他反馈 | Others
-    url: https://github.com/HMCL-dev/HMCL/discussions/new/choose
-    about: 通过 Discussions 反馈其他问题。| Report other problems in Discussions.
+    url: https://qm.qq.com/q/uZZTzBAI7g
+    about: Xenon 的官方 QQ 交流群（188709300）。| The official QQ group of Xenon (188709300).
+  - name: 使用文档 | Usage Docs
+    url: https://github.com/DeterMination-Wind/Xenon/blob/main/docs/USAGE.md
+    about: Xenon 用户手册，涵盖安装、Mod、地图/蓝图、联机与服务端管理。| Xenon user guide covering installation, mods, maps/schematics, netplay and server management.
+  - name: B 站 | Bilibili
+    url: https://space.bilibili.com/1433776051
+    about: Xenon 的 B 站主页。| Xenon's Bilibili page.

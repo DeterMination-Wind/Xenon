@@ -1,5 +1,5 @@
 name: 新功能 | Feature Request
-description: 为 HMCL 提出新功能。| Suggest a new feature or enhancement for HMCL.
+description: 为 Xenon 提出新功能。| Suggest a new feature or enhancement for Xenon.
 title: "[Feature] "
 labels: enhancement
 body:
@@ -13,8 +13,8 @@ body:
   attributes:
     label: 概述 | Summary
     description: |
-      请介绍你想加入的新功能。
-      Please describe the new feature.
+      请介绍你想加入的新功能，并说明它属于 Xenon 的哪一部分（如安装、Mod 管理、地图/蓝图、联机、服务端管理等）。
+      Please describe the new feature and which part of Xenon it belongs to (e.g. installation, mod management, maps/schematics, netplay, server management).
   validations:
     required: true
 - type: textarea
@@ -23,7 +23,7 @@ body:
     label: 原因 | Reason
     description: |
       请描述该功能带来的好处及原因。
-      Please describe why you want to add the feature or enhancement to HMCL.
+      Please describe why you want to add the feature or enhancement to Xenon.
   validations:
     required: true
 - type: textarea

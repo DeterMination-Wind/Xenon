@@ -1,6 +1,5 @@
 name: Bug 反馈 | Bug Report
-description: 
-  反馈一个 HMCL 错误。| File a bug report for HMCL.
+description: 反馈一个 Xenon 启动器问题。| File a bug report for the Xenon launcher.
 title: "[Bug] "
 labels: bug
 body:
@@ -9,17 +8,15 @@ body:
       value: |
         提交前请确认：
 
-        * 该问题确实是 **HMCL 的错误**，而**不是 Minecraft 非正常退出**。如果你的 Minecraft 非正常退出，请前往 [QQ 群](https://docs.hmcl.net/groups.html)/[Discord 服务器](https://discord.gg/jVvC7HfM6U) 获取帮助。
-        * 你的启动器版本是**最新的预览版本**。你可以从 [GitHub Actions](https://github.com/HMCL-dev/HMCL/actions/workflows/gradle.yml?query=branch%3Amain+event%3Apush) 或 [nightly.link](https://nightly.link/HMCL-dev/HMCL/workflows/gradle/main) 下载最新预览版本。
-
-        如果你的问题并不属于上述两类，你可以选取另一种 Issue 类型，或者直接前往 [QQ 群](https://docs.hmcl.net/groups.html)/[Discord 服务器](https://discord.gg/jVvC7HfM6U) 获取帮助。
+        * 该问题确实是 **Xenon 启动器本身的问题**，而**不是 Mindustry 游戏或 Mod 的问题**。如果游戏在启动或运行中崩溃、报错，请先查看该实例的「日志」页面与崩溃分析结果；也可以前往 [QQ 群](https://qm.qq.com/q/uZZTzBAI7g) 获取帮助。
+        * 你使用的是**最新版本的 Xenon**。你可以从 [Releases](https://github.com/DeterMination-Wind/Xenon/releases/latest) 下载最新正式版，也可以在「设置 → 通用 → 启动器更新 → 提前预览 Xenon 版本」中开启预览更新。
+        * 你已经搜索过 [Issues](https://github.com/DeterMination-Wind/Xenon/issues)，确认没有重复的报告。
 
         Before submitting, please confirm:
 
-        * The issue is indeed **a bug of HMCL**, not **Minecraft abnormal exit**. If your Minecraft exits abnormally, please go to the [QQ group](https://docs.hmcl.net/groups.html) or [Discord server](https://discord.gg/jVvC7HfM6U) for help.
-        * Your launcher is the **latest nightly build**. You can download the latest nightly build from [GitHub Actions](https://github.com/HMCL-dev/HMCL/actions/workflows/gradle.yml?query=branch%3Amain+event%3Apush) or [nightly.link](https://nightly.link/HMCL-dev/HMCL/workflows/gradle/main).
-
-        If your issue does not fall into the above two categories, you can choose another type of issue or directly go to the [QQ group](https://docs.hmcl.net/groups.html) or [Discord server](https://discord.gg/jVvC7HfM6U) for help.
+        * The issue is indeed **a bug of the Xenon launcher itself**, not **a Mindustry game or mod issue**. If the game crashes or errors during launch or gameplay, please check the instance's "Logs" page and the crash analysis first; you can also ask in the [QQ group](https://qm.qq.com/q/uZZTzBAI7g).
+        * You are using the **latest version of Xenon**. Download the latest release from [Releases](https://github.com/DeterMination-Wind/Xenon/releases/latest), or enable preview updates in "Settings → General → Launcher Update → Preview Xenon versions early".
+        * You have searched [Issues](https://github.com/DeterMination-Wind/Xenon/issues) and confirmed that no duplicate report exists.
   - type: textarea
     id: bug-report
     attributes:
@@ -28,22 +25,35 @@ body:
         请尽可能地详细描述你所遇到的问题，并描述如何重新触发这个问题。
         Please describe the bug you met in as much detail as possible. Additionally, describe the steps to reproduce this bug.
       placeholder: |
-        1. 点击 HMCL 上的某个按钮 | Click a button named ...
-        2. 向下翻页 | Scroll down
-        3. ...
+        1. 打开 Xenon 并进入 ... | Open Xenon and go to ...
+        2. 点击 ... | Click ...
+        3. 出现 ... | Then ...
     validations:
       required: true
   - type: textarea
-    id: hmcl-crash-report-or-logs
+    id: environment
     attributes:
-      label: 启动器崩溃报告 / 启动器日志文件 | Launcher Crash Report / Launcher Log File
+      label: 运行环境 | Environment
       description: |
-        如果你的启动器崩溃了，请将崩溃报告填入 (或将文件拖入) 下方。
-        如果你的启动器没有崩溃，请在遇到问题后**不要退出启动器**，在启动器的 “设置 → 通用 → 调试” 一栏中点击 “导出启动器日志”，并将导出的日志拖到下方的输入栏中。
-        **请注意：启动器崩溃报告或日志文件是诊断问题的重要依据，请务必上传！**
-        
-        If your launcher crashes, please fill in (or drag the file in) the following input field with the crash report.
-        If your launcher does not crash, please DO NOT EXIT your launcher, click "Export Launcher Logs" in the "Settings → General → Debug" of the launcher, and drag the exported log to the following input field.
-        **ATTENTION: The crash report or log file is the key to resolving the bug. Please upload them!**
+        请填写 Xenon 版本、操作系统，以及出问题时使用的实例信息。
+        Please provide the Xenon version, your OS, and the instance involved.
+      placeholder: |
+        Xenon 版本 | Xenon version: x.y.z（正式版 / 预览版 | stable / preview）
+        操作系统 | OS: Windows 11 / macOS 15 / Ubuntu 24.04
+        实例 | Instance: MindustryX v158，已启用 Mod：... | MindustryX v158, mods enabled: ...
+    validations:
+      required: true
+  - type: textarea
+    id: launcher-log
+    attributes:
+      label: 启动器日志 | Launcher Log
+      description: |
+        遇到问题后**不要退出启动器**，打开「设置 → 通用 → 杂项 → 调试」，点击「导出启动器日志」，再把导出的日志文件（或将内容粘贴）放入下方输入框。
+        如果启动器本身崩溃了，也请附上崩溃窗口中的信息或崩溃报告。
+        **启动器日志是诊断问题的重要依据，请务必上传！**
+
+        After the problem occurs, please DO NOT EXIT the launcher. Open "Settings → General → Misc → Debug", click "Export Launcher Logs", and then drag the exported file (or paste its contents) into the following input field.
+        If the launcher itself crashed, please also attach the crash report or the information shown in the crash window.
+        **The launcher log is important for diagnosing the problem. Please upload it!**
     validations:
       required: true
