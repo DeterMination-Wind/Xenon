@@ -77,7 +77,7 @@ Mod、地图、蓝图和存档都可以围绕具体实例整理、备份和导�
 | 游戏内设置编辑（settings.bin） | ✅ 表格化全量编辑、搜索、自动备份（保留 10 份）与一键恢复 | ❌ | ⚠️ 启动时覆盖游戏内设置与多人用户名 | ✅ 表格化编辑、搜索、自动备份 | ❌ |
 | 社区与联机 | ✅ MDTBBS 社区、好友与联机邀请 | ❌ | ❌ | ✅ EasyTier P2P 联机大厅 | ❌ |
 | Mod 开发工作流（源码编译 / 改动自动重启） | ❌ | ❌ | ❌ | ❌ | ✅ 编译源码、构建 Mod，文件变动自动重启 |
-| 国内下载 | ✅ 多镜像自动回退 | ⚠️ JDK 走清华镜像，游戏本体依赖 GitHub 网络 | ✅ github / raw / api 分类测速切换，支持自定义节点 | ✅ 内置 6 种 GitHub 代理 | ❌ |
+| 国内下载 | ✅ 多镜像自动回退，支持 GitHub CLI 自动认证 | ⚠️ JDK 走清华镜像，游戏本体依赖 GitHub 网络 | ✅ github / raw / api 分类测速切换，支持自定义节点 | ✅ 内置 6 种 GitHub 代理 | ❌ |
 | 下载限速 | ❌ | ❌ | ✅ | ❌ | ❌ |
 | 服务器管理 | ✅ 控制台、自动重启、ScriptAgent | ❌ | ❌ | ❌ | ❌ |
 | 最后更新 | ![last commit](https://img.shields.io/github/last-commit/DeterMination-Wind/Xenon) | ![last commit](https://img.shields.io/github/last-commit/ch-BookBanana/BookMdtLauncher) | ![last commit](https://img.shields.io/github/last-commit/MDTCopper/launcher) | ![last commit](https://img.shields.io/github/last-commit/colorgarden/mindustry_launcherMDL) | ![last commit](https://img.shields.io/github/last-commit/BalaM314/MindustryLauncher) |
@@ -205,7 +205,7 @@ Every instance has its own logs and crash records. When a game exits or a mod ca
 | In-game settings editing (settings.bin) | ✅ Full table editor, search, automatic backup (latest 10 kept) and one-click restore | ❌ | ⚠️ Overrides in-game settings and the multiplayer username at launch | ✅ Table editor, search, automatic backup | ❌ |
 | Community & multiplayer | ✅ MDTBBS community, friends and invites | ❌ | ❌ | ✅ EasyTier P2P lobby | ❌ |
 | Mod development workflow (source compile / restart on change) | ❌ | ❌ | ❌ | ❌ | ✅ Compiles sources, builds mods, restarts on file changes |
-| China-friendly downloads | ✅ Automatic mirror fallback | ⚠️ Tsinghua mirror for the JDK; game downloads depend on GitHub | ✅ Speed-tested mirrors per github/raw/api category, custom nodes supported | ✅ Six built-in GitHub proxies | ❌ |
+| China-friendly downloads | ✅ Automatic mirror fallback, optional GitHub CLI authentication | ⚠️ Tsinghua mirror for the JDK; game downloads depend on GitHub | ✅ Speed-tested mirrors per github/raw/api category, custom nodes supported | ✅ Six built-in GitHub proxies | ❌ |
 | Download rate limiting | ❌ | ❌ | ✅ | ❌ | ❌ |
 | Server management | ✅ Console, auto-restart, ScriptAgent | ❌ | ❌ | ❌ | ❌ |
 | Last update | ![last commit](https://img.shields.io/github/last-commit/DeterMination-Wind/Xenon) | ![last commit](https://img.shields.io/github/last-commit/ch-BookBanana/BookMdtLauncher) | ![last commit](https://img.shields.io/github/last-commit/MDTCopper/launcher) | ![last commit](https://img.shields.io/github/last-commit/colorgarden/mindustry_launcherMDL) | ![last commit](https://img.shields.io/github/last-commit/BalaM314/MindustryLauncher) |

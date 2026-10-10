@@ -19,7 +19,6 @@ package determination.xenon.setting;
 
 import com.google.gson.JsonParseException;
 import determination.xenon.Metadata;
-import determination.xenon.mindustry.download.GitHubAuth;
 import determination.xenon.util.FileSaver;
 import determination.xenon.util.i18n.I18n;
 import determination.xenon.util.io.FileUtils;
@@ -95,11 +94,17 @@ public final class ConfigHolder {
         // the data root), so make the stored choice match the marker.
         reconcilePortableMode();
 
-        // The download layer cannot read the config directly; push the token
-        // into XenonCore and keep both sides in sync.
-        GitHubAuth.setToken(configInstance.getGithubToken());
+        // The download layer cannot read the config directly; push the
+        // effective token into XenonCore and keep both sides in sync. A manual
+        // token always wins; otherwise the GitHub CLI is consulted
+        // asynchronously when enabled.
+        GitHubCliTokenSource.apply(configInstance.getGithubToken(), configInstance.isGhCliAuth());
         configInstance.githubTokenProperty().addListener(
-                (observable, oldValue, newValue) -> GitHubAuth.setToken(newValue));
+                (observable, oldValue, newValue) ->
+                        GitHubCliTokenSource.apply(newValue, configInstance.isGhCliAuth()));
+        configInstance.ghCliAuthProperty().addListener(
+                (observable, oldValue, newValue) ->
+                        GitHubCliTokenSource.apply(configInstance.getGithubToken(), newValue));
 
         globalConfigInstance = loadGlobalConfig();
         globalConfigInstance.addListener(source -> FileSaver.save(GLOBAL_CONFIG_PATH, globalConfigInstance.toJson()));

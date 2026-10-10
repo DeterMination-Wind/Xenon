@@ -704,6 +704,26 @@ public final class Config extends ObservableSetting {
         this.githubToken.set(githubToken);
     }
 
+    /// Whether the launcher may reuse the credentials of the local GitHub CLI (`gh`).
+    ///
+    /// The resolved token is kept in memory only; this flag never stores a secret.
+    @SerializedName("ghCliAuth")
+    private final BooleanProperty ghCliAuth = new SimpleBooleanProperty(true);
+
+    /// The GitHub CLI authentication toggle.
+    public BooleanProperty ghCliAuthProperty() {
+        return ghCliAuth;
+    }
+
+    /// Whether GitHub CLI credentials may be used when no manual token is configured.
+    public boolean isGhCliAuth() {
+        return ghCliAuth.get();
+    }
+
+    public void setGhCliAuth(boolean ghCliAuth) {
+        this.ghCliAuth.set(ghCliAuth);
+    }
+
     // Game
 
     @SerializedName("disableAutoGameOptions")

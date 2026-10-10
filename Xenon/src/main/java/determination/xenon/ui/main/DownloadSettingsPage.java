@@ -29,7 +29,9 @@ import javafx.scene.control.ToggleGroup;
 import javafx.scene.layout.*;
 import determination.xenon.Metadata;
 import determination.xenon.mindustry.download.GitHubAuth;
+import determination.xenon.mindustry.download.GitHubCliAuth;
 import determination.xenon.setting.EnumCommonDirectory;
+import determination.xenon.setting.GitHubCliTokenSource;
 import determination.xenon.setting.Settings;
 import determination.xenon.task.FetchTask;
 import determination.xenon.task.Schedulers;
@@ -192,8 +194,20 @@ public class DownloadSettingsPage extends StackPane {
                     JFXButton verify = FXUtils.newBorderButton(i18n("download.github.verify"));
                     verify.setOnAction(e -> verifyGithubToken(status));
 
+                    // Re-check the credential source once editing settles, so
+                    // the status line never shows a stale source.
+                    tokenField.focusedProperty().addListener((observable, wasFocused, focused) -> {
+                        if (!focused) refreshGithubStatus(status);
+                    });
+
                     tokenRow.getChildren().setAll(tokenField, verify);
-                    githubPane.getChildren().setAll(tokenRow, status);
+
+                    JFXCheckBox ghCli = new JFXCheckBox(i18n("download.github.cli.enable"));
+                    ghCli.selectedProperty().bindBidirectional(config().ghCliAuthProperty());
+                    ghCli.selectedProperty().addListener((observable, oldValue, newValue) ->
+                            refreshGithubStatus(status));
+
+                    githubPane.getChildren().setAll(tokenRow, ghCli, status);
                     githubSublist.getContent().add(githubPane);
 
                     // Prime the status line without blocking the FX thread.
@@ -419,7 +433,9 @@ public class DownloadSettingsPage extends StackPane {
     private static void verifyGithubToken(Label status) {
         String token = config().getGithubToken();
         if (token == null || token.isBlank()) {
-            status.setText(i18n("download.github.anonymous"));
+            // Nobody typed a token: show whichever credential is actually in
+            // use (GitHub CLI or anonymous).
+            refreshGithubStatus(status);
             return;
         }
         status.setText(i18n("message.doing"));
@@ -436,30 +452,70 @@ public class DownloadSettingsPage extends StackPane {
         });
     }
 
-    /// Refreshes the rate limit for the already configured token.
+    /// Refreshes the credential source, account and rate-limit status line.
     private static void refreshGithubStatus(Label status) {
-        if (!GitHubAuth.hasToken()) {
-            status.setText(i18n("download.github.anonymous"));
-            return;
-        }
+        status.setText(i18n("message.doing"));
         Schedulers.io().execute(() -> {
-            try {
-                GitHubAuth.RateLimit limit = GitHubAuth.refreshRateLimit();
-                Platform.runLater(() -> status.setText(formatGithubStatus(null, limit)));
-            } catch (IOException e) {
-                LOG.warning("Failed to refresh the GitHub rate limit", e);
-                Platform.runLater(() -> status.setText(i18n("download.github.offline")));
+            String manual = config().getGithubToken();
+            if (manual != null && !manual.isBlank()) {
+                StringBuilder text = new StringBuilder(i18n("download.github.source.manual"));
+                try {
+                    GitHubAuth.RateLimit limit = GitHubAuth.refreshRateLimit();
+                    text.append("  ·  ").append(formatRateLimit(limit));
+                } catch (IOException e) {
+                    LOG.warning("Failed to refresh the GitHub rate limit", e);
+                    text.append("  ·  ").append(i18n("download.github.offline"));
+                }
+                setStatusText(status, text.toString());
+                return;
             }
+            if (!config().isGhCliAuth()) {
+                setStatusText(status, i18n("download.github.source.anonymous"));
+                return;
+            }
+            GitHubCliAuth.CliStatus cli = GitHubCliTokenSource.cliStatus();
+            if (!cli.installed()) {
+                setStatusText(status, i18n("download.github.source.anonymous")
+                        + "  ·  " + i18n("download.github.cli.missing"));
+                return;
+            }
+            if (!cli.authenticated()) {
+                setStatusText(status, i18n("download.github.source.anonymous")
+                        + "  ·  " + i18n("download.github.cli.not_logged_in"));
+                return;
+            }
+            String account = cli.account();
+            StringBuilder text = new StringBuilder(account == null || account.isBlank()
+                    ? i18n("download.github.source.cli.unknown")
+                    : i18n("download.github.source.cli", account));
+            String token = GitHubCliAuth.readToken().orElse("");
+            try {
+                GitHubAuth.TokenCheck check = GitHubAuth.verify(token);
+                text.append("  ·  ").append(formatRateLimit(check.rateLimit()));
+            } catch (IOException e) {
+                LOG.warning("Failed to verify the GitHub CLI token", e);
+                text.append("  ·  ").append(i18n("download.github.offline"));
+            }
+            setStatusText(status, text.toString());
         });
+    }
+
+    /// Publishes an asynchronous status result back onto the FX thread.
+    private static void setStatusText(Label status, String text) {
+        Platform.runLater(() -> status.setText(text));
     }
 
     /// Formats the account / quota status line.
     private static String formatGithubStatus(@Nullable String login, GitHubAuth.RateLimit limit) {
-        String reset = RESET_FORMAT.format(limit.reset().atZone(ZoneId.systemDefault()));
-        String rate = i18n("download.github.rate_limit", limit.remaining(), limit.limit(), reset);
         return login == null || login.isBlank()
-                ? rate
-                : i18n("download.github.verified", login) + "  ·  " + rate;
+                ? formatRateLimit(limit)
+                : i18n("download.github.verified", login) + "  ·  " + formatRateLimit(limit);
+    }
+
+    /// Formats the rate-limit part of the status line.
+    private static String formatRateLimit(GitHubAuth.RateLimit limit) {
+        String reset = RESET_FORMAT.format(limit.reset().atZone(ZoneId.systemDefault()));
+        return i18n("download.github.rate_limit", limit.remaining(), limit.limit(), reset);
     }
 
     /// Formatter for the rate-limit reset instant.
