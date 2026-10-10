@@ -20,19 +20,27 @@ package determination.xenon.mindustry.mod;
 import determination.xenon.mindustry.uuid.MindustrySettingsBin;
 import determination.xenon.util.io.FileUtils;
 import determination.xenon.util.logging.Logger;
+import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Enumeration;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipException;
+import java.util.zip.ZipFile;
 
 /**
  * Manages the {@code mods/} folder of one Mindustry data directory:
@@ -44,16 +52,41 @@ import java.util.Objects;
  * {@link #scan()} again after any mutation.</p>
  */
 public final class MindustryModManager {
+
+    /// Maximum number of wrapper archives {@link #install(Path, String)} unwraps.
+    private static final int UNWRAP_DEPTH_LIMIT = 3;
+
     private final Path modsDir;
     private final Path dataDir;
+    private final SettingsWriter settingsWriter;
+
+    /// Persists one coalesced batch of `mod-<name>-enabled` flags.
+    @FunctionalInterface
+    interface SettingsWriter {
+        /// Merges `values` into the instance's `settings.bin`.
+        ///
+        /// @param dataDir Mindustry data directory that owns `settings.bin`
+        /// @param values entry set to merge
+        /// @throws IOException when the file cannot be read or written
+        void write(Path dataDir, Map<String, Object> values) throws IOException;
+    }
 
     public MindustryModManager(Path modsDir) {
         this(modsDir, inferDataDir(modsDir));
     }
 
     public MindustryModManager(Path modsDir, Path dataDir) {
+        this(modsDir, dataDir, MindustrySettingsBin::putValuesOrThrow);
+    }
+
+    /// Creates a manager with an injectable settings writer.
+    ///
+    /// Visible for tests so batch operations can be proven to coalesce their
+    /// `settings.bin` writes.
+    MindustryModManager(Path modsDir, Path dataDir, SettingsWriter settingsWriter) {
         this.modsDir = Objects.requireNonNull(modsDir, "modsDir").toAbsolutePath().normalize();
         this.dataDir = Objects.requireNonNull(dataDir, "dataDir").toAbsolutePath().normalize();
+        this.settingsWriter = Objects.requireNonNull(settingsWriter, "settingsWriter");
     }
 
     public Path getModsDir() { return modsDir; }
@@ -237,25 +270,81 @@ public final class MindustryModManager {
 
     /** Re-enable a disabled mod by stripping the {@code .disabled} suffix. */
     public void enable(MindustryLocalMod mod) throws IOException {
-        Path src = mod.getFile();
-        String name = src.getFileName().toString();
-        if (name.toLowerCase(Locale.ROOT).endsWith(".disabled")) {
-            String stripped = name.substring(0, name.length() - ".disabled".length());
-            Path dst = src.resolveSibling(stripped);
-            Files.move(src, dst, StandardCopyOption.REPLACE_EXISTING);
-        }
+        renameArchive(mod, true);
         writeEnabledSetting(mod, true);
     }
 
     /** Disable a mod by appending the {@code .disabled} suffix. */
     public void disable(MindustryLocalMod mod) throws IOException {
-        Path src = mod.getFile();
-        String name = src.getFileName().toString();
-        if (!name.toLowerCase(Locale.ROOT).endsWith(".disabled")) {
-            Path dst = src.resolveSibling(name + ".disabled");
-            Files.move(src, dst, StandardCopyOption.REPLACE_EXISTING);
-        }
+        renameArchive(mod, false);
         writeEnabledSetting(mod, false);
+    }
+
+    /**
+     * Enables or disables several mods at once.
+     *
+     * <p>Archive suffixes are renamed one by one (a failure only removes that
+     * mod from the batch), then every affected {@code mod-<name>-enabled} flag
+     * is persisted with a single {@code settings.bin} write. Without this
+     * coalescing, a batch of N mods would rewrite the file N times.</p>
+     *
+     * @param mods mods to toggle
+     * @param enabled desired state
+     * @return applied mods and per-file failure reasons; never {@code null}
+     */
+    public BatchResult setEnabled(List<MindustryLocalMod> mods, boolean enabled) {
+        List<MindustryLocalMod> renamed = new ArrayList<>();
+        Map<String, String> failures = new LinkedHashMap<>();
+        LinkedHashMap<String, Object> pendingSettings = new LinkedHashMap<>();
+        for (MindustryLocalMod mod : mods) {
+            if (mod == null) continue;
+            try {
+                renameArchive(mod, enabled);
+                String key = enabledSettingKey(mod);
+                if (key != null) pendingSettings.put(key, enabled);
+                renamed.add(mod);
+            } catch (IOException | RuntimeException ex) {
+                failures.put(mod.getFile().getFileName().toString(), messageOf(ex));
+            }
+        }
+        if (!pendingSettings.isEmpty()) {
+            try {
+                settingsWriter.write(dataDir, pendingSettings);
+            } catch (IOException | RuntimeException ex) {
+                // The archive suffix changed but the game-side flag did not;
+                // report those mods as failed instead of claiming success.
+                String message = messageOf(ex);
+                for (MindustryLocalMod mod : renamed) {
+                    String key = enabledSettingKey(mod);
+                    if (key != null) {
+                        failures.putIfAbsent(mod.getFile().getFileName().toString(), message);
+                    }
+                }
+                renamed.removeIf(mod -> failures.containsKey(mod.getFile().getFileName().toString()));
+            }
+        }
+        return new BatchResult(List.copyOf(renamed), Collections.unmodifiableMap(failures));
+    }
+
+    /**
+     * Deletes several mods, preferring the platform trash for each file.
+     *
+     * @param mods mods to remove
+     * @return deleted mods and per-file failure reasons; never {@code null}
+     */
+    public BatchResult deleteAll(List<MindustryLocalMod> mods) {
+        List<MindustryLocalMod> applied = new ArrayList<>();
+        Map<String, String> failures = new LinkedHashMap<>();
+        for (MindustryLocalMod mod : mods) {
+            if (mod == null) continue;
+            try {
+                delete(mod);
+                applied.add(mod);
+            } catch (IOException | RuntimeException ex) {
+                failures.put(mod.getFile().getFileName().toString(), messageOf(ex));
+            }
+        }
+        return new BatchResult(List.copyOf(applied), Collections.unmodifiableMap(failures));
     }
 
     /** Remove the underlying archive, preferring the platform trash. */
@@ -269,9 +358,9 @@ public final class MindustryModManager {
      * file name; existing mods with that name are overwritten and older
      * archives of the same mod are removed.
      */
-    public void install(Path zipOrJar) throws IOException {
+    public InstallResult install(Path zipOrJar) throws IOException {
         Objects.requireNonNull(zipOrJar, "zipOrJar");
-        install(zipOrJar, zipOrJar.getFileName().toString());
+        return install(zipOrJar, zipOrJar.getFileName().toString());
     }
 
     /**
@@ -302,16 +391,46 @@ public final class MindustryModManager {
         if (!isModArchive(zipOrJar)) {
             throw new IOException("Not a Mindustry mod archive: " + zipOrJar);
         }
-        if (!MindustryModParser.containsDescriptor(zipOrJar)) {
-            // Release bundles (Mod.zip wrapping Mod.jar) and source archives
-            // look like mods by name, but Mindustry never loads them.
-            throw new MindustryModParseException("No mod.json / mod.hjson / plugin.json / plugin.hjson in "
-                    + zipOrJar);
+        List<Path> temporaryArchives = new ArrayList<>();
+        try {
+            Path archive = zipOrJar;
+            String fileName = preferredFileName;
+            if (!MindustryModParser.containsDescriptor(archive)) {
+                // Release bundles wrap the real mod jar inside an outer zip;
+                // unwrap single-child archives recursively, but never guess
+                // between several candidates.
+                Unwrapped unwrapped = unwrapNestedArchive(archive, UNWRAP_DEPTH_LIMIT, temporaryArchives);
+                if (unwrapped == null) {
+                    throw new MindustryModParseException("No mod.json / mod.hjson / plugin.json / plugin.hjson in "
+                            + zipOrJar);
+                }
+                archive = unwrapped.path();
+                fileName = unwrapped.fileName();
+            }
+            return installArchive(archive, fileName);
+        } finally {
+            for (Path temporary : temporaryArchives) {
+                try {
+                    Files.deleteIfExists(temporary);
+                } catch (IOException ignored) {
+                    // Temp files live in the system temp dir; a failed cleanup
+                    // must not fail an otherwise successful install.
+                }
+            }
         }
+    }
+
+    /// Copies a validated archive into `mods/` and removes older copies of the same mod.
+    ///
+    /// @param archive archive containing the mod descriptor
+    /// @param preferredFileName destination file name, falling back to the archive name
+    /// @return the installed file together with the archives removed as part of the install
+    /// @throws IOException if the archive cannot be read or the copy fails
+    private InstallResult installArchive(Path archive, String preferredFileName) throws IOException {
         Files.createDirectories(modsDir);
 
-        String internalName = internalNameOf(zipOrJar);
-        String desiredName = destinationName(preferredFileName, zipOrJar.getFileName().toString());
+        String internalName = internalNameOf(archive);
+        String desiredName = destinationName(preferredFileName, archive.getFileName().toString());
 
         List<Path> replaced = new ArrayList<>();
         if (!internalName.isEmpty()) {
@@ -332,8 +451,92 @@ public final class MindustryModManager {
             // Same file name, different mod: never clobber the other archive.
             dst = numberedSibling(dst);
         }
-        Files.copy(zipOrJar, dst, StandardCopyOption.REPLACE_EXISTING);
+        Files.copy(archive, dst, StandardCopyOption.REPLACE_EXISTING);
         return new InstallResult(dst, List.copyOf(replaced));
+    }
+
+    /// Result of unwrapping a bundle archive.
+    ///
+    /// @param path extracted archive that contains the mod descriptor
+    /// @param fileName the nested entry's bare file name, used as the install name
+    private record Unwrapped(Path path, String fileName) {
+    }
+
+    /// Recursively unwraps archives that contain exactly one nested archive.
+    ///
+    /// A bundle may contain a jar (`zip` → `jar`) or another zip
+    /// (`zip` → `zip` → `jar`). Anything else — zero entries, several entries,
+    /// a non-archive child or a chain deeper than the limit — returns `null` so
+    /// the caller can report the original parse error.
+    ///
+    /// @param archive archive whose descriptor lookup failed
+    /// @param remaining number of unwrap levels still allowed
+    /// @param temporaryArchives collector for extracted files the caller must delete
+    /// @return the extracted archive carrying the descriptor, or `null`
+    private static @Nullable Unwrapped unwrapNestedArchive(Path archive,
+                                                           int remaining,
+                                                           List<Path> temporaryArchives) throws IOException {
+        if (remaining <= 0) return null;
+        String nestedEntry = singleNestedArchiveEntry(archive);
+        if (nestedEntry == null) return null;
+        Path extracted = extractEntry(archive, nestedEntry, temporaryArchives);
+        boolean hasDescriptor;
+        try {
+            hasDescriptor = MindustryModParser.containsDescriptor(extracted);
+        } catch (IOException ex) {
+            // The child archive is unreadable (not a zip, truncated, ...);
+            // report "not a mod bundle" rather than leaking the inner error.
+            return null;
+        }
+        if (hasDescriptor) {
+            return new Unwrapped(extracted, Path.of(nestedEntry).getFileName().toString());
+        }
+        return unwrapNestedArchive(extracted, remaining - 1, temporaryArchives);
+    }
+
+    /// Returns the only non-directory entry when it names a `.jar` / `.zip` archive.
+    ///
+    /// @param archive archive to inspect
+    /// @return the entry name, or `null` when the archive is not a single-archive wrapper
+    private static @Nullable String singleNestedArchiveEntry(Path archive) throws IOException {
+        try (ZipFile zip = new ZipFile(archive.toFile(), StandardCharsets.UTF_8)) {
+            String found = null;
+            Enumeration<? extends ZipEntry> entries = zip.entries();
+            while (entries.hasMoreElements()) {
+                ZipEntry entry = entries.nextElement();
+                if (entry.isDirectory()) continue;
+                if (found != null) return null;
+                found = entry.getName();
+            }
+            if (found == null) return null;
+            String lower = found.toLowerCase(Locale.ROOT);
+            if (!lower.endsWith(".jar") && !lower.endsWith(".zip")) return null;
+            return found;
+        } catch (ZipException ex) {
+            // Extracted children are not guaranteed to be archives; treat an
+            // unreadable child as "no nested archive" so the caller keeps its
+            // original, user-facing parse error.
+            return null;
+        }
+    }
+
+    /// Extracts one entry into a temporary file recorded for later cleanup.
+    private static Path extractEntry(Path archive,
+                                     String entryName,
+                                     List<Path> temporaryArchives) throws IOException {
+        try (ZipFile zip = new ZipFile(archive.toFile(), StandardCharsets.UTF_8)) {
+            ZipEntry entry = zip.getEntry(entryName);
+            if (entry == null) {
+                throw new IOException("Missing ZIP entry " + entryName + " in " + archive);
+            }
+            String suffix = entryName.toLowerCase(Locale.ROOT).endsWith(".jar") ? ".jar" : ".zip";
+            Path temporary = Files.createTempFile("xenon-mod-unwrap-", suffix);
+            temporaryArchives.add(temporary);
+            try (InputStream in = zip.getInputStream(entry)) {
+                Files.copy(in, temporary, StandardCopyOption.REPLACE_EXISTING);
+            }
+            return temporary;
+        }
     }
 
     /**
@@ -438,7 +641,27 @@ public final class MindustryModManager {
         if (key == null) {
             return;
         }
-        MindustrySettingsBin.putValuesOrThrow(dataDir, Collections.singletonMap(key, enabled));
+        settingsWriter.write(dataDir, Collections.singletonMap(key, enabled));
+    }
+
+    /// Renames the archive so its `.disabled` suffix reflects `enabled`.
+    private static void renameArchive(MindustryLocalMod mod, boolean enabled) throws IOException {
+        Path src = mod.getFile();
+        String name = src.getFileName().toString();
+        boolean disabled = name.toLowerCase(Locale.ROOT).endsWith(".disabled");
+        if (enabled == !disabled) {
+            return;
+        }
+        Path dst = enabled
+                ? src.resolveSibling(name.substring(0, name.length() - ".disabled".length()))
+                : src.resolveSibling(name + ".disabled");
+        Files.move(src, dst, StandardCopyOption.REPLACE_EXISTING);
+    }
+
+    /// Returns a displayable failure text for a batch result.
+    private static String messageOf(Throwable ex) {
+        String message = ex.getMessage();
+        return message == null || message.isBlank() ? ex.getClass().getSimpleName() : message;
     }
 
     private static String enabledSettingKey(MindustryLocalMod mod) {
@@ -456,5 +679,14 @@ public final class MindustryModManager {
      * @param replacedFiles archives removed during the install, usually the previous version
      */
     public record InstallResult(Path installedFile, List<Path> replacedFiles) {
+    }
+
+    /**
+     * Outcome of one batch operation.
+     *
+     * @param applied mods whose requested state was applied
+     * @param failures per-file failure reason, keyed by file name; failed mods never appear in `applied`
+     */
+    public record BatchResult(List<MindustryLocalMod> applied, Map<String, String> failures) {
     }
 }

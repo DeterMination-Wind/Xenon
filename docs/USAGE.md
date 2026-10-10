@@ -76,8 +76,10 @@
 侧栏 → "Mindustry Versions" 选实例 → "Mod 管理" 页：
 
 - 已装 mod:启用/禁用(重命名 `.disabled` 后缀，同时写入游戏设置)、删除；
+- **批量操作**:每行左侧有复选框，点击行可普通单选、Shift 连选、Ctrl 切换，工具栏提供「全选 / 清除」与「启用 / 禁用 / 删除」；删除会二次确认并尽量移入回收站，一次批量只写一次 `settings.bin`；
+- **拖拽导入**:把 `.jar` / `.zip` 文件或文件夹直接拖到 mod 页即可导入；文件夹会递归查找(跳过隐藏目录)，逐个安装，失败项汇总显示而不中断其余文件；
 - 社区索引:从 `Anuken/mindustry-mods` 拉取，按 ★ 排序，"Install" 走 GitHub Release；安装文件沿用 Release 资源名(如 `LogicSugar-v5.7.0.jar`)，同一 mod 的新版本会替换旧文件，不再并排堆叠两个同名内部 mod；
-- 只按后缀判定、缺少 `mod.hjson`/`mod.json` 的压缩包(例如 `Mod.zip` 包着 `Mod.jar` 的发布包、源码包)会被识别为「无法识别」列在列表末尾并给出原因，安装时也会直接报错而不是丢进 `mods/`；
+- 缺少 `mod.hjson`/`mod.json` 的压缩包会自动拆包:包内只有一个 `.jar`/`.zip` 时(例如 `Mod.zip` 包着 `Mod.jar` 的发布包)会解出内层并安装；包内没有描述符且为多文件时仍会识别为「无法识别」列在列表末尾并给出原因，安装时也会直接报错而不是丢进 `mods/`；
 - GitHub 直装:输入 `owner/repo`；
 - 缺失依赖时弹「自动补齐」对话框；`minGameVersion > 当前 build` 会高亮警告。
 

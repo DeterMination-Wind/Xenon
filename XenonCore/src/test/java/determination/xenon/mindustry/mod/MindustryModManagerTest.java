@@ -27,6 +27,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.zip.ZipEntry;
@@ -363,6 +364,175 @@ public final class MindustryModManagerTest {
         assertTrue(MindustryModParser.containsDescriptor(root));
         assertTrue(MindustryModParser.containsDescriptor(wrapped));
         assertFalse(MindustryModParser.containsDescriptor(bundle));
+    }
+
+    /// A batch toggle renames every archive and writes settings.bin exactly once.
+    @Test
+    public void batchSetEnabledCoalescesSettingsWrite(@TempDir Path tempDir) throws IOException {
+        Path modsDir = tempDir.resolve("mods");
+        writeMod(modsDir.resolve("alpha.zip"), "alpha", "Alpha");
+        writeMod(modsDir.resolve("beta.zip"), "beta", "Beta");
+        List<Integer> batchSizes = new ArrayList<>();
+        MindustryModManager manager = new MindustryModManager(modsDir, tempDir, (dataDir, values) -> {
+            batchSizes.add(values.size());
+            MindustrySettingsBin.putValuesOrThrow(dataDir, values);
+        });
+
+        MindustryModManager.BatchResult result = manager.setEnabled(manager.scan(), false);
+
+        assertEquals(List.of(2), batchSizes);
+        assertEquals(2, result.applied().size());
+        assertTrue(result.failures().isEmpty());
+        assertTrue(Files.isRegularFile(modsDir.resolve("alpha.zip.disabled")));
+        assertTrue(Files.isRegularFile(modsDir.resolve("beta.zip.disabled")));
+        assertFalse(MindustrySettingsBin.getBool(tempDir, "mod-alpha-enabled", true));
+        assertFalse(MindustrySettingsBin.getBool(tempDir, "mod-beta-enabled", true));
+    }
+
+    /// One failing rename does not prevent the rest of the batch from being applied.
+    @Test
+    public void batchSetEnabledContinuesAfterSingleFailure(@TempDir Path tempDir) throws IOException {
+        Path modsDir = tempDir.resolve("mods");
+        writeMod(modsDir.resolve("alpha.zip"), "alpha", "Alpha");
+        writeMod(modsDir.resolve("beta.zip"), "beta", "Beta");
+        MindustryModManager manager = new MindustryModManager(modsDir);
+        List<MindustryLocalMod> mods = manager.scan();
+        Files.delete(alphaFile(mods));
+
+        MindustryModManager.BatchResult result = manager.setEnabled(mods, false);
+
+        assertEquals(1, result.applied().size());
+        assertEquals(1, result.failures().size());
+        assertTrue(result.failures().containsKey("alpha.zip"));
+        assertTrue(Files.isRegularFile(modsDir.resolve("beta.zip.disabled")));
+        assertFalse(Files.exists(modsDir.resolve("alpha.zip.disabled")));
+    }
+
+    /// Batch deletion removes every requested archive.
+    @Test
+    public void batchDeleteAllRemovesEveryArchive(@TempDir Path tempDir) throws IOException {
+        Path modsDir = tempDir.resolve("mods");
+        writeMod(modsDir.resolve("alpha.zip"), "alpha", "Alpha");
+        writeMod(modsDir.resolve("beta.zip"), "beta", "Beta");
+        MindustryModManager manager = new MindustryModManager(modsDir);
+
+        MindustryModManager.BatchResult result = manager.deleteAll(manager.scan());
+
+        assertEquals(2, result.applied().size());
+        assertTrue(result.failures().isEmpty());
+        assertFalse(Files.exists(modsDir.resolve("alpha.zip")));
+        assertFalse(Files.exists(modsDir.resolve("beta.zip")));
+    }
+
+    /// A wrapper zip holding one mod jar installs the inner jar under its own name.
+    @Test
+    public void installUnwrapsSingleNestedJar(@TempDir Path tempDir) throws IOException {
+        Path modsDir = tempDir.resolve("mods");
+        Path modJar = writeMod(tempDir.resolve("inner.jar"), "inner", "Inner");
+        Path bundle = writeBinaryArchive(tempDir.resolve("bundle.zip"),
+                "Inner.jar", Files.readAllBytes(modJar));
+
+        MindustryModManager.InstallResult result =
+                new MindustryModManager(modsDir).install(bundle, "Bundle-v1.zip");
+
+        assertEquals("Inner.jar", result.installedFile().getFileName().toString());
+        assertTrue(result.replacedFiles().isEmpty());
+        assertEquals(1, new MindustryModManager(modsDir).scan().size());
+    }
+
+    /// Nested zip chains are unwrapped down to the innermost archive.
+    @Test
+    public void installUnwrapsNestedZipChain(@TempDir Path tempDir) throws IOException {
+        Path modsDir = tempDir.resolve("mods");
+        Path modJar = writeMod(tempDir.resolve("core.jar"), "core", "Core");
+        Path middle = writeBinaryArchive(tempDir.resolve("middle.zip"),
+                "core.jar", Files.readAllBytes(modJar));
+        Path outer = writeBinaryArchive(tempDir.resolve("outer.zip"),
+                "middle.zip", Files.readAllBytes(middle));
+
+        MindustryModManager.InstallResult result =
+                new MindustryModManager(modsDir).install(outer, "Outer-v2.zip");
+
+        assertEquals("core.jar", result.installedFile().getFileName().toString());
+        assertEquals(1, new MindustryModManager(modsDir).scan().size());
+    }
+
+    /// A wrapper containing several archives is rejected instead of picking one arbitrarily.
+    @Test
+    public void installRejectsWrapperWithSeveralArchives(@TempDir Path tempDir) throws IOException {
+        Path modsDir = tempDir.resolve("mods");
+        Path first = writeMod(tempDir.resolve("a.jar"), "a", "A");
+        Path second = writeMod(tempDir.resolve("b.jar"), "b", "B");
+        Path bundle = writeBinaryArchive(tempDir.resolve("two.zip"),
+                "a.jar", Files.readAllBytes(first),
+                "b.jar", Files.readAllBytes(second));
+
+        assertThrows(MindustryModParseException.class,
+                () -> new MindustryModManager(modsDir).install(bundle, "two.zip"));
+        assertTrue(new MindustryModManager(modsDir).scanAll().isEmpty());
+    }
+
+    /// Wrapper chains deeper than the limit are rejected to bound recursive extraction.
+    @Test
+    public void installRejectsTooDeeplyNestedArchive(@TempDir Path tempDir) throws IOException {
+        Path modsDir = tempDir.resolve("mods");
+        Path modJar = writeMod(tempDir.resolve("deep.jar"), "deep", "Deep");
+        Path level1 = writeBinaryArchive(tempDir.resolve("level1.zip"),
+                "deep.jar", Files.readAllBytes(modJar));
+        Path level2 = writeBinaryArchive(tempDir.resolve("level2.zip"),
+                "level1.zip", Files.readAllBytes(level1));
+        Path level3 = writeBinaryArchive(tempDir.resolve("level3.zip"),
+                "level2.zip", Files.readAllBytes(level2));
+        Path level4 = writeBinaryArchive(tempDir.resolve("level4.zip"),
+                "level3.zip", Files.readAllBytes(level3));
+
+        assertThrows(MindustryModParseException.class,
+                () -> new MindustryModManager(modsDir).install(level4, "level4.zip"));
+        assertTrue(new MindustryModManager(modsDir).scanAll().isEmpty());
+    }
+
+    /// A single nested non-archive does not qualify as a wrapper.
+    @Test
+    public void installRejectsSingleNestedNonArchive(@TempDir Path tempDir) throws IOException {
+        Path modsDir = tempDir.resolve("mods");
+        Path bundle = writeBinaryArchive(tempDir.resolve("readme-bundle.zip"),
+                "readme.txt", "hello".getBytes(StandardCharsets.UTF_8));
+
+        assertThrows(MindustryModParseException.class,
+                () -> new MindustryModManager(modsDir).install(bundle, "readme-bundle.zip"));
+    }
+
+    private static Path alphaFile(List<MindustryLocalMod> mods) {
+        return mods.stream()
+                .filter(mod -> mod.getFile().getFileName().toString().equals("alpha.zip"))
+                .findFirst()
+                .orElseThrow()
+                .getFile();
+    }
+
+    private static Path writeBinaryArchive(Path archive, String name, byte[] content) throws IOException {
+        Files.createDirectories(archive.getParent());
+        try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(archive))) {
+            zip.putNextEntry(new ZipEntry(name));
+            zip.write(content);
+            zip.closeEntry();
+        }
+        return archive;
+    }
+
+    private static Path writeBinaryArchive(Path archive,
+                                           String firstName, byte[] firstContent,
+                                           String secondName, byte[] secondContent) throws IOException {
+        Files.createDirectories(archive.getParent());
+        try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(archive))) {
+            zip.putNextEntry(new ZipEntry(firstName));
+            zip.write(firstContent);
+            zip.closeEntry();
+            zip.putNextEntry(new ZipEntry(secondName));
+            zip.write(secondContent);
+            zip.closeEntry();
+        }
+        return archive;
     }
 
     private static Path writeMod(Path archive, String internalName, String displayName) throws IOException {

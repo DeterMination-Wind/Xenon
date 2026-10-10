@@ -71,7 +71,7 @@ Mod、地图、蓝图和存档都可以围绕具体实例整理、备份和导�
 | 游戏来源 | 原版 / Bleeding-Edge / MindustryX / CN-ARC / Foo Client，本地 jar 与 Steam 导入 | 原版 / MindustryX / MindustryARC | 原版 / Bleeding-Edge | 原版（GitHub Release） | 原版 / Bleeding-Edge / Foo Client，自定义 jar 与源码目录 |
 | 实例隔离 | ✅ 独立数据目录 | ✅ | ✅ | ✅ | ⚠️ 仅版本目录，数据目录未说明 |
 | Mod 管理 | ✅ 社区索引、GitHub 直装、启停、依赖补齐 | ❌ | ✅ 浏览、启停、搜索与分类筛选 | ✅ 浏览、搜索、安装卸载 | ⚠️ 面向 Mod 开发 |
-| Mod 批量操作 / 拖拽导入 | ❌ 逐项操作，经文件对话框安装 | ❌ | ✅ 多选与拖动连选，拖入文件导入 | ❌ | ❌ |
+| Mod 批量操作 / 拖拽导入 | ✅ 多选与 Shift/Ctrl 连选，批量启停 / 删除，拖入文件或文件夹导入（双层压缩包自动拆包） | ❌ | ✅ 多选与拖动连选，拖入文件导入 | ❌ | ❌ |
 | 地图 / 蓝图 | ✅ mindustry.top 浏览安装，.msch 与分享码导入导出 | ❌ | ⚠️ 资源导入导出；蓝图浏览页因缺少数据源尚未开放 | ✅ 社区蓝图下载 | ❌ |
 | 存档 | ✅ 备份 / 导出，云存档 | ❌ | ✅ 导入导出、跨版本迁移 | ✅ 扫描 / 解析 / 删除 | ❌ |
 | 游戏内设置编辑（settings.bin） | ✅ 表格化全量编辑、搜索、自动备份（保留 10 份）与一键恢复 | ❌ | ⚠️ 启动时覆盖游戏内设置与多人用户名 | ✅ 表格化编辑、搜索、自动备份 | ❌ |
@@ -199,7 +199,7 @@ Every instance has its own logs and crash records. When a game exits or a mod ca
 | Game sources | Vanilla / Bleeding-Edge / MindustryX / CN-ARC / Foo Client, local jar and Steam import | Vanilla / MindustryX / MindustryARC | Vanilla / Bleeding-Edge | Vanilla (GitHub releases) | Vanilla / Bleeding-Edge / Foo Client, custom jars and source directories |
 | Instance isolation | ✅ Separate data directories | ✅ | ✅ | ✅ | ⚠️ Version folders only; data isolation not documented |
 | Mod management | ✅ Community index, GitHub install, enable/disable, dependency resolution | ❌ | ✅ Browse, toggle, search and category filters | ✅ Browse, search, install/uninstall | ⚠️ Mod development focused |
-| Batch mod actions / drag-and-drop import | ❌ Per-item actions, install via a file dialog | ❌ | ✅ Multi-select and drag-select, drag files in to import | ❌ | ❌ |
+| Batch mod actions / drag-and-drop import | ✅ Multi-select with Shift/Ctrl range, batch enable/disable/delete, drag files or folders in to import (nested archives are unpacked) | ❌ | ✅ Multi-select and drag-select, drag files in to import | ❌ | ❌ |
 | Maps / schematics | ✅ Browse and install from mindustry.top, .msch and share-code import/export | ❌ | ⚠️ Resource import/export; schematic browser paused for lack of a data source | ✅ Community schematic downloads | ❌ |
 | Saves | ✅ Backup/export plus cloud saves | ❌ | ✅ Import/export, cross-version migration | ✅ Scan / parse / delete | ❌ |
 | In-game settings editing (settings.bin) | ✅ Full table editor, search, automatic backup (latest 10 kept) and one-click restore | ❌ | ⚠️ Overrides in-game settings and the multiplayer username at launch | ✅ Table editor, search, automatic backup | ❌ |

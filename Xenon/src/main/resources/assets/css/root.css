@@ -218,6 +218,15 @@
     -fx-text-fill: -monet-error;
 }
 
+.mod-drop-highlight {
+    -fx-background-color: -monet-secondary-container-transparent-50;
+    -fx-border-color: -monet-primary;
+    -fx-border-style: segments(6, 4);
+    -fx-border-width: 2;
+    -fx-border-radius: 8;
+    -fx-background-radius: 8;
+}
+
 .navigation-drawer-item > .rippler-container > .container > VBox {
     -fx-padding: 0 0 0 0;
 }
