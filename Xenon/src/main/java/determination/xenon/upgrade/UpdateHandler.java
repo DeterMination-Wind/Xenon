@@ -198,6 +198,16 @@ public final class UpdateHandler {
         startJava(downloadedJar);
     }
 
+    /// Starts a new launcher process for the given jar.
+    ///
+    /// The child receives the current JVM's `-D`/`-X` options plus an
+    /// internal marker that disables single-instance detection: this method
+    /// is used for update and restart handovers where the parent exits right
+    /// after spawning the child, so the child must never wait for a dialog.
+    ///
+    /// @param jar launcher jar to start
+    /// @param appArgs application arguments passed to the child
+    /// @throws IOException when the process cannot be started
     public static void startJava(Path jar, String... appArgs) throws IOException {
         List<String> commandline = new ArrayList<>();
         commandline.add(JavaRuntime.getDefault().getBinary().toString());
@@ -217,6 +227,9 @@ public final class UpdateHandler {
             }
         }
 
+        // Internal handover marker: the parent exits immediately after this
+        // call, so the child must not run single-instance negotiation.
+        commandline.add("-Dxenon.single_instance=skip");
         commandline.add("-jar");
         commandline.add(jar.toAbsolutePath().toString());
         commandline.addAll(Arrays.asList(appArgs));

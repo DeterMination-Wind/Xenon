@@ -87,6 +87,42 @@ public final class WindowsNativeUtils {
         }
     }
 
+    /// Windows command to restore a minimized window in `ShowWindow`.
+    private static final int SW_RESTORE = 9;
+
+    /// Tries to restore and activate the given stage through the Windows API.
+    ///
+    /// The JavaFX `toFront()` call may only flash the taskbar entry when
+    /// another application owns the foreground; `ShowWindow` plus
+    /// `SetForegroundWindow` is the reliable way to break the Windows
+    /// foreground lock. `BringWindowToTop` is the fallback for the rare case
+    /// where the system still refuses the foreground request.
+    ///
+    /// @param stage stage whose native window should be restored and activated
+    /// @return `true` when a native activation call reported success
+    public static boolean forceForeground(Stage stage) {
+        if (OperatingSystem.CURRENT_OS != OperatingSystem.WINDOWS || !NativeUtils.USE_JNA) {
+            return false;
+        }
+        OptionalLong handle = getWindowHandle(stage);
+        if (handle.isEmpty()) {
+            return false;
+        }
+        try {
+            Pointer hwnd = new Pointer(handle.getAsLong());
+            User32Min user32 = User32Min.INSTANCE;
+            user32.ShowWindow(hwnd, SW_RESTORE);
+            boolean foreground = user32.SetForegroundWindow(hwnd);
+            if (!foreground) {
+                foreground = user32.BringWindowToTop(hwnd);
+            }
+            return foreground;
+        } catch (Throwable ex) {
+            LOG.warning("Failed to force the launcher window to the foreground", ex);
+            return false;
+        }
+    }
+
     /**
      * Force the given stage to show up as a regular, pinnable, focusable
      * window on the Windows taskbar.
@@ -199,6 +235,10 @@ public final class WindowsNativeUtils {
                              int X, int Y, int cx, int cy, int uFlags);
 
         boolean ShowWindow(Pointer hWnd, int nCmdShow);
+
+        boolean SetForegroundWindow(Pointer hWnd);
+
+        boolean BringWindowToTop(Pointer hWnd);
     }
 
     /**

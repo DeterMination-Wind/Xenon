@@ -136,18 +136,13 @@ public final class TrayIconManager {
         return INSTALLED.get() != null;
     }
 
-    /**
-     * Bring the JavaFX stage back to a visible, focused, non-iconified
-     * state. Always hop to the FX thread; AWT click handlers run on the
-     * EDT and JavaFX stage mutation off-thread will throw.
-     */
+    /// Bring the JavaFX stage back to a visible, focused, non-iconified
+    /// state. Always hop to the FX thread; AWT click handlers run on the
+    /// EDT and JavaFX stage mutation off-thread will throw.
+    ///
+    /// @param stage launcher stage to restore and focus
     private static void showStage(Stage stage) {
-        Platform.runLater(() -> {
-            if (!stage.isShowing()) stage.show();
-            if (stage.isIconified()) stage.setIconified(false);
-            stage.toFront();
-            stage.requestFocus();
-        });
+        Platform.runLater(() -> WindowUtils.bringToFront(stage));
     }
 
     /** Remove the tray icon. Called on application stop. */

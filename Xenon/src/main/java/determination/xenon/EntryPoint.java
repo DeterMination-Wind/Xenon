@@ -51,6 +51,8 @@ public final class EntryPoint {
         createHMCLDirectories();
         LOG.start(Metadata.XENON_CURRENT_DIRECTORY.resolve("logs"));
 
+        args = SingleInstanceManager.startup(args);
+
         checkWine();
 
         setupJavaFXVMOptions();

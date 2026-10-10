@@ -146,6 +146,11 @@ public final class Launcher extends Application {
                 UpdateChecker.init();
 
                 primaryStage.show();
+                // The window exists now, so queued single-instance requests
+                // can be answered: the existing window is brought forward and
+                // other-version launches ask the user before opening a
+                // second window.
+                SingleInstanceManager.onWindowReady(primaryStage);
                 // Windows-only: tag the HWND with WS_EX_APPWINDOW so the
                 // taskbar treats this transparent stage as a real top-level
                 // window (icon visible, click-to-focus, pin-to-taskbar all
