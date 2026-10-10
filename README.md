@@ -62,24 +62,36 @@ Mod、地图、蓝图和存档都可以围绕具体实例整理、备份和导�
 
 ### 与竞品的比较
 
-> 官方发行版与 Steam 版不提供启动器，Java、数据目录和 Mod/存档整理都需要手动完成。下表按各项目公开文档整理（截至 2026-10），竞品能力可能随版本变化，请以各自项目为准。
+> 官方发行版与 Steam 版不提供启动器，Java、数据目录和 Mod/存档整理都需要手动完成。下表按各项目公开文档整理（截至 2026-10-10），竞品能力可能随版本变化，请以各自项目为准。
 
 | 能力 | Xenon | [BookMdtLauncher](https://github.com/ch-BookBanana/BookMdtLauncher) | [Copper Launcher](https://github.com/MDTCopper/launcher) | [MDL](https://github.com/colorgarden/mindustry_launcherMDL) | [MindustryLauncher](https://github.com/BalaM314/MindustryLauncher) |
 | --- | --- | --- | --- | --- | --- |
-| 平台 / 形态 | Windows / Linux / macOS · 图形界面 | Windows · 图形界面（PySide6） | Windows / Linux / macOS / Android · 图形界面（Flutter，开发阶段） | Windows 7+ · 图形界面（WPF，需 .NET 10） | Windows / Linux / macOS · 命令行（需 Node.js） |
+| 平台 / 形态 | Windows / Linux / macOS · 图形界面 | Windows · 图形界面（PySide6，单文件便携） | Windows / Linux / macOS / Android · 图形界面（Flutter，开发阶段） | Windows 7+ · 图形界面（WPF，需 .NET 10） | Windows / Linux / macOS · 命令行（需 Node.js，npm 分发） |
+| 移动端运行（Android） | ❌ 桌面启动器；同维护者另有独立项目 [Xenon-Mobile](https://github.com/DeterMination-Wind/Xenon-Mobile) | ❌ | ✅ 自带 Java 运行环境与 Copper 桥（模组支持开发中） | ❌ | ❌ |
 | 游戏来源 | 原版 / Bleeding-Edge / MindustryX / CN-ARC / Foo Client，本地 jar 与 Steam 导入 | 原版 / MindustryX / MindustryARC | 原版 / Bleeding-Edge | 原版（GitHub Release） | 原版 / Bleeding-Edge / Foo Client，自定义 jar 与源码目录 |
 | 实例隔离 | ✅ 独立数据目录 | ✅ | ✅ | ✅ | ⚠️ 仅版本目录，数据目录未说明 |
-| Mod 管理 | ✅ 社区索引、GitHub 直装、启停、依赖补齐 | ❌ | ✅ 浏览、启停、批量管理 | ✅ 浏览、搜索、安装卸载 | ⚠️ 面向 Mod 开发 |
-| 地图 / 蓝图 | ✅ mindustry.top 浏览安装，.msch 与分享码导入导出 | ❌ | ✅ 导入导出 | ✅ 社区蓝图下载 | ❌ |
+| Mod 管理 | ✅ 社区索引、GitHub 直装、启停、依赖补齐 | ❌ | ✅ 浏览、启停、搜索与分类筛选 | ✅ 浏览、搜索、安装卸载 | ⚠️ 面向 Mod 开发 |
+| Mod 批量操作 / 拖拽导入 | ❌ 逐项操作，经文件对话框安装 | ❌ | ✅ 多选与拖动连选，拖入文件导入 | ❌ | ❌ |
+| 地图 / 蓝图 | ✅ mindustry.top 浏览安装，.msch 与分享码导入导出 | ❌ | ⚠️ 资源导入导出；蓝图浏览页因缺少数据源尚未开放 | ✅ 社区蓝图下载 | ❌ |
 | 存档 | ✅ 备份 / 导出，云存档 | ❌ | ✅ 导入导出、跨版本迁移 | ✅ 扫描 / 解析 / 删除 | ❌ |
+| 游戏内设置编辑（settings.bin） | ⚠️ 仅写入昵称 / UUID 与 Mod 启停 | ❌ | ⚠️ 启动时覆盖游戏内设置与多人用户名 | ✅ 表格化编辑、搜索、自动备份 | ❌ |
 | 社区与联机 | ✅ MDTBBS 社区、好友与联机邀请 | ❌ | ❌ | ✅ EasyTier P2P 联机大厅 | ❌ |
-| 国内下载 | ✅ 多镜像自动回退 | ⚠️ JDK 走清华镜像，游戏本体依赖 GitHub 网络 | ✅ GitHub 镜像节点测速切换 | ✅ 内置 6 种 GitHub 代理 | ❌ |
+| Mod 开发工作流（源码编译 / 改动自动重启） | ❌ | ❌ | ❌ | ❌ | ✅ 编译源码、构建 Mod，文件变动自动重启 |
+| 国内下载 | ✅ 多镜像自动回退 | ⚠️ JDK 走清华镜像，游戏本体依赖 GitHub 网络 | ✅ github / raw / api 分类测速切换，支持自定义节点 | ✅ 内置 6 种 GitHub 代理 | ❌ |
+| 下载限速 | ❌ | ❌ | ✅ | ❌ | ❌ |
 | 服务器管理 | ✅ 控制台、自动重启、ScriptAgent | ❌ | ❌ | ❌ | ❌ |
+| 最后更新 | ![last commit](https://img.shields.io/github/last-commit/DeterMination-Wind/Xenon) | ![last commit](https://img.shields.io/github/last-commit/ch-BookBanana/BookMdtLauncher) | ![last commit](https://img.shields.io/github/last-commit/MDTCopper/launcher) | ![last commit](https://img.shields.io/github/last-commit/colorgarden/mindustry_launcherMDL) | ![last commit](https://img.shields.io/github/last-commit/BalaM314/MindustryLauncher) |
 | 许可 | GPLv3 | GPL-3.0 | MIT | AGPL-3.0 | 未标注 |
 
 ✅ 支持 ｜ ❌ 未提供或未在项目中说明 ｜ ⚠️ 部分支持或形态不同
 
-其他同样支持 Windows 的 Mindustry 启动器：[GIML](https://github.com/SquareCM2/GIML)（WinUI 3，开发中）、[zenonet/MindustryLauncher](https://github.com/zenonet/MindustryLauncher)（Avalonia，Windows/Linux 实例管理）、[GXFQE/mindustry-launcher](https://github.com/GXFQE/mindustry-launcher)（Python 标准库 + tkinter，CAS 去重与备份）、[Walker196/Mindustry-Launcher](https://github.com/Walker196/Mindustry-Launcher)（Tauri + React + Rust）、[NixaVulpi/MindustryLauncher](https://github.com/NixaVulpi/MindustryLauncher)（便携包装，需自备 Mindustry.jar 与 JRE）。截至 2026-10，表中的 BookMdtLauncher、Copper Launcher、MDL 分别发布到 v10000.03、v0.2.0-alpha2、v0.2.4-beta，MindustryLauncher 通过 npm 分发。
+其他同样支持 Windows 的 Mindustry 启动器：
+
+- [GIML](https://github.com/SquareCM2/GIML)（WinUI 3）![last commit](https://img.shields.io/github/last-commit/SquareCM2/GIML)
+- [zenonet/MindustryLauncher](https://github.com/zenonet/MindustryLauncher)（Avalonia，Windows/Linux 实例管理）![last commit](https://img.shields.io/github/last-commit/zenonet/MindustryLauncher)
+- [GXFQE/mindustry-launcher](https://github.com/GXFQE/mindustry-launcher)（Python 标准库 + tkinter，CAS 去重、隔离存档与自动备份）![last commit](https://img.shields.io/github/last-commit/GXFQE/mindustry-launcher)
+- [Walker196/Mindustry-Launcher](https://github.com/Walker196/Mindustry-Launcher)（Tauri + React + Rust）![last commit](https://img.shields.io/github/last-commit/Walker196/Mindustry-Launcher)
+- [NixaVulpi/MindustryLauncher](https://github.com/NixaVulpi/MindustryLauncher)（便携包装，需自备 Mindustry.jar 与 JRE）![last commit](https://img.shields.io/github/last-commit/NixaVulpi/MindustryLauncher)
 
 Xenon 的差异在于把整条链路放进同一个界面：镜像下载与回退、实例隔离、Mod/地图/蓝图/存档、云存档、MDTBBS 社区与好友联机、服务器管理，以及 `.xenon` 打包和 `xenon://` 链接。
 
@@ -178,24 +190,36 @@ Every instance has its own logs and crash records. When a game exits or a mod ca
 
 ### Comparison with alternatives
 
-> Official builds and Steam do not ship a launcher: Java, data directories, and mod/save organization are all manual there. The table below is compiled from each project's public documentation (as of 2026-10); competitor features can change between releases, so check the respective projects for the current state.
+> Official builds and Steam do not ship a launcher: Java, data directories, and mod/save organization are all manual there. The table below is compiled from each project's public documentation (as of 2026-10-10); competitor features can change between releases, so check the respective projects for the current state.
 
 | Capability | Xenon | [BookMdtLauncher](https://github.com/ch-BookBanana/BookMdtLauncher) | [Copper Launcher](https://github.com/MDTCopper/launcher) | [MDL](https://github.com/colorgarden/mindustry_launcherMDL) | [MindustryLauncher](https://github.com/BalaM314/MindustryLauncher) |
 | --- | --- | --- | --- | --- | --- |
-| Platforms / form | Windows / Linux / macOS · GUI | Windows · GUI (PySide6) | Windows / Linux / macOS / Android · GUI (Flutter, in development) | Windows 7+ · GUI (WPF, requires .NET 10) | Windows / Linux / macOS · CLI (requires Node.js) |
+| Platforms / form | Windows / Linux / macOS · GUI | Windows · GUI (PySide6, single-file portable) | Windows / Linux / macOS / Android · GUI (Flutter, in development) | Windows 7+ · GUI (WPF, requires .NET 10) | Windows / Linux / macOS · CLI (requires Node.js; distributed via npm) |
+| Mobile (Android) | ❌ Desktop launcher; the same maintainer ships the separate [Xenon-Mobile](https://github.com/DeterMination-Wind/Xenon-Mobile) | ❌ | ✅ Bundled Java runtime and Copper bridge (mod support in progress) | ❌ | ❌ |
 | Game sources | Vanilla / Bleeding-Edge / MindustryX / CN-ARC / Foo Client, local jar and Steam import | Vanilla / MindustryX / MindustryARC | Vanilla / Bleeding-Edge | Vanilla (GitHub releases) | Vanilla / Bleeding-Edge / Foo Client, custom jars and source directories |
 | Instance isolation | ✅ Separate data directories | ✅ | ✅ | ✅ | ⚠️ Version folders only; data isolation not documented |
-| Mod management | ✅ Community index, GitHub install, enable/disable, dependency resolution | ❌ | ✅ Browse, toggle, batch manage | ✅ Browse, search, install/uninstall | ⚠️ Mod development focused |
-| Maps / schematics | ✅ Browse and install from mindustry.top, .msch and share-code import/export | ❌ | ✅ Import/export | ✅ Community schematic downloads | ❌ |
+| Mod management | ✅ Community index, GitHub install, enable/disable, dependency resolution | ❌ | ✅ Browse, toggle, search and category filters | ✅ Browse, search, install/uninstall | ⚠️ Mod development focused |
+| Batch mod actions / drag-and-drop import | ❌ Per-item actions, install via a file dialog | ❌ | ✅ Multi-select and drag-select, drag files in to import | ❌ | ❌ |
+| Maps / schematics | ✅ Browse and install from mindustry.top, .msch and share-code import/export | ❌ | ⚠️ Resource import/export; schematic browser paused for lack of a data source | ✅ Community schematic downloads | ❌ |
 | Saves | ✅ Backup/export plus cloud saves | ❌ | ✅ Import/export, cross-version migration | ✅ Scan / parse / delete | ❌ |
+| In-game settings editing (settings.bin) | ⚠️ Writes nickname/UUID and mod toggles only | ❌ | ⚠️ Overrides in-game settings and the multiplayer username at launch | ✅ Table editor, search, automatic backup | ❌ |
 | Community & multiplayer | ✅ MDTBBS community, friends and invites | ❌ | ❌ | ✅ EasyTier P2P lobby | ❌ |
-| China-friendly downloads | ✅ Automatic mirror fallback | ⚠️ Tsinghua mirror for the JDK; game downloads depend on GitHub | ✅ Speed-tested GitHub mirrors | ✅ Six built-in GitHub proxies | ❌ |
+| Mod development workflow (source compile / restart on change) | ❌ | ❌ | ❌ | ❌ | ✅ Compiles sources, builds mods, restarts on file changes |
+| China-friendly downloads | ✅ Automatic mirror fallback | ⚠️ Tsinghua mirror for the JDK; game downloads depend on GitHub | ✅ Speed-tested mirrors per github/raw/api category, custom nodes supported | ✅ Six built-in GitHub proxies | ❌ |
+| Download rate limiting | ❌ | ❌ | ✅ | ❌ | ❌ |
 | Server management | ✅ Console, auto-restart, ScriptAgent | ❌ | ❌ | ❌ | ❌ |
+| Last update | ![last commit](https://img.shields.io/github/last-commit/DeterMination-Wind/Xenon) | ![last commit](https://img.shields.io/github/last-commit/ch-BookBanana/BookMdtLauncher) | ![last commit](https://img.shields.io/github/last-commit/MDTCopper/launcher) | ![last commit](https://img.shields.io/github/last-commit/colorgarden/mindustry_launcherMDL) | ![last commit](https://img.shields.io/github/last-commit/BalaM314/MindustryLauncher) |
 | License | GPLv3 | GPL-3.0 | MIT | AGPL-3.0 | Not declared |
 
 ✅ supported ｜ ❌ not offered or not documented ｜ ⚠️ partial or different shape
 
-Other Windows-capable Mindustry launchers: [GIML](https://github.com/SquareCM2/GIML) (WinUI 3, in development), [zenonet/MindustryLauncher](https://github.com/zenonet/MindustryLauncher) (Avalonia, Windows/Linux instance management), [GXFQE/mindustry-launcher](https://github.com/GXFQE/mindustry-launcher) (Python standard library + tkinter, CAS deduplication and backups), [Walker196/Mindustry-Launcher](https://github.com/Walker196/Mindustry-Launcher) (Tauri + React + Rust), and [NixaVulpi/MindustryLauncher](https://github.com/NixaVulpi/MindustryLauncher) (portable wrapper, needs your own Mindustry.jar and JRE). As of 2026-10, BookMdtLauncher, Copper Launcher, and MDL have released v10000.03, v0.2.0-alpha2, and v0.2.4-beta respectively, while MindustryLauncher is distributed via npm.
+Other Windows-capable Mindustry launchers:
+
+- [GIML](https://github.com/SquareCM2/GIML) (WinUI 3) ![last commit](https://img.shields.io/github/last-commit/SquareCM2/GIML)
+- [zenonet/MindustryLauncher](https://github.com/zenonet/MindustryLauncher) (Avalonia, Windows/Linux instance management) ![last commit](https://img.shields.io/github/last-commit/zenonet/MindustryLauncher)
+- [GXFQE/mindustry-launcher](https://github.com/GXFQE/mindustry-launcher) (Python standard library + tkinter; CAS deduplication, isolated save profiles and automatic backups) ![last commit](https://img.shields.io/github/last-commit/GXFQE/mindustry-launcher)
+- [Walker196/Mindustry-Launcher](https://github.com/Walker196/Mindustry-Launcher) (Tauri + React + Rust) ![last commit](https://img.shields.io/github/last-commit/Walker196/Mindustry-Launcher)
+- [NixaVulpi/MindustryLauncher](https://github.com/NixaVulpi/MindustryLauncher) (portable wrapper, needs your own Mindustry.jar and JRE) ![last commit](https://img.shields.io/github/last-commit/NixaVulpi/MindustryLauncher)
 
 What sets Xenon apart is keeping the whole pipeline in one window: mirror downloads and fallback, instance isolation, mods/maps/schematics/saves, cloud saves, the MDTBBS community with friends and invites, server management, plus `.xenon` packaging and `xenon://` links.
 
