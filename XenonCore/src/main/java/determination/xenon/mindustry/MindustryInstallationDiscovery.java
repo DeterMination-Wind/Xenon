@@ -21,6 +21,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import determination.xenon.mindustry.steam.SteamVdf;
 import determination.xenon.util.platform.OperatingSystem;
 import org.jetbrains.annotations.NotNullByDefault;
 import org.jetbrains.annotations.Nullable;
@@ -184,19 +185,19 @@ public final class MindustryInstallationDiscovery {
             return List.of();
         }
         try {
-            VdfObject root = parseVdf(Files.readString(libraryFoldersVdf));
-            VdfObject libraryFolders = root.object("libraryfolders");
+            SteamVdf.VdfObject root = SteamVdf.parse(Files.readString(libraryFoldersVdf));
+            SteamVdf.VdfObject libraryFolders = root.object("libraryfolders");
             if (libraryFolders == null) {
                 return List.of();
             }
 
             List<Path> libraries = new ArrayList<>();
-            for (VdfValue value : libraryFolders.values().values()) {
-                if (!(value instanceof VdfObject library)) {
+            for (SteamVdf.VdfValue value : libraryFolders.values().values()) {
+                if (!(value instanceof SteamVdf.VdfObject library)) {
                     continue;
                 }
                 String path = library.string("path");
-                VdfObject apps = library.object("apps");
+                SteamVdf.VdfObject apps = library.object("apps");
                 if (path != null && apps != null && apps.values().containsKey(STEAM_APP_ID)) {
                     libraries.add(Path.of(path));
                 }
@@ -373,138 +374,6 @@ public final class MindustryInstallationDiscovery {
     private static String sanitizeId(String raw) {
         String sanitized = raw == null ? "" : raw.replaceAll("[^A-Za-z0-9._-]", "-");
         return sanitized.isBlank() ? "mindustry" : sanitized;
-    }
-
-    private static VdfObject parseVdf(String text) {
-        VdfCursor cursor = new VdfCursor(tokenizeVdf(text));
-        Map<String, VdfValue> values = new LinkedHashMap<>();
-        while (cursor.hasNext()) {
-            String key = cursor.nextString();
-            values.put(key, parseVdfValue(cursor));
-        }
-        return new VdfObject(values);
-    }
-
-    private static VdfValue parseVdfValue(VdfCursor cursor) {
-        String token = cursor.next();
-        if ("{".equals(token)) {
-            return parseVdfObject(cursor);
-        }
-        if ("}".equals(token)) {
-            throw new IllegalArgumentException("Unexpected VDF object end");
-        }
-        return new VdfString(token);
-    }
-
-    private static VdfObject parseVdfObject(VdfCursor cursor) {
-        Map<String, VdfValue> values = new LinkedHashMap<>();
-        while (cursor.hasNext()) {
-            if ("}".equals(cursor.peek())) {
-                cursor.next();
-                return new VdfObject(values);
-            }
-            String key = cursor.nextString();
-            values.put(key, parseVdfValue(cursor));
-        }
-        throw new IllegalArgumentException("Unclosed VDF object");
-    }
-
-    private static @Unmodifiable List<String> tokenizeVdf(String text) {
-        List<String> tokens = new ArrayList<>();
-        int i = 0;
-        while (i < text.length()) {
-            char c = text.charAt(i);
-            if (Character.isWhitespace(c)) {
-                i++;
-                continue;
-            }
-            if (c == '{' || c == '}') {
-                tokens.add(Character.toString(c));
-                i++;
-                continue;
-            }
-            if (c == '"') {
-                StringBuilder token = new StringBuilder();
-                i++;
-                while (i < text.length()) {
-                    char ch = text.charAt(i++);
-                    if (ch == '"') {
-                        break;
-                    }
-                    if (ch == '\\' && i < text.length()
-                            && (text.charAt(i) == '\\' || text.charAt(i) == '"')) {
-                        token.append(text.charAt(i++));
-                    } else {
-                        token.append(ch);
-                    }
-                }
-                tokens.add(token.toString());
-                continue;
-            }
-
-            int start = i;
-            while (i < text.length()) {
-                c = text.charAt(i);
-                if (Character.isWhitespace(c) || c == '{' || c == '}') {
-                    break;
-                }
-                i++;
-            }
-            tokens.add(text.substring(start, i));
-        }
-        return List.copyOf(tokens);
-    }
-
-    private interface VdfValue {
-    }
-
-    private record VdfString(String value) implements VdfValue {
-    }
-
-    private record VdfObject(Map<String, VdfValue> values) implements VdfValue {
-        private @Nullable String string(String key) {
-            VdfValue value = values.get(key);
-            return value instanceof VdfString string ? string.value() : null;
-        }
-
-        private @Nullable VdfObject object(String key) {
-            VdfValue value = values.get(key);
-            return value instanceof VdfObject object ? object : null;
-        }
-    }
-
-    private static final class VdfCursor {
-        private final List<String> tokens;
-        private int index;
-
-        private VdfCursor(List<String> tokens) {
-            this.tokens = tokens;
-        }
-
-        private boolean hasNext() {
-            return index < tokens.size();
-        }
-
-        private String peek() {
-            if (!hasNext()) {
-                throw new IllegalArgumentException("Unexpected VDF end");
-            }
-            return tokens.get(index);
-        }
-
-        private String next() {
-            String token = peek();
-            index++;
-            return token;
-        }
-
-        private String nextString() {
-            String token = next();
-            if ("{".equals(token) || "}".equals(token)) {
-                throw new IllegalArgumentException("Expected VDF string");
-            }
-            return token;
-        }
     }
 
     /** Metadata extracted from a discovered installation. */

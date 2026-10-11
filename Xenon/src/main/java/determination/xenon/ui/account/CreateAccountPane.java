@@ -44,6 +44,8 @@ import determination.xenon.auth.offline.OfflineAccountFactory;
 import determination.xenon.auth.yggdrasil.GameProfile;
 import determination.xenon.auth.yggdrasil.YggdrasilService;
 import determination.xenon.game.TexturesLoader;
+import determination.xenon.mindustry.steam.SteamAccount;
+import determination.xenon.mindustry.steam.SteamAccountDiscovery;
 import determination.xenon.setting.Accounts;
 import determination.xenon.task.Schedulers;
 import determination.xenon.task.Task;
@@ -458,9 +460,7 @@ public class CreateAccountPane extends JFXDialogLayout implements DialogAware {
                 add(lblUUID, 0, rowIndex);
 
                 txtUUID = new JFXTextField();
-                txtUUID.managedProperty().bind(advancedButton.selectedProperty());
-                txtUUID.visibleProperty().bind(advancedButton.selectedProperty());
-                // Mindustry UID validator — accepts the 22-char URL-safe base64 form.
+                // Mindustry UID validator — accepts the 12-character base64 form.
                 txtUUID.setValidators(new MindustryUidValidator());
                 // Prompt: a deterministic Mindustry-format UID derived from the nickname,
                 // so users see what's auto-generated without having to type anything.
@@ -468,7 +468,17 @@ public class CreateAccountPane extends JFXDialogLayout implements DialogAware {
                         .map(name -> determination.xenon.mindustry.uuid.UuidGenerator.fromUuid(
                                 OfflineAccountFactory.getUUIDFromUserName(name))));
                 txtUUID.setOnAction(e -> onAction.run());
-                add(txtUUID, 1, rowIndex);
+
+                JFXButton btnImportSteam = new JFXButton(i18n("account.steam.import"));
+                btnImportSteam.getStyleClass().add("dialog-cancel");
+                btnImportSteam.setOnAction(e -> importFromSteam(btnImportSteam));
+
+                HBox uuidBox = new HBox(8, txtUUID, btnImportSteam);
+                uuidBox.setAlignment(Pos.CENTER_LEFT);
+                uuidBox.managedProperty().bind(advancedButton.selectedProperty());
+                uuidBox.visibleProperty().bind(advancedButton.selectedProperty());
+                HBox.setHgrow(txtUUID, Priority.ALWAYS);
+                add(uuidBox, 1, rowIndex);
 
                 rowIndex++;
 
@@ -564,6 +574,107 @@ public class CreateAccountPane extends JFXDialogLayout implements DialogAware {
                 txtUsername.requestFocus();
             }
         }
+
+        /// Reads the local Steam account data off the FX thread and offers the
+        /// discovered accounts to the user.
+        ///
+        /// @param button the button that triggered the import; disabled while
+        ///               the background scan runs
+        private void importFromSteam(JFXButton button) {
+            button.setDisable(true);
+            Task.supplyAsync(SteamAccountDiscovery::discoverAccounts)
+                    .whenComplete(Schedulers.javafx(),
+                            accounts -> {
+                                button.setDisable(false);
+                                if (accounts.isEmpty()) {
+                                    Controllers.dialog(i18n("account.steam.import.empty"),
+                                            i18n("account.steam.import"),
+                                            MessageDialogPane.MessageType.WARNING);
+                                    return;
+                                }
+                                if (accounts.size() == 1) {
+                                    applySteamAccount(accounts.get(0));
+                                } else {
+                                    showSteamAccountChooser(accounts);
+                                }
+                            },
+                            exception -> {
+                                button.setDisable(false);
+                                Controllers.dialog(i18n("account.steam.import.failed"),
+                                        i18n("account.steam.import"),
+                                        MessageDialogPane.MessageType.ERROR);
+                            })
+                    .start();
+        }
+
+        /// Writes one Steam account's Mindustry UID into the form.
+        ///
+        /// <p>The nickname is only filled when the Steam persona name is a
+        /// valid Mindustry player name; otherwise the user keeps full control
+        /// over it.</p>
+        ///
+        /// @param account the account picked by the user
+        private void applySteamAccount(SteamAccount account) {
+            txtUUID.setText(account.mindustryUid());
+            if (StringUtils.isBlank(txtUsername.getText())) {
+                String personaName = account.personaName();
+                if (personaName != null
+                        && USERNAME_CHECKER_PATTERN.matcher(personaName).matches()
+                        && personaName.length() <= 16) {
+                    txtUsername.setText(personaName);
+                }
+            }
+            Controllers.showToast(i18n("account.steam.import.done", account.displayName()));
+        }
+
+        /// Shows the account picker used when the machine has several Steam
+        /// accounts.
+        ///
+        /// @param accounts the discovered accounts, best candidate first
+        private void showSteamAccountChooser(List<SteamAccount> accounts) {
+            AdvancedListBox listBox = new AdvancedListBox();
+            listBox.startCategory(i18n("account.steam.import.choose").toUpperCase(Locale.ROOT));
+
+            JFXDialogLayout dialog = new JFXDialogLayout();
+            dialog.setHeading(new Label(i18n("account.steam.import")));
+            for (SteamAccount account : accounts) {
+                AdvancedListItem item = new AdvancedListItem();
+                item.setLeftIcon(SVG.PERSON);
+                item.setTitle(account.displayName());
+                item.setSubtitle(steamAccountSubtitle(account));
+                item.setOnAction(event -> {
+                    applySteamAccount(account);
+                    dialog.fireEvent(new DialogCloseEvent());
+                });
+                listBox.add(item);
+            }
+            dialog.setBody(listBox);
+
+            JFXButton cancel = new JFXButton(i18n("button.cancel"));
+            cancel.getStyleClass().add("dialog-cancel");
+            cancel.setOnAction(event -> dialog.fireEvent(new DialogCloseEvent()));
+            HBox actionsBox = new HBox(cancel);
+            actionsBox.setAlignment(Pos.CENTER_RIGHT);
+            dialog.setActions(actionsBox);
+            onEscPressed(dialog, cancel::fire);
+            Controllers.dialog(dialog);
+        }
+
+        /// Describes one Steam account inside the picker.
+        ///
+        /// @param account the account to describe
+        /// @return the login name, SteamID64 and auto-login marker joined for display
+        private static String steamAccountSubtitle(SteamAccount account) {
+            List<String> parts = new ArrayList<>();
+            if (account.accountName() != null) {
+                parts.add(account.accountName());
+            }
+            parts.add(i18n("account.steam.import.steamid", Long.toString(account.steamId64())));
+            if (account.autoLogin()) {
+                parts.add(i18n("account.steam.import.auto_login"));
+            }
+            return String.join(" · ", parts);
+        }
     }
 
     public static class DialogCharacterSelector extends JFXDialogLayout implements CharacterSelector {
@@ -633,8 +744,8 @@ public class CreateAccountPane extends JFXDialogLayout implements DialogAware {
     }
 
     /**
-     * Validator for the Mindustry-format player UID — 22-character (or
-     * 24-with-padding) URL-safe base64. Legacy MC-format UUID strings
+     * Validator for the Mindustry-format player UID — 8 bytes encoded as a
+     * 12-character standard base64 string. Legacy MC-format UUID strings
      * are still accepted for users pasting in old values.
      */
     private static class MindustryUidValidator extends ValidatorBase {

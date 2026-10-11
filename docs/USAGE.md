@@ -192,12 +192,13 @@
 
 ## 14. UUID 管理
 
-侧栏 → "UUID & Nickname"：
+侧栏 → "账户列表" → "添加 Mindustry 玩家 UID"：
 
-- 新建:输入昵称 → 自动生成 22 字符 base64 UUID；
-- 改名 / 删除 / 设为当前；
+- 新建:输入昵称 → 自动生成 12 字符(8 字节)base64 UID；在「高级」里可以直接粘贴已有 UID；
+- 高级 → UUID 输入框旁的「从 Steam 导入」:读取本机 Steam 客户端数据(`config/loginusers.vdf`、`config.vdf`、Mindustry 的 `appmanifest_1127400.acf` 与 `userdata/`)，按 Steam 账号 ID 推导出与 Steam 版一致的玩家 UID；多账号时可选择，昵称合法时自动填入；
 - 启动 Mindustry 时通过 `-Dmindustry.player.uuid` / `-Dmindustry.player.name` 传给 JVM，并写入实例的 `settings.bin`；
-- vanilla Mindustry 不读这两个 system property，但配合社区 `uuidManager` 类 mod 可生效。
+- vanilla Mindustry 不读这两个 system property，但配合社区 `uuidManager` 类 mod 可生效；
+- 经 Steam 客户端启动时游戏始终使用 Steam 账号推导出的 UID，导入它是为了让两种启动方式的联机身份保持一致。
 
 ## 15. 自更新
 
