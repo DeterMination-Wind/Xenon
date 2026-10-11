@@ -67,7 +67,32 @@ public final class MindustryLocalMod {
                              boolean java,
                              List<String> dependencies) {
         this(file, name, displayName, author, version, description, main, minGameVersion,
-                java, dependencies, isArchiveEnabled(file), null, null);
+                java, dependencies, null);
+    }
+
+    /**
+     * Creates one parsed entry with an explicit game-faithful internal name.
+     *
+     * <p>The parser resolves the internal name from the descriptor Mindustry
+     * itself would read, which can differ from the descriptor the launcher
+     * prefers for display. Passing `null` derives the name from {@code name}
+     * via {@link MindustryGameModNaming#keyName(String)}.</p>
+     *
+     * @param gameInternalName game-normalized name, or `null` to derive it from {@code name}
+     */
+    MindustryLocalMod(Path file,
+                      String name,
+                      String displayName,
+                      String author,
+                      String version,
+                      String description,
+                      String main,
+                      int minGameVersion,
+                      boolean java,
+                      List<String> dependencies,
+                      String gameInternalName) {
+        this(file, name, displayName, author, version, description, main, minGameVersion,
+                java, dependencies, isArchiveEnabled(file), null, null, gameInternalName);
     }
 
     private MindustryLocalMod(Path file,
@@ -82,7 +107,8 @@ public final class MindustryLocalMod {
                               List<String> dependencies,
                               boolean enabled,
                               String ignoredByFileName,
-                              String parseError) {
+                              String parseError,
+                              String gameInternalName) {
         this.file = Objects.requireNonNull(file, "file");
         this.name = name;
         this.displayName = displayName;
@@ -96,7 +122,9 @@ public final class MindustryLocalMod {
                 ? Collections.emptyList()
                 : List.copyOf(dependencies);
         this.enabled = enabled;
-        this.internalName = normalizeInternalName(name);
+        this.internalName = gameInternalName != null
+                ? gameInternalName
+                : MindustryGameModNaming.keyName(name);
         this.ignoredByFileName = ignoredByFileName;
         this.parseError = parseError;
     }
@@ -110,7 +138,7 @@ public final class MindustryLocalMod {
      */
     public static MindustryLocalMod unparsable(Path file, String reason) {
         return new MindustryLocalMod(file, null, null, null, null, null, null, 0, false,
-                Collections.emptyList(), isArchiveEnabled(file), null, reason);
+                Collections.emptyList(), isArchiveEnabled(file), null, reason, null);
     }
 
     public Path getFile() { return file; }
@@ -163,13 +191,14 @@ public final class MindustryLocalMod {
     public MindustryLocalMod withEnabled(boolean enabled) {
         if (this.enabled == enabled) return this;
         return new MindustryLocalMod(file, name, displayName, author, version, description,
-                main, minGameVersion, java, dependencies, enabled, ignoredByFileName, parseError);
+                main, minGameVersion, java, dependencies, enabled, ignoredByFileName, parseError,
+                internalName);
     }
 
     public MindustryLocalMod ignoredBy(MindustryLocalMod winner) {
         return new MindustryLocalMod(file, name, displayName, author, version, description,
                 main, minGameVersion, java, dependencies,
-                enabled, winner.getFile().getFileName().toString(), parseError);
+                enabled, winner.getFile().getFileName().toString(), parseError, internalName);
     }
 
     /**
@@ -180,13 +209,6 @@ public final class MindustryLocalMod {
         if (displayName != null && !displayName.isBlank()) return displayName;
         if (name != null && !name.isBlank()) return name;
         return file.getFileName().toString();
-    }
-
-    private static String normalizeInternalName(String rawName) {
-        if (rawName == null || rawName.isBlank()) {
-            return "";
-        }
-        return rawName.toLowerCase(Locale.ROOT).replace(" ", "-");
     }
 
     private static boolean isArchiveEnabled(Path file) {

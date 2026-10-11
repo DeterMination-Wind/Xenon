@@ -18,6 +18,7 @@
 package determination.xenon.mindustry.uuid;
 
 import determination.xenon.util.logging.Logger;
+import org.jetbrains.annotations.Nullable;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
@@ -25,11 +26,15 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.zip.InflaterInputStream;
 
@@ -66,6 +71,8 @@ public final class MindustrySettingsBin {
     public static final String FILE_NAME = "settings.bin";
     /** Filename Mindustry falls back to if the primary is corrupt. */
     public static final String BACKUP_NAME = "settings_backup.bin";
+    /** Folder holding Mindustry's periodic timestamped settings snapshots. */
+    public static final String BACKUP_FOLDER_NAME = "settings_backups";
 
     /** Whether {@code settings.bin} exists on disk. */
     public enum ReadStatus {
@@ -136,15 +143,21 @@ public final class MindustrySettingsBin {
      * <p>Unlike {@link #putValues(Path, Map)}, this method reports IO
      * failures to the caller. Use it for launch-time state that must be
      * persisted before the game starts.</p>
+     *
+     * <p>A corrupt primary is recovered from Mindustry's backup chain first,
+     * mirroring what the game does on its next startup. When no backup parses
+     * either, the write aborts so the corrupt file is never replaced by a
+     * file containing only the launcher values.</p>
      */
     public static void putValuesOrThrow(Path dataDir, Map<String, Object> values) throws IOException {
         if (dataDir == null || values == null || values.isEmpty()) return;
         Files.createDirectories(dataDir);
         Path file = dataDir.resolve(FILE_NAME);
 
-        // Strict read: a corrupt file must abort the write instead of being
-        // silently replaced by a file containing only the launcher values.
-        LinkedHashMap<String, Object> entries = readFileOrThrow(file);
+        // Strict read with backup recovery: a corrupt file must abort the
+        // write instead of being silently replaced by a file containing only
+        // the launcher values.
+        LinkedHashMap<String, Object> entries = readForUpdate(dataDir);
         entries.putAll(values);
 
         writeAtomically(file, entries);
@@ -154,6 +167,46 @@ public final class MindustrySettingsBin {
         // stale value.
         syncBackup(dataDir, file);
         Logger.LOG.info("Mindustry settings.bin updated with " + values.size() + " launcher value(s)");
+    }
+
+    /**
+     * Reads the entries a merge write should start from, with the same
+     * recovery chain Mindustry uses.
+     *
+     * <p>Reading order: the primary file, then {@code settings_backup.bin},
+     * then the newest parseable snapshot in {@code settings_backups/}. A
+     * missing primary whose backup parses is recovered (the game behaves the
+     * same way, because a failed primary load falls through to the backups).
+     * Only a corrupt primary with no usable backup throws.</p>
+     *
+     * @param dataDir Mindustry data directory that owns {@code settings.bin}
+     * @return the recovered base entry set, never {@code null}
+     * @throws IOException when the primary exists but neither it nor any
+     *     backup can be parsed
+     */
+    public static LinkedHashMap<String, Object> readForUpdate(Path dataDir) throws IOException {
+        if (dataDir == null) return new LinkedHashMap<>();
+        Path file = dataDir.resolve(FILE_NAME);
+        if (!Files.isRegularFile(file)) {
+            @Nullable LinkedHashMap<String, Object> recovered = tryReadBackups(dataDir);
+            if (recovered != null) {
+                Logger.LOG.warning("settings.bin is missing; recovered " + recovered.size()
+                        + " value(s) from a backup in " + dataDir);
+                return recovered;
+            }
+            return new LinkedHashMap<>();
+        }
+        try {
+            return readFileOrThrow(file);
+        } catch (IOException primaryFailure) {
+            @Nullable LinkedHashMap<String, Object> recovered = tryReadBackups(dataDir);
+            if (recovered == null) {
+                throw primaryFailure;
+            }
+            Logger.LOG.warning("settings.bin is corrupt (" + primaryFailure.getMessage()
+                    + "); recovered " + recovered.size() + " value(s) from a backup in " + dataDir);
+            return recovered;
+        }
     }
 
     /**
@@ -179,16 +232,19 @@ public final class MindustrySettingsBin {
     /**
      * Read every entry from {@code <dataDir>/settings.bin}. Plain Arc
      * settings and Arc's optional zlib-compressed settings are both
-     * supported. Returns an empty map when the file is missing or cannot
-     * be parsed safely.
+     * supported.
+     *
+     * <p>Read-only callers (mod scanning, health checks) keep working on a
+     * corrupt file: the backup chain is consulted first, and only when
+     * nothing parses does the result fall back to an empty map.</p>
      */
     public static LinkedHashMap<String, Object> readValues(Path dataDir) {
         if (dataDir == null) return new LinkedHashMap<>();
         try {
-            return readFileOrThrow(dataDir.resolve(FILE_NAME));
+            return readForUpdate(dataDir);
         } catch (IOException ex) {
-            // Read-only callers (mod scanning, health checks) keep working on a
-            // corrupt file; writers must use read() so they can refuse to clobber it.
+            // Read-only callers keep working on an unrecoverable file;
+            // writers must use putValuesOrThrow so they can refuse to clobber it.
             Logger.LOG.warning("Failed to parse settings.bin (" + ex.getMessage()
                     + ") — treating it as empty for read-only callers");
             return new LinkedHashMap<>();
@@ -303,6 +359,52 @@ public final class MindustrySettingsBin {
             Files.copy(file, backup, StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException ignored) {
             // Best-effort; primary file is the source of truth.
+        }
+    }
+
+    /**
+     * Tries {@code settings_backup.bin} and the {@code settings_backups/}
+     * snapshots, newest first, exactly like Arc's {@code Settings.loadValues}.
+     *
+     * @param dataDir Mindustry data directory that owns the backups
+     * @return the first parseable backup entry set, or {@code null} when none parses
+     */
+    private static @Nullable LinkedHashMap<String, Object> tryReadBackups(Path dataDir) {
+        List<Path> candidates = new ArrayList<>();
+        Path backup = dataDir.resolve(BACKUP_NAME);
+        if (Files.isRegularFile(backup)) {
+            candidates.add(backup);
+        }
+        Path folder = dataDir.resolve(BACKUP_FOLDER_NAME);
+        if (Files.isDirectory(folder)) {
+            try (DirectoryStream<Path> stream = Files.newDirectoryStream(folder)) {
+                for (Path candidate : stream) {
+                    if (Files.isRegularFile(candidate)) {
+                        candidates.add(candidate);
+                    }
+                }
+            } catch (IOException ignored) {
+                // Unreadable backup folders are skipped; the plain backup file still counts.
+            }
+        }
+        // Arc sorts by latest-modified first before attempting recovery.
+        candidates.sort(Comparator.comparingLong(MindustrySettingsBin::lastModifiedMillis).reversed());
+        for (Path candidate : candidates) {
+            try {
+                return readFileOrThrow(candidate);
+            } catch (IOException ignored) {
+                // Try the next, older snapshot.
+            }
+        }
+        return null;
+    }
+
+    /// Returns a file's last-modified time, or `0` when it cannot be read.
+    private static long lastModifiedMillis(Path file) {
+        try {
+            return Files.getLastModifiedTime(file).toMillis();
+        } catch (IOException ignored) {
+            return 0L;
         }
     }
 

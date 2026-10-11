@@ -19,9 +19,11 @@ package determination.xenon.mindustry.save;
 
 import kala.compress.archivers.zip.ZipArchiveEntry;
 import kala.compress.archivers.zip.ZipArchiveReader;
+import determination.xenon.mindustry.uuid.MindustrySettingsBin;
 import determination.xenon.util.io.CompressingUtils;
 import determination.xenon.util.io.FileUtils;
 import determination.xenon.util.io.Unzipper;
+import determination.xenon.util.logging.Logger;
 import org.jetbrains.annotations.NotNullByDefault;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.Unmodifiable;
@@ -36,8 +38,10 @@ import java.nio.file.StandardCopyOption;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Properties;
 
 /// Manages launcher-selected Mindustry data archive saves.
@@ -147,12 +151,17 @@ public final class MindustryLaunchSaveService {
         Path runtimeDir = resolveLaunchDataDir(versionRoot, defaultDataDir,
                 archive.getFileName().toString());
         if (!isRuntimeCurrent(runtimeDir, archive)) {
+            // The rebuild re-extracts the archive over the runtime directory;
+            // capture the user's mod additions and disable flags first so a
+            // rebuild cannot silently discard launcher-side mod management.
+            @Nullable RuntimeModState preserved = captureRuntimeModState(runtimeDir);
             FileUtils.deleteDirectory(runtimeDir);
             Files.createDirectories(runtimeDir);
             new Unzipper(archive, runtimeDir)
                     .setEncoding(StandardCharsets.UTF_8)
                     .setReplaceExistentFile(true)
                     .unzip();
+            applyRuntimeModState(runtimeDir, preserved);
             removeLegacyAutoLoadFiles(runtimeDir);
             writeMarker(runtimeDir, archive);
         }
@@ -180,6 +189,106 @@ public final class MindustryLaunchSaveService {
             return runtimeDir(versionRoot, simpleName);
         } catch (InvalidPathException ex) {
             return defaultDataDir;
+        }
+    }
+
+    /// User-owned state of a runtime directory captured before a rebuild.
+    ///
+    /// @param modsBackup temporary copy of the runtime's mods folder, or `null` when it did not exist
+    /// @param enabledFlags `mod-*-enabled` settings values from the runtime
+    private record RuntimeModState(@Nullable Path modsBackup, LinkedHashMap<String, Object> enabledFlags) {
+    }
+
+    /// Captures the runtime copy's mods folder and mod settings flags so a
+    /// re-extraction cannot silently discard them.
+    ///
+    /// @param runtimeDir runtime directory about to be rebuilt
+    /// @return captured state, or `null` when there is nothing to preserve
+    private static @Nullable RuntimeModState captureRuntimeModState(Path runtimeDir) throws IOException {
+        Path modsDir = runtimeDir.resolve("mods");
+        @Nullable Path backupDir = null;
+        if (Files.isDirectory(modsDir)) {
+            backupDir = Files.createTempDirectory("xenon-runtime-mods-");
+            FileUtils.copyDirectory(modsDir, backupDir);
+        }
+        LinkedHashMap<String, Object> flags = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> entry : MindustrySettingsBin.readValues(runtimeDir).entrySet()) {
+            if (entry.getKey().startsWith("mod-") && entry.getKey().endsWith("-enabled")) {
+                flags.put(entry.getKey(), entry.getValue());
+            }
+        }
+        if (backupDir == null && flags.isEmpty()) {
+            return null;
+        }
+        return new RuntimeModState(backupDir, flags);
+    }
+
+    /// Replays a captured runtime mod state onto a freshly extracted runtime.
+    ///
+    /// <p>Best-effort: a file that cannot be replayed must not abort a launch.</p>
+    ///
+    /// @param runtimeDir freshly extracted runtime directory
+    /// @param state captured state, or `null` when nothing was captured
+    private static void applyRuntimeModState(Path runtimeDir, @Nullable RuntimeModState state) {
+        if (state == null) {
+            return;
+        }
+        try {
+            if (state.modsBackup() != null) {
+                Path modsDir = runtimeDir.resolve("mods");
+                Files.createDirectories(modsDir);
+                try (DirectoryStream<Path> stream = Files.newDirectoryStream(state.modsBackup())) {
+                    for (Path file : stream) {
+                        if (!Files.isRegularFile(file)) {
+                            continue;
+                        }
+                        try {
+                            applyPreservedModFile(modsDir, file);
+                        } catch (IOException ex) {
+                            Logger.LOG.warning("Failed to preserve runtime mod " + file.getFileName()
+                                    + ": " + ex.getMessage());
+                        }
+                    }
+                }
+            }
+            if (!state.enabledFlags().isEmpty()) {
+                try {
+                    MindustrySettingsBin.putValuesOrThrow(runtimeDir, state.enabledFlags());
+                } catch (IOException ex) {
+                    Logger.LOG.warning("Failed to preserve runtime mod flags: " + ex.getMessage());
+                }
+            }
+        } catch (IOException ex) {
+            Logger.LOG.warning("Failed to replay runtime mod state: " + ex.getMessage());
+        } finally {
+            if (state.modsBackup() != null) {
+                FileUtils.deleteDirectoryQuietly(state.modsBackup());
+            }
+        }
+    }
+
+    /// Restores one preserved archive: re-applies its disabled state, or
+    /// copies a user-added archive the new extraction does not provide.
+    ///
+    /// @param modsDir freshly extracted mods folder
+    /// @param preserved preserved archive file
+    /// @throws IOException when the file cannot be copied or renamed
+    private static void applyPreservedModFile(Path modsDir, Path preserved) throws IOException {
+        String fileName = preserved.getFileName().toString();
+        boolean disabled = fileName.toLowerCase(Locale.ROOT).endsWith(".disabled");
+        String base = disabled
+                ? fileName.substring(0, fileName.length() - ".disabled".length())
+                : fileName;
+        Path enabledTarget = modsDir.resolve(base);
+        Path disabledTarget = modsDir.resolve(base + ".disabled");
+        if (disabled) {
+            if (Files.isRegularFile(enabledTarget)) {
+                Files.move(enabledTarget, disabledTarget, StandardCopyOption.REPLACE_EXISTING);
+            } else if (!Files.exists(disabledTarget)) {
+                Files.copy(preserved, disabledTarget, StandardCopyOption.COPY_ATTRIBUTES);
+            }
+        } else if (!Files.exists(enabledTarget) && !Files.exists(disabledTarget)) {
+            Files.copy(preserved, enabledTarget, StandardCopyOption.COPY_ATTRIBUTES);
         }
     }
 

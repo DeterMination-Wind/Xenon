@@ -269,61 +269,130 @@ public final class MindustryModManager {
     }
 
     /** Re-enable a disabled mod by stripping the {@code .disabled} suffix. */
-    public void enable(MindustryLocalMod mod) throws IOException {
-        renameArchive(mod, true);
-        writeEnabledSetting(mod, true);
+    public synchronized void enable(MindustryLocalMod mod) throws IOException {
+        applyOrThrow(List.of(mod), true);
     }
 
     /** Disable a mod by appending the {@code .disabled} suffix. */
-    public void disable(MindustryLocalMod mod) throws IOException {
-        renameArchive(mod, false);
-        writeEnabledSetting(mod, false);
+    public synchronized void disable(MindustryLocalMod mod) throws IOException {
+        applyOrThrow(List.of(mod), false);
     }
 
     /**
      * Enables or disables several mods at once.
      *
-     * <p>Archive suffixes are renamed one by one (a failure only removes that
-     * mod from the batch), then every affected {@code mod-<name>-enabled} flag
-     * is persisted with a single {@code settings.bin} write. Without this
-     * coalescing, a batch of N mods would rewrite the file N times.</p>
+     * <p>The operation is transactional per phase:</p>
+     * <ol>
+     *   <li>every {@code mod-<name>-enabled} flag is persisted with one
+     *       coalesced, atomic {@code settings.bin} write before any file is
+     *       touched, so a settings failure leaves the mods folder unchanged;</li>
+     *   <li>archive suffixes are renamed one by one (a failure only removes
+     *       that mod from the batch);</li>
+     *   <li>the flags of mods whose rename failed are restored to their
+     *       previous values.</li>
+     * </ol>
      *
      * @param mods mods to toggle
      * @param enabled desired state
      * @return applied mods and per-file failure reasons; never {@code null}
      */
-    public BatchResult setEnabled(List<MindustryLocalMod> mods, boolean enabled) {
-        List<MindustryLocalMod> renamed = new ArrayList<>();
-        Map<String, String> failures = new LinkedHashMap<>();
-        LinkedHashMap<String, Object> pendingSettings = new LinkedHashMap<>();
+    public synchronized BatchResult setEnabled(List<MindustryLocalMod> mods, boolean enabled) {
+        return applyState(mods, enabled);
+    }
+
+    /// Runs one single-mod state change and rethrows its failure reason.
+    private void applyOrThrow(List<MindustryLocalMod> mods, boolean enabled) throws IOException {
+        BatchResult result = applyState(mods, enabled);
+        if (!result.failures().isEmpty()) {
+            throw new IOException(result.failures().values().iterator().next());
+        }
+    }
+
+    /// Transactional body shared by the single and batch toggle paths.
+    private BatchResult applyState(List<MindustryLocalMod> mods, boolean enabled) {
+        List<MindustryLocalMod> targets = new ArrayList<>();
         for (MindustryLocalMod mod : mods) {
-            if (mod == null) continue;
-            try {
-                renameArchive(mod, enabled);
-                String key = enabledSettingKey(mod);
-                if (key != null) pendingSettings.put(key, enabled);
-                renamed.add(mod);
-            } catch (IOException | RuntimeException ex) {
-                failures.put(mod.getFile().getFileName().toString(), messageOf(ex));
+            if (mod != null) {
+                targets.add(mod);
             }
         }
+        if (targets.isEmpty()) {
+            return new BatchResult(List.of(), Map.of());
+        }
+
+        Map<String, String> failures = new LinkedHashMap<>();
+
+        // Phase 1 — persist every game-side enabled flag in one write. Writing
+        // settings first keeps a settings failure from leaving renamed files
+        // behind, because no file has been touched yet.
+        LinkedHashMap<String, Object> pendingSettings = new LinkedHashMap<>();
+        Map<String, Object> previousSettings = new LinkedHashMap<>();
+        Map<String, String> keyOwners = new LinkedHashMap<>();
+        for (MindustryLocalMod mod : targets) {
+            String key = enabledSettingKey(mod);
+            if (key == null) {
+                continue;
+            }
+            pendingSettings.put(key, enabled);
+            keyOwners.put(key, mod.getFile().getFileName().toString());
+        }
+        boolean settingsPhaseFailed = false;
         if (!pendingSettings.isEmpty()) {
             try {
+                LinkedHashMap<String, Object> current = MindustrySettingsBin.readForUpdate(dataDir);
+                for (String key : pendingSettings.keySet()) {
+                    Object previous = current.get(key);
+                    // A missing key means "enabled" for the game; restoring it
+                    // as an explicit true keeps the effective state identical.
+                    previousSettings.put(key, previous instanceof Boolean ? previous : Boolean.TRUE);
+                }
                 settingsWriter.write(dataDir, pendingSettings);
             } catch (IOException | RuntimeException ex) {
-                // The archive suffix changed but the game-side flag did not;
-                // report those mods as failed instead of claiming success.
+                settingsPhaseFailed = true;
                 String message = messageOf(ex);
-                for (MindustryLocalMod mod : renamed) {
-                    String key = enabledSettingKey(mod);
-                    if (key != null) {
-                        failures.putIfAbsent(mod.getFile().getFileName().toString(), message);
-                    }
+                for (String key : pendingSettings.keySet()) {
+                    failures.put(keyOwners.get(key), message);
                 }
-                renamed.removeIf(mod -> failures.containsKey(mod.getFile().getFileName().toString()));
             }
         }
-        return new BatchResult(List.copyOf(renamed), Collections.unmodifiableMap(failures));
+
+        // Phase 2 — rename archives one by one; only per-file failures are
+        // reported, the rest of the batch still applies.
+        List<MindustryLocalMod> applied = new ArrayList<>();
+        Map<String, Object> restoreSettings = new LinkedHashMap<>();
+        for (MindustryLocalMod mod : targets) {
+            String fileName = mod.getFile().getFileName().toString();
+            if (settingsPhaseFailed && failures.containsKey(fileName)) {
+                // The game-side flag could not be written; a suffix rename
+                // alone would leave the two signals inconsistent.
+                continue;
+            }
+            try {
+                renameArchive(mod, enabled);
+                applied.add(mod);
+            } catch (IOException | RuntimeException ex) {
+                failures.put(fileName, messageOf(ex));
+                String key = enabledSettingKey(mod);
+                if (key != null && previousSettings.containsKey(key)) {
+                    restoreSettings.put(key, previousSettings.get(key));
+                }
+            }
+        }
+
+        // Phase 3 — undo the flags of mods whose rename failed.
+        if (!restoreSettings.isEmpty()) {
+            try {
+                settingsWriter.write(dataDir, restoreSettings);
+            } catch (IOException | RuntimeException ex) {
+                String message = messageOf(ex);
+                for (String key : restoreSettings.keySet()) {
+                    String owner = keyOwners.get(key);
+                    failures.computeIfPresent(owner,
+                            (file, reason) -> reason + " (settings restore failed: " + message + ")");
+                }
+            }
+        }
+        return new BatchResult(List.copyOf(applied), Collections.unmodifiableMap(failures));
     }
 
     /**
@@ -332,7 +401,7 @@ public final class MindustryModManager {
      * @param mods mods to remove
      * @return deleted mods and per-file failure reasons; never {@code null}
      */
-    public BatchResult deleteAll(List<MindustryLocalMod> mods) {
+    public synchronized BatchResult deleteAll(List<MindustryLocalMod> mods) {
         List<MindustryLocalMod> applied = new ArrayList<>();
         Map<String, String> failures = new LinkedHashMap<>();
         for (MindustryLocalMod mod : mods) {
@@ -348,7 +417,7 @@ public final class MindustryModManager {
     }
 
     /** Remove the underlying archive, preferring the platform trash. */
-    public void delete(MindustryLocalMod mod) throws IOException {
+    public synchronized void delete(MindustryLocalMod mod) throws IOException {
         FileUtils.deleteSafely(mod.getFile());
     }
 
@@ -358,7 +427,7 @@ public final class MindustryModManager {
      * file name; existing mods with that name are overwritten and older
      * archives of the same mod are removed.
      */
-    public InstallResult install(Path zipOrJar) throws IOException {
+    public synchronized InstallResult install(Path zipOrJar) throws IOException {
         Objects.requireNonNull(zipOrJar, "zipOrJar");
         return install(zipOrJar, zipOrJar.getFileName().toString());
     }
@@ -383,7 +452,7 @@ public final class MindustryModManager {
      * @return the installed file together with the archives removed as part of the install
      * @throws IOException if the source cannot be read or the copy fails
      */
-    public InstallResult install(Path zipOrJar, String preferredFileName) throws IOException {
+    public synchronized InstallResult install(Path zipOrJar, String preferredFileName) throws IOException {
         Objects.requireNonNull(zipOrJar, "zipOrJar");
         if (!Files.isRegularFile(zipOrJar)) {
             throw new IOException("Not a regular file: " + zipOrJar);
@@ -634,14 +703,6 @@ public final class MindustryModManager {
             name = name.substring(0, name.length() - ".disabled".length());
         }
         return name.endsWith(".jar") || name.endsWith(".zip");
-    }
-
-    private void writeEnabledSetting(MindustryLocalMod mod, boolean enabled) throws IOException {
-        String key = enabledSettingKey(mod);
-        if (key == null) {
-            return;
-        }
-        settingsWriter.write(dataDir, Collections.singletonMap(key, enabled));
     }
 
     /// Renames the archive so its `.disabled` suffix reflects `enabled`.

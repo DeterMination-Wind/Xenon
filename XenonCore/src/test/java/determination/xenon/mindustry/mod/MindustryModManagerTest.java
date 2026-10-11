@@ -502,6 +502,90 @@ public final class MindustryModManagerTest {
                 () -> new MindustryModManager(modsDir).install(bundle, "readme-bundle.zip"));
     }
 
+    /// A settings write failure leaves every archive untouched.
+    @Test
+    public void settingsWriteFailureLeavesArchivesUntouched(@TempDir Path tempDir) throws IOException {
+        Path modsDir = tempDir.resolve("mods");
+        writeMod(modsDir.resolve("alpha.zip"), "alpha", "Alpha");
+        writeMod(modsDir.resolve("beta.zip"), "beta", "Beta");
+        MindustryModManager manager = new MindustryModManager(modsDir, tempDir, (dataDir, values) -> {
+            throw new IOException("settings locked");
+        });
+
+        MindustryModManager.BatchResult result = manager.setEnabled(manager.scan(), false);
+
+        assertTrue(result.applied().isEmpty());
+        assertEquals(2, result.failures().size());
+        assertTrue(Files.isRegularFile(modsDir.resolve("alpha.zip")));
+        assertTrue(Files.isRegularFile(modsDir.resolve("beta.zip")));
+        assertFalse(Files.exists(modsDir.resolve("alpha.zip.disabled")));
+        assertFalse(Files.exists(tempDir.resolve(MindustrySettingsBin.FILE_NAME)));
+    }
+
+    /// A rename failure restores the mod's previous settings flag.
+    @Test
+    public void renameFailureRestoresPreviousSettingsFlag(@TempDir Path tempDir) throws IOException {
+        Path modsDir = tempDir.resolve("mods");
+        writeMod(modsDir.resolve("alpha.zip"), "alpha", "Alpha");
+        MindustryModManager manager = new MindustryModManager(modsDir);
+        List<MindustryLocalMod> mods = manager.scan();
+        Files.delete(alphaFile(mods));
+
+        MindustryModManager.BatchResult result = manager.setEnabled(mods, false);
+
+        assertEquals(1, result.failures().size());
+        // The failed rename must not leave the game-side flag flipped.
+        assertTrue(MindustrySettingsBin.getBool(tempDir, "mod-alpha-enabled", true));
+        assertFalse(Files.exists(modsDir.resolve("alpha.zip.disabled")));
+    }
+
+    /// The settings key follows the descriptor the game itself reads.
+    @Test
+    public void settingsKeyFollowsTheGameDescriptor(@TempDir Path tempDir) throws IOException {
+        Path modsDir = tempDir.resolve("mods");
+        writeArchive(modsDir.resolve("dual.zip"),
+                "mod.json", """
+                        {
+                          "name": "alpha",
+                          "displayName": "Alpha"
+                        }
+                        """,
+                "mod.hjson", """
+                        name: display-only
+                        displayName: Display Only
+                        """);
+        MindustryModManager manager = new MindustryModManager(modsDir);
+
+        MindustryLocalMod mod = find(manager.scan(), "dual.zip");
+
+        assertEquals("alpha", mod.getInternalName());
+        manager.disable(mod);
+        assertFalse(MindustrySettingsBin.getBool(tempDir, "mod-alpha-enabled", true));
+        assertTrue(MindustrySettingsBin.getBool(tempDir, "mod-display-only-enabled", true));
+    }
+
+    /// A mod the game would skip (malformed game descriptor) gets no settings key.
+    @Test
+    public void gameSkippedModUsesSuffixOnly(@TempDir Path tempDir) throws IOException {
+        Path modsDir = tempDir.resolve("mods");
+        writeArchive(modsDir.resolve("broken-game-descriptor.zip"),
+                "mod.json", "{ name: broken",
+                "mod.hjson", """
+                        name: fallback
+                        displayName: Fallback
+                        """);
+        MindustryModManager manager = new MindustryModManager(modsDir);
+
+        MindustryLocalMod mod = find(manager.scan(), "broken-game-descriptor.zip");
+        assertEquals("", mod.getInternalName());
+
+        manager.disable(mod);
+
+        assertTrue(Files.isRegularFile(modsDir.resolve("broken-game-descriptor.zip.disabled")));
+        // No key may be written for a name the game would never load.
+        assertTrue(MindustrySettingsBin.getBool(tempDir, "mod-fallback-enabled", true));
+    }
+
     private static Path alphaFile(List<MindustryLocalMod> mods) {
         return mods.stream()
                 .filter(mod -> mod.getFile().getFileName().toString().equals("alpha.zip"))

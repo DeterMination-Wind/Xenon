@@ -83,7 +83,10 @@ public final class MindustryVersionPage extends DecoratorAnimatedPage implements
         this.launchDataDir = MindustryLaunchSaveService.resolveLaunchDataDir(
                 versionRoot, dataDir, version.getLaunchSaveFile());
 
-        modTab.setNodeSupplier(() -> new MindustryModListPane(dataDir, version, versionRoot));
+        // The mod tab follows the effective launch directory: with a save
+        // archive selected the game reads mods and settings from the runtime
+        // copy, so managing the base `.data` directory would be a silent no-op.
+        modTab.setNodeSupplier(() -> new MindustryModListPane(launchDataDir, version, versionRoot));
         saveTab.setNodeSupplier(() -> new MindustrySaveListPane(repo, version, versionRoot));
         schematicTab.setNodeSupplier(() -> new MindustrySchematicListPane(dataDir));
         crashTab.setNodeSupplier(() -> new MindustryCrashListPane(launchDataDir, versionRoot, version.getVariant()));

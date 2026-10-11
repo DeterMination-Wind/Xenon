@@ -52,21 +52,31 @@ public final class MindustryModParser {
             "mod.hjson", "mod.json", "plugin.hjson", "plugin.json"
     };
 
+    /// Descriptor names in the order Mindustry itself checks them.
+    private static final String @Unmodifiable [] GAME_CANDIDATES = {
+            "mod.json", "mod.hjson", "plugin.json", "plugin.hjson"
+    };
+
     /// Prevents instantiation of this utility class.
     private MindustryModParser() {}
 
     /// Parses one mod archive, trying all supported descriptor candidates.
+    ///
+    /// <p>The returned entry also carries the internal name Mindustry itself
+    /// would derive (from the descriptor the game reads first), so settings
+    /// keys written for it are the keys the game looks up.</p>
     ///
     /// @throws MindustryModParseException if no descriptor exists or every
     ///     descriptor candidate is malformed
     /// @throws IOException if the archive cannot be read
     public static MindustryLocalMod parse(Path file) throws IOException {
         try (ZipFile zip = new ZipFile(file.toFile())) {
+            String gameInternalName = resolveGameInternalName(file, zip);
             @Nullable MindustryModParseException firstFailure = null;
             for (ZipEntry entry : findDescriptorEntries(zip)) {
                 try (InputStream in = zip.getInputStream(entry)) {
                     String raw = new String(in.readAllBytes(), StandardCharsets.UTF_8);
-                    return build(file, parseDescriptor(file, entry.getName(), raw));
+                    return build(file, parseDescriptor(file, entry.getName(), raw), gameInternalName);
                 } catch (MindustryModParseException ex) {
                     if (firstFailure == null) {
                         firstFailure = ex;
@@ -113,6 +123,57 @@ public final class MindustryModParser {
             return List.of();
         }
         return List.copyOf(findDescriptorEntries(zip, wrapper + "/"));
+    }
+
+    /// Resolves the internal name Mindustry itself derives for this archive.
+    ///
+    /// <p>The game reads the first existing descriptor in its own priority
+    /// order and skips the mod when that descriptor is malformed. A name is
+    /// only returned when that exact descriptor parses, so launcher-written
+    /// settings keys always match what the game looks up.</p>
+    ///
+    /// @param file archive being parsed, used for diagnostics
+    /// @param zip open archive
+    /// @return the game-normalized internal name, or an empty string when the
+    ///     game would not load this archive or derive no name
+    private static String resolveGameInternalName(Path file, ZipFile zip) {
+        @Nullable ZipEntry entry = findGameDescriptorEntry(zip);
+        if (entry == null) {
+            return "";
+        }
+        try (InputStream in = zip.getInputStream(entry)) {
+            String raw = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+            JsonObject obj = parseDescriptor(file, entry.getName(), raw);
+            return MindustryGameModNaming.keyName(string(obj, "name"));
+        } catch (IOException | RuntimeException ex) {
+            Logger.LOG.log(System.Logger.Level.DEBUG,
+                    "Game-side descriptor in " + file
+                            + " does not parse; the game would skip it, so no settings key is used",
+                    ex);
+            return "";
+        }
+    }
+
+    /// Finds the descriptor Mindustry itself reads: the first existing entry
+    /// in game priority order, at the root or inside the single wrapper.
+    private static @Nullable ZipEntry findGameDescriptorEntry(ZipFile zip) {
+        @Nullable ZipEntry root = firstGameDescriptor(zip, "");
+        if (root != null) {
+            return root;
+        }
+        @Nullable String wrapper = findCommonTopLevelDirectory(zip);
+        return wrapper == null ? null : firstGameDescriptor(zip, wrapper + "/");
+    }
+
+    /// Returns the first existing descriptor at one archive path prefix in game order.
+    private static @Nullable ZipEntry firstGameDescriptor(ZipFile zip, String prefix) {
+        for (String candidate : GAME_CANDIDATES) {
+            ZipEntry entry = zip.getEntry(prefix + candidate);
+            if (entry != null && !entry.isDirectory()) {
+                return entry;
+            }
+        }
+        return null;
     }
 
     /// Finds descriptors at one exact archive path prefix in candidate priority order.
@@ -227,7 +288,11 @@ public final class MindustryModParser {
     }
 
     /// Builds the launcher metadata model from a parsed descriptor object.
-    private static MindustryLocalMod build(Path file, JsonObject obj) {
+    ///
+    /// @param file archive the descriptor belongs to
+    /// @param obj parsed descriptor object
+    /// @param gameInternalName game-faithful internal name for settings keys
+    private static MindustryLocalMod build(Path file, JsonObject obj, String gameInternalName) {
         @Nullable String name = string(obj, "name");
         @Nullable String displayName = string(obj, "displayName");
         @Nullable String author = string(obj, "author");
@@ -238,7 +303,7 @@ public final class MindustryModParser {
         boolean java = booleanValue(obj, "java");
         List<String> dependencies = stringList(obj, "dependencies");
         return new MindustryLocalMod(file, name, displayName, author, version,
-                description, main, minGameVersion, java, dependencies);
+                description, main, minGameVersion, java, dependencies, gameInternalName);
     }
 
     /// Reads the optional minimum game build, accepting numeric and string values.

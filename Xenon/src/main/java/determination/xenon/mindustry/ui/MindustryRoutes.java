@@ -27,8 +27,10 @@ import determination.xenon.mindustry.MindustryLogFinder;
 import determination.xenon.mindustry.MindustryVersion;
 import determination.xenon.mindustry.XenonGameRepository;
 import determination.xenon.mindustry.XenonLauncher;
+import determination.xenon.mindustry.mod.MindustryCrashRecovery;
 import determination.xenon.mindustry.modpack.XenonModpackPacker;
 import determination.xenon.mindustry.playtime.MindustryPlaytimeStore;
+import determination.xenon.mindustry.save.MindustryLaunchSaveService;
 import determination.xenon.setting.ConfigHolder;
 import determination.xenon.setting.Profile;
 import determination.xenon.setting.Profiles;
@@ -48,6 +50,7 @@ import org.jetbrains.annotations.NotNullByDefault;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -396,12 +399,81 @@ public final class MindustryRoutes {
             try {
                 XenonGameRepository repo = MindustryImportFlow.repositoryForVersion(version);
                 Path versionRoot = repo.getVersionRoot(version);
-                LaunchOptions opts = MindustryLaunchService.buildLaunchOptions(repo, version,
-                        determination.xenon.mindustry.CurrentPlayerProfile.current());
-                MindustryClientRuntimeRegistry.shared().launch(id, opts,
-                        event -> onClientEvent(versionRoot, event),
-                        line -> LOG.info("[mindustry] " + line),
-                        line -> LOG.warning("[mindustry] " + line));
+                Path effectiveDataDir = MindustryLaunchSaveService.resolveLaunchDataDir(versionRoot,
+                        version.resolveDataDir(versionRoot), version.getLaunchSaveFile());
+                if (MindustryCrashRecovery.pending(effectiveDataDir)) {
+                    // The previous run died before mod init completed; let the
+                    // user decide between launcher-side safe mode and the raw
+                    // configuration instead of letting the game silently
+                    // disable every mod on startup.
+                    Platform.runLater(() -> confirmCrashRecoveryLaunch(repo, version, versionRoot,
+                            effectiveDataDir));
+                    return;
+                }
+                spawnClient(repo, version, versionRoot);
+            } catch (Throwable ex) {
+                LOG.warning("Mindustry launch failed", ex);
+                Platform.runLater(() -> Controllers.dialog(
+                        i18n("xenon.mindustry.launch.failed") + "\n\n" + ex.getMessage(),
+                        i18n("message.error"), MessageDialogPane.MessageType.ERROR));
+            }
+        });
+    }
+
+    /// Builds launch options and spawns the client process.
+    private static void spawnClient(XenonGameRepository repo, MindustryVersion version,
+                                    Path versionRoot) throws Exception {
+        String id = version.getId();
+        LaunchOptions opts = MindustryLaunchService.buildLaunchOptions(repo, version,
+                determination.xenon.mindustry.CurrentPlayerProfile.current());
+        MindustryClientRuntimeRegistry.shared().launch(id, opts,
+                event -> onClientEvent(versionRoot, event),
+                line -> LOG.info("[mindustry] " + line),
+                line -> LOG.warning("[mindustry] " + line));
+    }
+
+    /// Offers safe mode or a raw launch after an interrupted previous run.
+    private static void confirmCrashRecoveryLaunch(XenonGameRepository repo, MindustryVersion version,
+                                                   Path versionRoot, Path effectiveDataDir) {
+        Controllers.dialog(new MessageDialogPane.Builder(
+                i18n("xenon.mindustry.modlist.crash.message"),
+                i18n("xenon.mindustry.modlist.crash.title"),
+                MessageDialogPane.MessageType.WARNING)
+                .addAction(i18n("xenon.mindustry.modlist.crash.safe"),
+                        () -> startSafeModeLaunch(repo, version, versionRoot, effectiveDataDir))
+                .addAction(i18n("xenon.mindustry.modlist.crash.asis"),
+                        () -> startRawLaunch(version, versionRoot, effectiveDataDir))
+                .addCancel(null)
+                .build());
+    }
+
+    /// Snapshots and disables every mod, then launches, so the game's own
+    /// recovery never runs and the launcher keeps owning the mod state.
+    private static void startSafeModeLaunch(XenonGameRepository repo, MindustryVersion version,
+                                            Path versionRoot, Path effectiveDataDir) {
+        Schedulers.io().execute(() -> {
+            try {
+                MindustryCrashRecovery.takeOver(effectiveDataDir);
+                spawnClient(repo, version, versionRoot);
+                Platform.runLater(() -> Controllers.showToast(
+                        i18n("xenon.mindustry.modlist.crash.safe.done")));
+            } catch (Throwable ex) {
+                LOG.warning("Mindustry crash-recovery safe mode failed", ex);
+                Platform.runLater(() -> Controllers.dialog(
+                        i18n("xenon.mindustry.modlist.crash.safe.failed") + "\n\n" + ex.getMessage(),
+                        i18n("message.error"), MessageDialogPane.MessageType.ERROR));
+            }
+        });
+    }
+
+    /// Launches with the current configuration after clearing the failed-launch
+    /// marker, so the game does not mass-disable mods behind the user's back.
+    private static void startRawLaunch(MindustryVersion version, Path versionRoot,
+                                       Path effectiveDataDir) {
+        Schedulers.io().execute(() -> {
+            try {
+                Files.deleteIfExists(effectiveDataDir.resolve(MindustryCrashRecovery.LAUNCH_MARKER_NAME));
+                spawnClient(MindustryImportFlow.repositoryForVersion(version), version, versionRoot);
             } catch (Throwable ex) {
                 LOG.warning("Mindustry launch failed", ex);
                 Platform.runLater(() -> Controllers.dialog(

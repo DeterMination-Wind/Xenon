@@ -26,6 +26,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.zip.DeflaterOutputStream;
@@ -153,6 +154,39 @@ public final class MindustrySettingsBinTest {
         LinkedHashMap<String, Object> backup = MindustrySettingsBin.readFileOrThrow(
                 tempDir.resolve(MindustrySettingsBin.BACKUP_NAME));
         assertEquals(values, backup);
+    }
+
+    /// A corrupt primary is recovered from settings_backup.bin, like the game does.
+    @Test
+    public void recoversCorruptPrimaryFromBackup(@TempDir Path tempDir) throws IOException {
+        MindustrySettingsBin.putValuesOrThrow(tempDir, Map.of("name", "Xenon"));
+        Files.copy(tempDir.resolve(MindustrySettingsBin.FILE_NAME),
+                tempDir.resolve(MindustrySettingsBin.BACKUP_NAME),
+                StandardCopyOption.REPLACE_EXISTING);
+        Files.writeString(tempDir.resolve(MindustrySettingsBin.FILE_NAME), "not a settings file");
+
+        assertEquals("Xenon", MindustrySettingsBin.readValues(tempDir).get("name"));
+
+        MindustrySettingsBin.putValuesOrThrow(tempDir, Map.of("count", 2));
+
+        LinkedHashMap<String, Object> values = MindustrySettingsBin.read(tempDir).values();
+        assertEquals("Xenon", values.get("name"));
+        assertEquals(2, values.get("count"));
+    }
+
+    /// When the primary is missing, a valid backup still seeds the write.
+    @Test
+    public void recoversMissingPrimaryFromBackup(@TempDir Path tempDir) throws IOException {
+        MindustrySettingsBin.putValuesOrThrow(tempDir, Map.of("name", "Xenon"));
+        Files.move(tempDir.resolve(MindustrySettingsBin.FILE_NAME),
+                tempDir.resolve(MindustrySettingsBin.BACKUP_NAME),
+                StandardCopyOption.REPLACE_EXISTING);
+
+        MindustrySettingsBin.putValuesOrThrow(tempDir, Map.of("count", 2));
+
+        LinkedHashMap<String, Object> values = MindustrySettingsBin.read(tempDir).values();
+        assertEquals("Xenon", values.get("name"));
+        assertEquals(2, values.get("count"));
     }
 
     private static void writeSettings(Path dataDir,

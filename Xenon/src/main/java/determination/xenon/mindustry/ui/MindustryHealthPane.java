@@ -20,6 +20,7 @@ package determination.xenon.mindustry.ui;
 import com.jfoenix.controls.JFXButton;
 import determination.xenon.mindustry.MindustryMemoryPolicy;
 import determination.xenon.mindustry.MindustryVersion;
+import determination.xenon.mindustry.mod.MindustryModStateAudit;
 import determination.xenon.mindustry.playtime.MindustryPlaytimeStore;
 import determination.xenon.mindustry.playtime.PlaytimeFormat;
 import determination.xenon.mindustry.playtime.PlaytimeSummary;
@@ -42,6 +43,7 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import org.jetbrains.annotations.NotNullByDefault;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
@@ -126,9 +128,12 @@ public final class MindustryHealthPane extends BorderPane {
                 PlaytimeSummary playtime = new MindustryPlaytimeStore(versionRoot).readSummary();
                 List<MindustryCompatibility.Issue> issues =
                         MindustryCompatibility.forInstance(version, versionRoot, dataDir);
+                List<MindustryModStateAudit.Mismatch> mismatches =
+                        MindustryModStateAudit.mismatches(dataDir);
+                List<String> folderMods = MindustryModStateAudit.folderMods(dataDir);
                 Platform.runLater(() -> {
                     if (generation == reloadGeneration) {
-                        populate(playtime, issues);
+                        populate(playtime, issues, mismatches, folderMods);
                     }
                 });
             } catch (RuntimeException ex) {
@@ -143,15 +148,84 @@ public final class MindustryHealthPane extends BorderPane {
     }
 
     /// Fills the row stack from a completed evaluation.
-    private void populate(PlaytimeSummary playtime, List<MindustryCompatibility.Issue> issues) {
+    private void populate(PlaytimeSummary playtime, List<MindustryCompatibility.Issue> issues,
+                          List<MindustryModStateAudit.Mismatch> mismatches,
+                          List<String> folderMods) {
         listBox.getChildren().clear();
         listBox.getChildren().add(infoItem());
         listBox.getChildren().add(memoryItem());
         listBox.getChildren().add(playtimeItem(playtime));
         appendCompatItems(issues);
-        status.setText(issues.isEmpty()
+        appendModStateItems(mismatches, folderMods);
+        status.setText(issues.isEmpty() && mismatches.isEmpty() && folderMods.isEmpty()
                 ? i18n("xenon.mindustry.health.clean")
-                : i18n("xenon.mindustry.health.count", issues.size()));
+                : i18n("xenon.mindustry.health.count", issues.size() + mismatches.size() + folderMods.size()));
+    }
+
+    /// Appends the mod-signal consistency section.
+    ///
+    /// Lists archives whose `.disabled` suffix and `mod-*-enabled` settings key
+    /// disagree - the usual aftermath of external renames or crash recovery -
+    /// with one-click repairs in either direction, plus folder mods that can
+    /// only be toggled through settings keys.
+    private void appendModStateItems(List<MindustryModStateAudit.Mismatch> mismatches,
+                                     List<String> folderMods) {
+        AdvancedListItem section = new AdvancedListItem();
+        section.setTitle(i18n("xenon.mindustry.health.section.modstate"));
+        listBox.getChildren().add(section);
+
+        if (mismatches.isEmpty() && folderMods.isEmpty()) {
+            AdvancedListItem clean = new AdvancedListItem();
+            clean.setTitle(i18n("xenon.mindustry.health.modstate.clean"));
+            listBox.getChildren().add(clean);
+            return;
+        }
+        for (MindustryModStateAudit.Mismatch mismatch : mismatches) {
+            AdvancedListItem item = new AdvancedListItem();
+            item.setWrapText(true);
+            item.setLeftIcon(SVG.WARNING);
+            item.setTitle(i18n("xenon.mindustry.health.modstate.mismatch",
+                    mismatch.fileName(),
+                    stateLabel(mismatch.suffixEnabled()),
+                    stateLabel(mismatch.keyEnabled())));
+            JFXButton takeFile = FXUtils.newRaisedButton(
+                    i18n("xenon.mindustry.health.modstate.sync.file"));
+            takeFile.setOnAction(e -> syncMismatch(mismatch, true));
+            JFXButton takeGame = FXUtils.newRaisedButton(
+                    i18n("xenon.mindustry.health.modstate.sync.game"));
+            takeGame.setOnAction(e -> syncMismatch(mismatch, false));
+            item.setRightGraphic(new HBox(4, takeFile, takeGame));
+            listBox.getChildren().add(item);
+        }
+        for (String folder : folderMods) {
+            AdvancedListItem item = new AdvancedListItem();
+            item.setWrapText(true);
+            item.setLeftIcon(SVG.INFO);
+            item.setTitle(i18n("xenon.mindustry.health.modstate.folder", folder));
+            listBox.getChildren().add(item);
+        }
+    }
+
+    /// Runs one mismatch repair and reloads the report.
+    private void syncMismatch(MindustryModStateAudit.Mismatch mismatch, boolean fileWins) {
+        Schedulers.io().execute(() -> {
+            try {
+                MindustryModStateAudit.sync(dataDir, mismatch, fileWins);
+                Platform.runLater(() -> {
+                    Controllers.showToast(i18n("xenon.mindustry.health.modstate.synced"));
+                    reload();
+                });
+            } catch (IOException | RuntimeException ex) {
+                Platform.runLater(() -> showError(ex));
+            }
+        });
+    }
+
+    /// Localized enabled/disabled label for the mismatch summary.
+    private static String stateLabel(boolean enabled) {
+        return i18n(enabled
+                ? "xenon.mindustry.health.modstate.enabled"
+                : "xenon.mindustry.health.modstate.disabled");
     }
 
     /// Builds the row describing the heap the next launch will request.

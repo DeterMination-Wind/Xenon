@@ -19,7 +19,9 @@ package determination.xenon.mindustry.ui;
 
 import com.jfoenix.controls.JFXButton;
 import com.jfoenix.controls.JFXTextField;
+import determination.xenon.mindustry.MindustryClientRuntimeRegistry;
 import determination.xenon.mindustry.MindustryVersion;
+import determination.xenon.mindustry.mod.MindustryCrashRecovery;
 import determination.xenon.mindustry.mod.MindustryLocalMod;
 import determination.xenon.mindustry.mod.MindustryModManager;
 import determination.xenon.task.Schedulers;
@@ -52,6 +54,8 @@ import java.io.IOException;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -95,6 +99,12 @@ public final class MindustryModListPane extends BorderPane {
 
     /// Files selected for batch operations, keyed by path so a rescan keeps the selection.
     private final Set<Path> selectedFiles = new LinkedHashSet<>();
+
+    /// Banner offering to restore the snapshot taken by crash-recovery safe mode.
+    private final HBox crashBanner = new HBox(8);
+    private final Label crashBannerLabel = new Label();
+    /// Snapshot shown by [#crashBanner]; `null` when there is nothing to restore.
+    private @Nullable Path crashSnapshot;
 
     /// Checkbox of each rendered row; updated in place when the selection changes.
     private final Map<Path, CheckBox> rowCheckBoxes = new LinkedHashMap<>();
@@ -158,7 +168,22 @@ public final class MindustryModListPane extends BorderPane {
         HBox batchToolbar = new HBox(8, selectAll, clearSelection, batchEnable, batchDisable, batchDelete);
         batchToolbar.setAlignment(Pos.CENTER_LEFT);
 
-        VBox header = new VBox(6, title, hint, toolbar, batchToolbar, search, status);
+        crashBanner.setAlignment(Pos.CENTER_LEFT);
+        crashBanner.getStyleClass().add("mod-crash-banner");
+        crashBanner.setPadding(new Insets(6, 8, 6, 8));
+        crashBanner.setVisible(false);
+        crashBanner.setManaged(false);
+        crashBannerLabel.setWrapText(true);
+        HBox.setHgrow(crashBannerLabel, Priority.ALWAYS);
+        JFXButton restoreSnapshot = FXUtils.newRaisedButton(
+                i18n("xenon.mindustry.modlist.crash.restore"));
+        restoreSnapshot.setOnAction(e -> restoreCrashSnapshot());
+        JFXButton discardSnapshot = FXUtils.newRaisedButton(
+                i18n("xenon.mindustry.modlist.crash.discard"));
+        discardSnapshot.setOnAction(e -> discardCrashSnapshot());
+        crashBanner.getChildren().setAll(crashBannerLabel, restoreSnapshot, discardSnapshot);
+
+        VBox header = new VBox(6, title, hint, crashBanner, toolbar, batchToolbar, search, status);
         header.setPadding(new Insets(0, 0, 8, 0));
         setTop(header);
 
@@ -187,11 +212,98 @@ public final class MindustryModListPane extends BorderPane {
             // scanAll keeps unreadable archives visible: a folder holding only
             // release zips or dev jars must not look like "no mods installed".
             List<MindustryLocalMod> mods = manager.scanAll();
+            @Nullable Path snapshot = MindustryCrashRecovery.latestSnapshot(dataDir);
             Platform.runLater(() -> {
+                updateCrashBanner(snapshot);
                 populate(mods);
                 Platform.runLater(() -> scroll.setVvalue(keepV));
             });
         });
+    }
+
+    /// Shows or hides the crash-recovery restore banner.
+    private void updateCrashBanner(@Nullable Path snapshot) {
+        crashSnapshot = snapshot;
+        if (snapshot == null) {
+            crashBanner.setVisible(false);
+            crashBanner.setManaged(false);
+            return;
+        }
+        crashBannerLabel.setText(i18n("xenon.mindustry.modlist.crash.banner",
+                formatSnapshotTime(snapshot)));
+        crashBanner.setVisible(true);
+        crashBanner.setManaged(true);
+    }
+
+    /// Formats a snapshot's capture time for the banner.
+    private static String formatSnapshotTime(Path snapshot) {
+        return DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+                .withZone(ZoneId.systemDefault())
+                .format(MindustryCrashRecovery.snapshotTime(snapshot));
+    }
+
+    /// Restores the crash-recovery snapshot: keys and archive suffixes both
+    /// return to the state captured before safe mode disabled everything.
+    private void restoreCrashSnapshot() {
+        if (refuseWhileRunning()) {
+            return;
+        }
+        Path snapshot = crashSnapshot;
+        if (snapshot == null) {
+            return;
+        }
+        Schedulers.io().execute(() -> {
+            try {
+                MindustryCrashRecovery.RestoreResult result =
+                        MindustryCrashRecovery.restore(dataDir, snapshot);
+                Platform.runLater(() -> {
+                    reload();
+                    Controllers.showToast(i18n("xenon.mindustry.modlist.crash.restore.done",
+                            result.enabled(), result.disabled()));
+                    if (!result.failures().isEmpty()) {
+                        reportFailures(i18n("xenon.mindustry.modlist.crash.restore.failed"),
+                                result.failures());
+                    }
+                });
+            } catch (IOException | RuntimeException ex) {
+                Platform.runLater(() -> {
+                    reload();
+                    showError(ex);
+                });
+            }
+        });
+    }
+
+    /// Discards the snapshot after the user decided not to restore it.
+    private void discardCrashSnapshot() {
+        if (refuseWhileRunning()) {
+            return;
+        }
+        Path snapshot = crashSnapshot;
+        if (snapshot == null) {
+            return;
+        }
+        Schedulers.io().execute(() -> {
+            try {
+                MindustryCrashRecovery.discard(snapshot);
+            } catch (IOException ex) {
+                Platform.runLater(() -> showError(ex));
+                return;
+            }
+            Platform.runLater(() -> {
+                reload();
+                Controllers.showToast(i18n("xenon.mindustry.modlist.crash.discarded"));
+            });
+        });
+    }
+
+    /// Reports per-file failures under one heading.
+    private void reportFailures(String heading, Map<String, String> failures) {
+        StringBuilder text = new StringBuilder(heading);
+        failures.forEach((file, reason) ->
+                text.append('\n').append("· ").append(file).append(": ").append(reason));
+        Controllers.dialog(text.toString(), i18n("message.warning"),
+                MessageDialogPane.MessageType.WARNING);
     }
 
     private void populate(List<MindustryLocalMod> mods) {
@@ -282,24 +394,47 @@ public final class MindustryModListPane extends BorderPane {
             JFXButton toggle = FXUtils.newRaisedButton(
                     mod.isEnabled() ? i18n("xenon.mindustry.modlist.disable") : i18n("xenon.mindustry.modlist.enable"));
             toggle.setOnAction(e -> {
-                try {
-                    if (mod.isEnabled()) manager.disable(mod); else manager.enable(mod);
-                    reload();
-                } catch (IOException ex) {
-                    showError(ex);
+                if (refuseWhileRunning()) {
+                    return;
                 }
+                Schedulers.io().execute(() -> {
+                    @Nullable String failure = null;
+                    try {
+                        if (mod.isEnabled()) manager.disable(mod); else manager.enable(mod);
+                    } catch (IOException | RuntimeException ex) {
+                        failure = messageOf(ex);
+                    }
+                    String finalFailure = failure;
+                    Platform.runLater(() -> {
+                        reload();
+                        if (finalFailure != null) {
+                            showError(new IOException(finalFailure));
+                        }
+                    });
+                });
             });
             actions.getChildren().add(toggle);
         }
         JFXButton delete = FXUtils.newRaisedButton(i18n("button.delete"));
         delete.setOnAction(e -> {
-            try {
-                manager.delete(mod);
-                selectedFiles.remove(mod.getFile());
-                reload();
-            } catch (IOException ex) {
-                showError(ex);
+            if (refuseWhileRunning()) {
+                return;
             }
+            Path file = mod.getFile();
+            Schedulers.io().execute(() -> {
+                try {
+                    manager.delete(mod);
+                    Platform.runLater(() -> {
+                        selectedFiles.remove(file);
+                        reload();
+                    });
+                } catch (IOException | RuntimeException ex) {
+                    Platform.runLater(() -> {
+                        reload();
+                        showError(ex);
+                    });
+                }
+            });
         });
         actions.getChildren().add(delete);
         item.setRightGraphic(actions);
@@ -415,6 +550,9 @@ public final class MindustryModListPane extends BorderPane {
 
     /// Enables or disables every selected mod with one settings.bin write.
     private void applyBatchEnabled(boolean enabled) {
+        if (refuseWhileRunning()) {
+            return;
+        }
         List<MindustryLocalMod> targets = selectedMods();
         if (targets.isEmpty()) {
             return;
@@ -435,6 +573,9 @@ public final class MindustryModListPane extends BorderPane {
 
     /// Deletes every selected mod, asking for confirmation first.
     private void confirmBatchDelete() {
+        if (refuseWhileRunning()) {
+            return;
+        }
         List<MindustryLocalMod> targets = selectedMods();
         if (targets.isEmpty()) {
             return;
@@ -533,6 +674,9 @@ public final class MindustryModListPane extends BorderPane {
     }
 
     private void chooseAndInstall() {
+        if (refuseWhileRunning()) {
+            return;
+        }
         FileChooser chooser = new FileChooser();
         chooser.setTitle(i18n("xenon.mindustry.modlist.install"));
         chooser.getExtensionFilters().add(
@@ -588,6 +732,9 @@ public final class MindustryModListPane extends BorderPane {
 
     /// Expands dropped files and folders, then installs every archive found.
     private void importDropped(List<File> dropped) {
+        if (refuseWhileRunning()) {
+            return;
+        }
         status.setText(i18n("xenon.mindustry.modlist.drop.importing"));
         Schedulers.io().execute(() -> {
             List<Path> archives = new ArrayList<>();
@@ -714,6 +861,26 @@ public final class MindustryModListPane extends BorderPane {
 
     private void showError(Throwable ex) {
         Controllers.dialog(messageOf(ex), i18n("message.error"), MessageDialogPane.MessageType.ERROR);
+    }
+
+    /// Whether a live client process owns this instance's data directory.
+    private boolean isInstanceRunning() {
+        return version != null
+                && MindustryClientRuntimeRegistry.shared().snapshot().containsKey(version.getId());
+    }
+
+    /// Refuses a mod mutation while the game is running, mirroring the
+    /// settings editor: the game rewrites settings.bin on exit from its own
+    /// in-memory snapshot, which would silently revert the change.
+    ///
+    /// @return whether the caller must abort
+    private boolean refuseWhileRunning() {
+        if (!isInstanceRunning()) {
+            return false;
+        }
+        Controllers.dialog(i18n("xenon.mindustry.modlist.running"),
+                i18n("message.warning"), MessageDialogPane.MessageType.WARNING);
+        return true;
     }
 
     /// Extracts a displayable message from a failed operation.

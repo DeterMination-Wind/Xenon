@@ -17,6 +17,7 @@
  */
 package determination.xenon.mindustry.save;
 
+import determination.xenon.mindustry.uuid.MindustrySettingsBin;
 import org.jetbrains.annotations.NotNullByDefault;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -26,6 +27,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -130,16 +132,67 @@ public final class MindustryLaunchSaveServiceTest {
                 versionRoot, defaultDataDir, "bad\0name.zip"));
     }
 
+    /// Rebuilding the runtime keeps user mod additions and disable flags.
+    @Test
+    public void preservesUserModStateAcrossRuntimeRebuild(@TempDir Path tempDir) throws IOException {
+        Path versionRoot = tempDir.resolve("version");
+        Path defaultDataDir = tempDir.resolve("default-data");
+        MindustrySaveArchive imported = MindustryLaunchSaveService.importArchive(
+                versionRoot, writeDataArchive(tempDir.resolve("存档.zip")));
+        Path runtime = MindustryLaunchSaveService.prepare(versionRoot, defaultDataDir,
+                imported.file().getFileName().toString());
+
+        // Simulate user mod management inside the extracted runtime copy.
+        Files.move(runtime.resolve("mods").resolve("example-mod.zip"),
+                runtime.resolve("mods").resolve("example-mod.zip.disabled"));
+        Files.writeString(runtime.resolve("mods").resolve("user-mod.zip"), "user",
+                StandardCharsets.UTF_8);
+        MindustrySettingsBin.putValuesOrThrow(runtime,
+                Map.of("mod-user-mod-enabled", Boolean.FALSE));
+
+        // Touch the archive so the runtime counts as stale and gets rebuilt.
+        writeDataArchive(imported.file());
+
+        Path rebuilt = MindustryLaunchSaveService.prepare(versionRoot, defaultDataDir,
+                imported.file().getFileName().toString());
+
+        assertEquals(runtime, rebuilt);
+        assertTrue(Files.isRegularFile(rebuilt.resolve("mods").resolve("example-mod.zip.disabled")));
+        assertFalse(Files.exists(rebuilt.resolve("mods").resolve("example-mod.zip")));
+        assertTrue(Files.isRegularFile(rebuilt.resolve("mods").resolve("user-mod.zip")));
+        assertFalse(MindustrySettingsBin.getBool(rebuilt, "mod-user-mod-enabled", true));
+    }
+
     /// Writes a representative Mindustry data archive used by launcher save selection.
     private static Path writeDataArchive(Path archive) throws IOException {
         try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(archive))) {
-            writeEntry(zip, "settings.bin", "settings");
+            writeBinaryEntry(zip, "settings.bin", validSettingsBytes());
             writeEntry(zip, "maps/attack.msav", "map");
             writeEntry(zip, "saves/sector.msav", "sector");
             writeEntry(zip, "saves/battle.mrep", "replay");
             writeEntry(zip, "mods/example-mod.zip", "mod");
         }
         return archive;
+    }
+
+    /// Builds a minimal valid Arc settings.bin payload for archive fixtures.
+    private static byte[] validSettingsBytes() throws IOException {
+        java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream();
+        try (java.io.DataOutputStream out = new java.io.DataOutputStream(buffer)) {
+            out.writeInt(1);
+            out.writeUTF("name");
+            out.writeByte(4);
+            out.writeUTF("archive");
+        }
+        return buffer.toByteArray();
+    }
+
+    /// Writes one binary zip entry for test data.
+    private static void writeBinaryEntry(ZipOutputStream zip, String name, byte[] content)
+            throws IOException {
+        zip.putNextEntry(new ZipEntry(name));
+        zip.write(content);
+        zip.closeEntry();
     }
 
     /// Writes one UTF-8 zip entry for test data.
