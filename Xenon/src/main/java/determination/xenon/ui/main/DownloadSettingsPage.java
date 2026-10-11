@@ -68,11 +68,18 @@ public class DownloadSettingsPage extends StackPane {
     /// wired to `downloadList` afterwards.
     private ComponentSublist githubSublist;
 
+    /// Page scroll container, kept as a field so the GitHub token field can be
+    /// revealed programmatically.
+    private final ScrollPane scrollPane;
+
+    /// GitHub token input; kept as a field so the rate-limit prompt can focus it.
+    private JFXTextField tokenField;
+
     public DownloadSettingsPage() {
         VBox content = new VBox(10);
         content.setPadding(new Insets(10));
         content.setFillWidth(true);
-        ScrollPane scrollPane = new ScrollPane(content);
+        scrollPane = new ScrollPane(content);
         FXUtils.smoothScrolling(scrollPane);
         scrollPane.setFitToWidth(true);
         getChildren().setAll(scrollPane);
@@ -183,7 +190,7 @@ public class DownloadSettingsPage extends StackPane {
 
                     HBox tokenRow = new HBox(8);
                     tokenRow.setAlignment(Pos.CENTER_LEFT);
-                    JFXTextField tokenField = new JFXTextField();
+                    tokenField = new JFXTextField();
                     FXUtils.setLimitWidth(tokenField, 320);
                     FXUtils.bindString(tokenField, config().githubTokenProperty());
                     tokenField.setPromptText(i18n("download.github.token.prompt"));
@@ -520,6 +527,29 @@ public class DownloadSettingsPage extends StackPane {
 
     /// Formatter for the rate-limit reset instant.
     private static final DateTimeFormatter RESET_FORMAT = DateTimeFormatter.ofPattern("HH:mm");
+
+    /// Scrolls the download settings to the GitHub token field and focuses it.
+    ///
+    /// Called by the rate-limit prompt right after the Download tab is shown.
+    /// The scroll is deferred to the next FX pulse because the lazy page has
+    /// no layout bounds yet when the tab node is first created; if the layout
+    /// is still unavailable the field is focused without scrolling.
+    public void revealGithubToken() {
+        Platform.runLater(() -> {
+            if (githubSublist != null && scrollPane.getContent() != null) {
+                double viewportHeight = scrollPane.getViewportBounds().getHeight();
+                double contentHeight = scrollPane.getContent().getBoundsInLocal().getHeight();
+                double scrollable = contentHeight - viewportHeight;
+                if (scrollable > 0.0D) {
+                    double offset = githubSublist.getBoundsInParent().getMinY();
+                    scrollPane.setVvalue(Math.max(0.0D, Math.min(1.0D, offset / scrollable)));
+                }
+            }
+            if (tokenField != null) {
+                tokenField.requestFocus();
+            }
+        });
+    }
 
     private void clearCacheDirectory() {
         String commonDirectory = Settings.instance().getCommonDirectory();

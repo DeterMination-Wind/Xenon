@@ -24,6 +24,7 @@ import com.google.gson.JsonSyntaxException;
 import com.google.gson.reflect.TypeToken;
 import determination.xenon.util.io.NetworkUtils;
 import determination.xenon.util.logging.Logger;
+import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -44,6 +45,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Properties;
 
@@ -394,13 +396,70 @@ public final class GitHubReleaseClient {
             return body;
         }
         // Treat 4xx/5xx as a mirror failure so the caller picks another one.
-        if (code == 403 && !GitHubAuth.hasToken()) {
-            // GitHub answers rate limits with 403 + a JSON body; the anonymous
-            // budget is only 60 requests per hour.
-            throw new IOException("GitHub HTTP 403 for " + mirroredUrl
-                    + " (likely the anonymous API rate limit; configure a GitHub token in Settings - Download)");
+        if (code == 403 || code == 429) {
+            String remainingHeader = resp.headers().firstValue("x-ratelimit-remaining").orElse(null);
+            String errorBody = resp.body();
+            boolean tokenConfigured = GitHubAuth.hasToken();
+            if (isRateLimited(code, remainingHeader, errorBody, tokenConfigured)) {
+                throw new GitHubRateLimitException("GitHub rate limit reached for " + mirroredUrl,
+                        tokenConfigured, parseRemaining(remainingHeader),
+                        parseResetAt(resp.headers().firstValue("x-ratelimit-reset").orElse(null)));
+            }
         }
         throw new IOException("GitHub HTTP " + code + " for " + mirroredUrl);
+    }
+
+    /// Classifies a GitHub API error response as a rate-limit rejection.
+    ///
+    /// A `429` is always a rate limit; a `403` counts when the remaining quota
+    /// header is `0`, when the body mentions a rate limit, or when the request
+    /// was anonymous (GitHub's hourly anonymous budget is tiny, and mirror
+    /// hosts also reject token-less callers with `403`).
+    ///
+    /// @param code the HTTP status code
+    /// @param remainingHeader the `x-ratelimit-remaining` header value, if present
+    /// @param body the response body, if any
+    /// @param tokenConfigured whether a GitHub token was attached to the request
+    /// @return `true` when the response indicates the API rate limit was reached
+    static boolean isRateLimited(int code, @Nullable String remainingHeader, @Nullable String body,
+                                 boolean tokenConfigured) {
+        if (code == 429) {
+            return true;
+        }
+        if (code != 403) {
+            return false;
+        }
+        if (remainingHeader != null && remainingHeader.trim().equals("0")) {
+            return true;
+        }
+        if (body != null && body.toLowerCase(Locale.ROOT).contains("rate limit")) {
+            return true;
+        }
+        return !tokenConfigured;
+    }
+
+    /// Parses the `x-ratelimit-remaining` header.
+    private static @Nullable Integer parseRemaining(@Nullable String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return Integer.valueOf(value.trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    /// Parses the `x-ratelimit-reset` header (epoch seconds).
+    private static @Nullable Instant parseResetAt(@Nullable String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return Instant.ofEpochSecond(Long.parseLong(value.trim()));
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     private static String readCachedBody(Path bodyFile) {

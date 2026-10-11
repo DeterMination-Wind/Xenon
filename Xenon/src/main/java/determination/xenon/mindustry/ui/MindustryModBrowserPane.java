@@ -367,11 +367,16 @@ public final class MindustryModBrowserPane extends BorderPane implements PageAwa
                 });
             } catch (Throwable ex) {
                 LOG.warning("Failed to list releases for " + mod.getRepo(), ex);
-                Platform.runLater(() -> Controllers.dialog(
-                        i18n("xenon.mindustry.mod.browser.history.failed", label,
-                                ex.getMessage() == null ? ex.toString() : ex.getMessage()),
-                        i18n("message.error"),
-                        MessageDialogPane.MessageType.ERROR));
+                Platform.runLater(() -> {
+                    if (GitHubRateLimitPrompt.showIfRateLimited(ex)) {
+                        return;
+                    }
+                    Controllers.dialog(
+                            i18n("xenon.mindustry.mod.browser.history.failed", label,
+                                    ex.getMessage() == null ? ex.toString() : ex.getMessage()),
+                            i18n("message.error"),
+                            MessageDialogPane.MessageType.ERROR);
+                });
             }
         });
     }
@@ -618,9 +623,11 @@ public final class MindustryModBrowserPane extends BorderPane implements PageAwa
             } else {
                 String msg = ex.getMessage() == null ? ex.toString() : ex.getMessage();
                 LOG.warning("Failed to install mod " + ownerRepo + " into " + target.getId(), ex);
-                Controllers.dialog(
-                        i18n("xenon.mindustry.mod.browser.install.failed", label, msg),
-                        i18n("message.error"), MessageDialogPane.MessageType.ERROR);
+                if (!GitHubRateLimitPrompt.showIfRateLimited(ex)) {
+                    Controllers.dialog(
+                            i18n("xenon.mindustry.mod.browser.install.failed", label, msg),
+                            i18n("message.error"), MessageDialogPane.MessageType.ERROR);
+                }
             }
         }).setName(i18n("xenon.mindustry.mod.browser.installing", label));
 

@@ -27,6 +27,7 @@ import determination.xenon.mindustry.download.GitHubReleaseClient;
 import determination.xenon.mindustry.download.MindustryRemoteVersion;
 import determination.xenon.mindustry.download.MindustryVersionList;
 import determination.xenon.mindustry.download.VersionCache;
+import determination.xenon.mindustry.ui.GitHubRateLimitPrompt;
 import determination.xenon.task.Schedulers;
 import determination.xenon.ui.Controllers;
 import determination.xenon.ui.FXUtils;
@@ -191,6 +192,9 @@ public final class XenonVersionsPage extends VBox implements WizardPage, Refresh
                 LOG.warning("Failed to fetch versions for " + target, ex);
                 Platform.runLater(() -> {
                     if (variant != target) return;
+                    // A rate-limited refresh is a GitHub quota problem, not a
+                    // broken mirror; guide the user to a token once per session.
+                    GitHubRateLimitPrompt.showIfRateLimited(ex);
                     // Cache-served fallback: keep whatever we already showed,
                     // surface the error subordinately so the user knows the
                     // list is stale rather than authoritative.

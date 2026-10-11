@@ -96,6 +96,15 @@ public class LauncherSettingsPage extends DecoratorAnimatedPage implements Decor
         tab.select(feedbackTab, false);
     }
 
+    /// Switches to the Download tab and reveals the GitHub token field.
+    ///
+    /// The download page is built lazily when its tab is first selected, so
+    /// the tab must be selected before asking the node to reveal the token.
+    public void showDownloadSettings() {
+        tab.select(downloadTab, false);
+        downloadTab.getNode().revealGithubToken();
+    }
+
     @Override
     public ReadOnlyObjectProperty<State> stateProperty() {
         return state.getReadOnlyProperty();
