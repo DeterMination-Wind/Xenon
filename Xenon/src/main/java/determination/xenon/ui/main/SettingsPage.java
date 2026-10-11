@@ -225,6 +225,15 @@ public final class SettingsPage extends ScrollPane {
                 }
 
                 {
+                    LineToggleButton duplicateSettingsPane = new LineToggleButton();
+                    duplicateSettingsPane.setTitle(i18n("settings.launcher.duplicate_instance_copies_settings"));
+                    duplicateSettingsPane.setSubtitle(i18n("settings.launcher.duplicate_instance_copies_settings.subtitle"));
+                    duplicateSettingsPane.selectedProperty()
+                            .bindBidirectional(globalConfig().duplicateInstanceCopiesSettingsProperty());
+                    miscPaneList.getContent().add(duplicateSettingsPane);
+                }
+
+                {
                     BorderPane debugPane = new BorderPane();
 
                     Label left = new Label(i18n("settings.launcher.debug"));

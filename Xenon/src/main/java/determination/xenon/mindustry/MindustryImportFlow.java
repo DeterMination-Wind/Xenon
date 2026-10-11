@@ -417,7 +417,13 @@ public final class MindustryImportFlow {
         return version;
     }
 
-    private static String uniqueId(XenonGameRepository repo, String suggestedId) {
+    /// Returns an id that no instance in {@code repo} uses yet, derived from
+    /// {@code suggestedId} by appending `-2`, `-3`, ... on conflicts.
+    ///
+    /// @param repo the repository whose existing ids must be avoided
+    /// @param suggestedId the preferred id, sanitized before the lookup
+    /// @return an instance id that is not present in {@code repo}
+    public static String uniqueId(XenonGameRepository repo, String suggestedId) {
         String base = sanitizeId(suggestedId);
         if (!repo.has(base)) {
             return base;

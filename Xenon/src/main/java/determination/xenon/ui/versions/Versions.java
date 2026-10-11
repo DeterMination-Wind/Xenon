@@ -177,10 +177,29 @@ public final class Versions {
     }
 
     public static void duplicateVersion(Profile profile, String version) {
+        if (MindustryRoutes.isMindustry(profile, version)) {
+            // Mindustry instances use their own manifest layout, so HMCL's
+            // Minecraft duplicate would only copy the launcher-facing files.
+            MindustryRoutes.duplicateVersion(profile, version);
+            return;
+        }
+        if (!profile.getRepository().hasVersion(version)) {
+            // A stale entry (for example the Minecraft scan renamed the
+            // manifest) used to surface a VersionNotFoundException stack trace.
+            Controllers.dialog(i18n("version.not_exist"), i18n("message.error"),
+                    MessageDialogPane.MessageType.ERROR);
+            return;
+        }
         Controllers.prompt(
                 new PromptDialogPane.Builder(i18n("version.manage.duplicate.prompt"), (res, handler) -> {
                     String newVersionName = ((PromptDialogPane.Builder.StringQuestion) res.get(1)).getValue();
                     boolean copySaves = ((PromptDialogPane.Builder.BooleanQuestion) res.get(2)).getValue();
+                    if (!profile.getRepository().hasVersion(version)) {
+                        // The version can disappear between opening the dialog
+                        // and confirming it, so re-check before copying.
+                        handler.reject(i18n("version.not_exist"));
+                        return;
+                    }
                     Task.runAsync(() -> profile.getRepository().duplicateVersion(version, newVersionName, copySaves))
                             .thenComposeAsync(profile.getRepository().refreshVersionsAsync())
                             .whenComplete(Schedulers.javafx(), (result, exception) -> {

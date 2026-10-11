@@ -164,6 +164,27 @@ public final class GlobalConfig extends ObservableSetting {
         analyticsFirstLaunchSent.set(value);
     }
 
+    @SerializedName("duplicateInstanceCopiesSettings")
+    private final BooleanProperty duplicateInstanceCopiesSettings = new SimpleBooleanProperty(true);
+
+    /// Whether a duplicated Mindustry instance keeps the source `settings.bin`.
+    ///
+    /// Configurations written before this option existed default to `true`,
+    /// matching the previous behaviour of a full instance copy.
+    public BooleanProperty duplicateInstanceCopiesSettingsProperty() {
+        return duplicateInstanceCopiesSettings;
+    }
+
+    /// Returns whether duplicated instances keep `settings.bin`.
+    public boolean isDuplicateInstanceCopiesSettings() {
+        return duplicateInstanceCopiesSettings.get();
+    }
+
+    /// Sets whether duplicated instances keep `settings.bin`.
+    public void setDuplicateInstanceCopiesSettings(boolean value) {
+        duplicateInstanceCopiesSettings.set(value);
+    }
+
     @SerializedName("fontAntiAliasing")
     private final StringProperty fontAntiAliasing = new SimpleStringProperty();
 

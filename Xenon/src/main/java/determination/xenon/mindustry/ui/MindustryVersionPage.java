@@ -110,10 +110,11 @@ public final class MindustryVersionPage extends DecoratorAnimatedPage implements
                 .addNavigationDrawerItem(i18n("version.launch.test"), SVG.ROCKET_LAUNCH, this::launch)
                 .addNavigationDrawerItem(i18n("settings.game.exploration"), SVG.FOLDER_OPEN, () -> FXUtils.openFolder(workingDirectory))
                 .addNavigationDrawerItem(i18n("xenon.mindustry.migrate.button"), SVG.CONTENT_COPY, this::migrateFromInstance)
+                .addNavigationDrawerItem(i18n("version.manage.duplicate"), SVG.CONTENT_COPY, this::duplicateVersion)
                 .addNavigationDrawerItem(i18n("modpack.export"), SVG.OUTPUT, () -> MindustryRoutes.exportModpack(version))
                 .addNavigationDrawerItem(i18n("version.manage.remove"), SVG.DELETE, this::deleteVersion);
         toolbar.getStyleClass().add("advanced-list-box-clear-padding");
-        FXUtils.setLimitHeight(toolbar, 40 * 5 + 12 * 2);
+        FXUtils.setLimitHeight(toolbar, 40 * 6 + 12 * 2);
 
         setLeft(sideBar, toolbar);
         setCenter(transitionPane);
@@ -145,6 +146,11 @@ public final class MindustryVersionPage extends DecoratorAnimatedPage implements
     /// Opens the cross-instance data migration dialog for this instance.
     private void migrateFromInstance() {
         Controllers.dialog(new MindustryMigrationDialog(version));
+    }
+
+    /// Opens the duplicate-instance dialog that copies this instance to a new id.
+    private void duplicateVersion() {
+        MindustryRoutes.duplicateVersion(version);
     }
 
     private void refreshModPaneAfterProcessExit() {

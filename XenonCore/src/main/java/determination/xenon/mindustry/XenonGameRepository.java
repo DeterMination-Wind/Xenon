@@ -22,6 +22,7 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import determination.xenon.mindustry.playtime.MindustryPlaytimeStore;
 import determination.xenon.util.io.FileUtils;
 import determination.xenon.util.logging.Logger;
 import determination.xenon.util.platform.OperatingSystem;
@@ -40,6 +41,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Predicate;
 import java.util.regex.Pattern;
 
 /**
@@ -298,6 +300,105 @@ public final class XenonGameRepository {
                 Logger.LOG.warning("Unable to restore " + sourceRoot + " after a failed rename", restoreFailure);
             }
             return false;
+        }
+    }
+
+    /// Copies an installed instance to a new id, optionally taking the game
+    /// data directory and the player settings with it.
+    ///
+    /// The new instance always receives a copy of the instance root (jar,
+    /// mods, saves, schematics and the launcher's own files). Only the data
+    /// directory that lives inside the root is controlled by {@code copyData}:
+    /// `GLOBAL` and `CUSTOM` policies keep the data directory outside the
+    /// instance root, so nothing outside the root is ever copied and the copy
+    /// shares the same data directory as the source. `settings.bin` is part of
+    /// the data directory and is skipped when {@code copySettings} is false.
+    ///
+    /// A `xenon-playtime.jsonl` playtime journal is treated as game data as
+    /// well, so a copy without data starts with a fresh playtime history. An
+    /// absolute external jar path is shared as-is (the source install must
+    /// stay in place); a default-named relative jar is renamed to the new id.
+    ///
+    /// @param fromId the source instance id
+    /// @param toId the new instance id; must be valid, unused and different
+    /// @param copyData whether to copy the in-root game data directory
+    /// @param copySettings whether to keep `settings.bin` when data is copied
+    /// @return the persisted copy of the source instance
+    /// @throws IOException when validation fails or the copy cannot be written;
+    ///                     a partially written target directory is removed
+    public synchronized MindustryVersion copyVersion(String fromId, String toId,
+                                                     boolean copyData, boolean copySettings) throws IOException {
+        if (!isValidId(toId)) {
+            throw new IOException("Invalid Mindustry instance id: " + toId);
+        }
+
+        // The directory name is authoritative, so resolve the source entry the
+        // same case-insensitive way renameVersion does on Windows.
+        MindustryVersion source = versions.get(fromId);
+        String sourceId = fromId;
+        if (source == null) {
+            for (Map.Entry<String, MindustryVersion> entry : versions.entrySet()) {
+                if (entry.getKey().equalsIgnoreCase(fromId)) {
+                    sourceId = entry.getKey();
+                    source = entry.getValue();
+                    break;
+                }
+            }
+        }
+        if (source == null) {
+            throw new IOException("Cannot copy unknown Mindustry instance " + fromId);
+        }
+        if (sourceId.equals(toId) || has(toId)) {
+            throw new IOException("Mindustry instance " + toId + " already exists");
+        }
+
+        Path sourceRoot = versionsRoot.resolve(sourceId);
+        Path targetRoot = versionsRoot.resolve(toId);
+        if (!Files.isDirectory(sourceRoot)) {
+            throw new IOException("Mindustry instance directory does not exist: " + sourceRoot);
+        }
+        if (Files.exists(targetRoot)) {
+            throw new IOException("Mindustry instance directory already exists: " + targetRoot);
+        }
+
+        try {
+            // The predicate receives native separators on Windows, so normalize
+            // before matching the data-directory prefixes.
+            Predicate<String> filter = entry -> {
+                String path = entry.replace('\\', '/');
+                if (!copyData) {
+                    if (path.equals(".data") || path.startsWith(".data/")) {
+                        return false;
+                    }
+                    return !path.equals(MindustryPlaytimeStore.FILE_NAME);
+                }
+                return copySettings || !path.equals(".data/settings.bin");
+            };
+            FileUtils.copyDirectory(sourceRoot, targetRoot, filter);
+
+            // Round-trip through Gson so the copy is a detached instance: the
+            // transient repositoryRoot is never serialized, and later edits on
+            // the copy cannot mutate the source manifest.
+            MindustryVersion copy = GSON.fromJson(GSON.toJson(source), MindustryVersion.class);
+            if (copy == null) {
+                throw new IOException("Failed to serialize Mindustry instance " + sourceId);
+            }
+            copy.setId(toId);
+            copy.setName(toId);
+            copy.setRepositoryRoot(versionsRoot);
+            // Keeps the default-named jar in sync with the new id; external
+            // absolute jars are deliberately shared instead of copied.
+            renameJarIfNeeded(targetRoot, copy, sourceId, toId);
+            deleteLegacyManifestCopy(targetRoot, sourceId);
+            save(copy);
+            return copy;
+        } catch (IOException | RuntimeException ex) {
+            // Best-effort cleanup of a partial copy; the source instance and any
+            // externally shared jar are left untouched.
+            if (FileUtils.deleteDirectoryQuietly(targetRoot)) {
+                Logger.LOG.warning("Removed the incomplete Mindustry instance copy " + targetRoot);
+            }
+            throw ex;
         }
     }
 

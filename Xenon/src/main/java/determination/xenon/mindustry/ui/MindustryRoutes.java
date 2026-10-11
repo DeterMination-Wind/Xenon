@@ -18,6 +18,7 @@
 package determination.xenon.mindustry.ui;
 
 import com.jfoenix.controls.JFXButton;
+import determination.xenon.game.HMCLGameRepository;
 import determination.xenon.mindustry.LaunchOptions;
 import determination.xenon.mindustry.MindustryClientRuntimeRegistry;
 import determination.xenon.mindustry.MindustryImportFlow;
@@ -28,6 +29,7 @@ import determination.xenon.mindustry.XenonGameRepository;
 import determination.xenon.mindustry.XenonLauncher;
 import determination.xenon.mindustry.modpack.XenonModpackPacker;
 import determination.xenon.mindustry.playtime.MindustryPlaytimeStore;
+import determination.xenon.setting.ConfigHolder;
 import determination.xenon.setting.Profile;
 import determination.xenon.setting.Profiles;
 import determination.xenon.task.FetchTask;
@@ -36,6 +38,7 @@ import determination.xenon.task.Task;
 import determination.xenon.ui.Controllers;
 import determination.xenon.ui.FXUtils;
 import determination.xenon.ui.construct.MessageDialogPane;
+import determination.xenon.ui.construct.PromptDialogPane;
 import determination.xenon.ui.construct.Validator;
 import determination.xenon.util.TaskCancellationAction;
 import determination.xenon.util.io.FileUtils;
@@ -237,6 +240,120 @@ public final class MindustryRoutes {
                 new Validator(i18n("install.new_game.malformed"), XenonGameRepository::isValidId),
                 new Validator(i18n("install.new_game.already_exists"), name -> name != null
                         && (name.equals(currentId) || !repo.has(name))));
+    }
+
+    /// Duplicates one Mindustry instance from the HMCL version-management flow.
+    ///
+    /// @param profile the Profile that owns the instance
+    /// @param id the source instance id
+    public static void duplicateVersion(Profile profile, String id) {
+        Optional<MindustryVersion> found = get(profile, id);
+        if (found.isEmpty()) {
+            Controllers.dialog(i18n("version.not_exist"), i18n("message.error"),
+                    MessageDialogPane.MessageType.ERROR);
+            return;
+        }
+        MindustryVersion version = found.get();
+        MindustryImportFlow.repositoryForVersion(version).refresh();
+        duplicateVersion(version);
+    }
+
+    /// Asks for a new instance id, then copies the instance on a background task.
+    ///
+    /// The instance directory is always copied. The game data checkbox is only
+    /// offered when the effective data directory lives inside the instance
+    /// directory; `GLOBAL`/`CUSTOM` instances share their data directory and
+    /// show a hint instead. `settings.bin` follows the global
+    /// duplicate-instance-settings option so duplicates can receive a fresh
+    /// player identity.
+    ///
+    /// @param version the instance to duplicate
+    public static void duplicateVersion(MindustryVersion version) {
+        @Nullable String currentId = version.getId();
+        if (currentId == null || currentId.isBlank()) {
+            Controllers.dialog(i18n("version.not_exist"), i18n("message.error"),
+                    MessageDialogPane.MessageType.ERROR);
+            return;
+        }
+
+        XenonGameRepository repo = MindustryImportFlow.repositoryForVersion(version);
+        repo.refresh();
+
+        @Nullable Profile profile = Profiles.getSelectedProfile();
+        @Nullable HMCLGameRepository hmclRepository = profile == null ? null : profile.getRepository();
+
+        String baseId = currentId + "-copy";
+        String defaultId = MindustryImportFlow.uniqueId(repo, baseId);
+        for (int i = 2; hmclRepository != null && hmclRepository.versionIdConflicts(defaultId); i++) {
+            defaultId = MindustryImportFlow.uniqueId(repo, baseId + "-" + i);
+        }
+
+        Path versionRoot = repo.getVersionRoot(version);
+        boolean dataInRoot = version.resolveDataDir(versionRoot).toAbsolutePath().normalize()
+                .startsWith(versionRoot.toAbsolutePath().normalize());
+
+        PromptDialogPane.Builder builder = new PromptDialogPane.Builder(
+                i18n("xenon.mindustry.instance.duplicate.title"), (res, handler) -> {
+            String targetId = ((PromptDialogPane.Builder.StringQuestion) res.get(1)).getValue();
+            boolean copyData = dataInRoot
+                    && res.get(2) instanceof PromptDialogPane.Builder.BooleanQuestion dataQuestion
+                    && Boolean.TRUE.equals(dataQuestion.getValue());
+            handler.resolve();
+
+            Runnable startCopy = () -> startDuplicateTask(
+                    profile, repo, currentId, targetId, copyData);
+            if (copyData && ACTIVE_SESSIONS.containsKey(currentId)) {
+                // Mindustry rewrites saves and settings while it runs, so copying
+                // a live instance can produce a half-written duplicate.
+                Controllers.confirm(i18n("xenon.mindustry.instance.duplicate.running"),
+                        i18n("message.warning"), MessageDialogPane.MessageType.WARNING,
+                        startCopy, () -> {
+                        });
+                return;
+            }
+            startCopy.run();
+        })
+                .addQuestion(new PromptDialogPane.Builder.HintQuestion(
+                        i18n("xenon.mindustry.instance.duplicate.prompt", version.getName())))
+                .addQuestion(new PromptDialogPane.Builder.StringQuestion(null, defaultId,
+                        new Validator(i18n("install.new_game.malformed"), XenonGameRepository::isValidId),
+                        new Validator(i18n("install.new_game.already_exists"), name -> name != null
+                                && !repo.has(name)
+                                && (hmclRepository == null || !hmclRepository.versionIdConflicts(name)))));
+        if (dataInRoot) {
+            builder.addQuestion(new PromptDialogPane.Builder.BooleanQuestion(
+                    i18n("xenon.mindustry.instance.duplicate.data"), false));
+        } else {
+            builder.addQuestion(new PromptDialogPane.Builder.HintQuestion(
+                    i18n("xenon.mindustry.instance.duplicate.shared_data")));
+        }
+        Controllers.prompt(builder);
+    }
+
+    /// Runs {@link XenonGameRepository#copyVersion} off the FX thread and updates the UI.
+    private static void startDuplicateTask(@Nullable Profile profile, XenonGameRepository repo,
+                                           String currentId, String targetId, boolean copyData) {
+        boolean copySettings = ConfigHolder.globalConfig().isDuplicateInstanceCopiesSettings();
+        Task<MindustryVersion> copy = Task.supplyAsync(Schedulers.io(),
+                        () -> repo.copyVersion(currentId, targetId, copyData, copySettings))
+                .setName(i18n("xenon.mindustry.instance.duplicate.title"));
+        copy.whenComplete(Schedulers.javafx(), (result, exception) -> {
+            if (exception != null) {
+                LOG.warning("Failed to duplicate Mindustry instance " + currentId + " to " + targetId,
+                        exception);
+                String message = exception.getMessage() != null
+                        ? exception.getMessage()
+                        : exception.toString();
+                Controllers.dialog(i18n("xenon.mindustry.instance.duplicate.failed", message),
+                        i18n("message.error"), MessageDialogPane.MessageType.ERROR);
+                return;
+            }
+            if (profile != null) {
+                profile.setSelectedVersion(targetId);
+                profile.getRepository().refreshVersionsAsync().start();
+            }
+            Controllers.showToast(i18n("message.success"));
+        }).start();
     }
 
     /** Moves the mod pane refresh callbacks when an instance id changes. */
