@@ -57,8 +57,24 @@ public final class AnimationImageImpl extends WritableImage implements Animation
     public void play() {
         if (animation == null) {
             animation = new Animation(this);
+        }
+        if (animation.timeline.getStatus() != javafx.animation.Animation.Status.RUNNING) {
             animation.timeline.play();
         }
+    }
+
+    /// Pauses the frame timeline until [#resume()].
+    @Override
+    public void pause() {
+        if (animation != null) {
+            animation.timeline.pause();
+        }
+    }
+
+    /// Resumes the frame timeline after [#pause()].
+    @Override
+    public void resume() {
+        play();
     }
 
     private void updateImage(int frameIndex) {

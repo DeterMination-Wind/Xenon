@@ -35,6 +35,7 @@ import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -66,6 +67,8 @@ public final class XenonGameRepository {
 
     private final Path versionsRoot;
     private final Map<String, MindustryVersion> versions = new LinkedHashMap<>();
+    /// Timestamp of the last completed [#refresh()], or `0` before any scan.
+    private long lastRefreshNanos;
 
     public XenonGameRepository(Path versionsRoot) {
         this.versionsRoot = versionsRoot.toAbsolutePath().normalize();
@@ -92,6 +95,7 @@ public final class XenonGameRepository {
     public synchronized void refresh() {
         versions.clear();
         if (!Files.isDirectory(versionsRoot)) {
+            lastRefreshNanos = System.nanoTime();
             return;
         }
         try (DirectoryStream<Path> stream = Files.newDirectoryStream(versionsRoot)) {
@@ -144,6 +148,25 @@ public final class XenonGameRepository {
         } catch (IOException ex) {
             throw new UncheckedIOException(ex);
         }
+        lastRefreshNanos = System.nanoTime();
+    }
+
+    /// Re-reads the version manifests at most once per `interval` when
+    /// instances are already loaded.
+    ///
+    /// Callers that refresh on every UI navigation use this to avoid
+    /// re-scanning the versions directory on each tab switch. An empty
+    /// registry is always rescanned, so the first instance installed after
+    /// startup appears immediately.
+    ///
+    /// @param interval minimum time between two full scans
+    public synchronized void refreshThrottled(Duration interval) {
+        if (!versions.isEmpty()
+                && lastRefreshNanos != 0L
+                && System.nanoTime() - lastRefreshNanos < interval.toNanos()) {
+            return;
+        }
+        refresh();
     }
 
     public synchronized boolean has(String id) {

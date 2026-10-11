@@ -18,6 +18,7 @@
 package determination.xenon.mindustry.ui;
 
 import com.jfoenix.controls.JFXButton;
+import com.jfoenix.controls.JFXListView;
 import com.jfoenix.controls.JFXTextField;
 import determination.xenon.mindustry.MindustryImportFlow;
 import determination.xenon.mindustry.MindustryVersion;
@@ -42,21 +43,22 @@ import determination.xenon.util.io.FileUtils;
 import javafx.animation.PauseTransition;
 import javafx.application.Platform;
 import javafx.beans.binding.Bindings;
+import javafx.collections.ObservableList;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.scene.Node;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.ContentDisplay;
 import javafx.scene.control.Label;
+import javafx.scene.control.ListCell;
 import javafx.scene.control.OverrunStyle;
-import javafx.scene.control.ScrollPane;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.image.ImageView;
 import javafx.scene.layout.BorderPane;
-import javafx.scene.layout.ColumnConstraints;
 import javafx.scene.layout.FlowPane;
-import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.stage.FileChooser;
@@ -90,7 +92,6 @@ import static determination.xenon.util.logging.Logger.LOG;
 public final class MindustryMapBrowserPane extends BorderPane implements PageAware {
     private static final List<String> MODES = List.of("Survive", "Pvp", "Attack", "Sandbox", "Editor");
     private static final double PREVIEW_HEIGHT = 168.0;
-    private static final double LOAD_MORE_THRESHOLD = 0.88;
     private static final int AUTO_LOAD_MAX_PAGES = 8;
     private static final int AUTO_LOAD_MIN_VISIBLE = 8;
     private static final double CARD_MIN_WIDTH = 240.0;
@@ -102,16 +103,17 @@ public final class MindustryMapBrowserPane extends BorderPane implements PageAwa
     private final JFXTextField search = new JFXTextField();
     private final ComboBox<MindustryVersion> targetVersion = new ComboBox<>();
     private final Label status = new Label();
-    private final GridPane grid = new GridPane();
-    private final ScrollPane scroll = new ScrollPane(grid);
+    /// Virtualized card list; each row holds one or two map cards.
+    private final JFXListView<MapRow> listView = new JFXListView<>();
     private final Label notice = new Label();
     private final HBox viewChips = new HBox(8);
     private final FlowPane modeChips = new FlowPane(8, 8);
     private final FlowPane versionChips = new FlowPane(8, 8);
     private final PauseTransition searchPause = new PauseTransition(Duration.millis(350));
-    private final List<MapCard> renderedCards = new ArrayList<>();
 
     private final List<MindustryRemoteMap> loaded = new ArrayList<>();
+    /// Latest keys already represented by the rendered rows (latest-only view).
+    private final Set<String> renderedLatestKeys = new LinkedHashSet<>();
 
     private boolean latestOnly = true;
     private boolean cpOnly;
@@ -123,6 +125,8 @@ public final class MindustryMapBrowserPane extends BorderPane implements PageAwa
     private int nextOffset;
     private int autoLoadBudget;
     private int lastVisibleCount;
+    /// Number of `loaded` entries already reflected by the rendered rows.
+    private int renderedLoadedCount;
     private long generation;
     private @Nullable String lastErrorMessage;
 
@@ -183,28 +187,28 @@ public final class MindustryMapBrowserPane extends BorderPane implements PageAwa
         header.setPadding(new Insets(0, 0, 8, 0));
         setTop(header);
 
-        ColumnConstraints c1 = new ColumnConstraints();
-        c1.setPercentWidth(50);
-        c1.setHgrow(Priority.ALWAYS);
-        c1.setFillWidth(true);
-        ColumnConstraints c2 = new ColumnConstraints();
-        c2.setPercentWidth(50);
-        c2.setHgrow(Priority.ALWAYS);
-        c2.setFillWidth(true);
-        grid.getColumnConstraints().setAll(c1, c2);
-        grid.setHgap(CARD_GAP);
-        grid.setVgap(CARD_GAP);
-        grid.setMaxWidth(Double.MAX_VALUE);
-
-        scroll.setFitToWidth(true);
-        scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
-        scroll.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
-        FXUtils.smoothScrolling(scroll);
-        scroll.viewportBoundsProperty().addListener((obs, oldBounds, newBounds) ->
-                updateGridMetrics(newBounds.getWidth()));
-        scroll.vvalueProperty().addListener((obs, oldValue, newValue) -> {
-            if (newValue.doubleValue() >= LOAD_MORE_THRESHOLD) {
-                loadNextPage();
+        listView.getStyleClass().add("no-padding");
+        listView.setCellFactory(lv -> new MapRowCell());
+        // Cells must fit the viewport width: cards shrink instead of pushing
+        // a horizontal scrollbar.
+        listView.lookupAll(".scroll-bar").forEach(n -> {
+            if (n instanceof javafx.scene.control.ScrollBar bar
+                    && bar.getOrientation() == javafx.geometry.Orientation.HORIZONTAL) {
+                bar.setVisible(false);
+                bar.setManaged(false);
+            }
+        });
+        listView.skinProperty().addListener((obs, oldSkin, newSkin) -> {
+            if (newSkin != null) {
+                Platform.runLater(() -> {
+                    for (Node sb : listView.lookupAll(".scroll-bar")) {
+                        if (sb instanceof javafx.scene.control.ScrollBar bar
+                                && bar.getOrientation() == javafx.geometry.Orientation.HORIZONTAL) {
+                            bar.setVisible(false);
+                            bar.setManaged(false);
+                        }
+                    }
+                });
             }
         });
 
@@ -216,7 +220,7 @@ public final class MindustryMapBrowserPane extends BorderPane implements PageAwa
         notice.setPadding(new Insets(24));
         FXUtils.onClicked(notice, this::handleNoticeClick);
 
-        StackPane center = new StackPane(scroll, notice);
+        StackPane center = new StackPane(listView, notice);
         StackPane.setAlignment(notice, Pos.TOP_CENTER);
         setCenter(center);
 
@@ -225,7 +229,6 @@ public final class MindustryMapBrowserPane extends BorderPane implements PageAwa
         rebuildVersionChips();
         refreshTargetVersions();
         restartQuery();
-        Platform.runLater(() -> updateGridMetrics(scroll.getViewportBounds().getWidth()));
     }
 
     @Override
@@ -286,6 +289,9 @@ public final class MindustryMapBrowserPane extends BorderPane implements PageAwa
     private void restartQuery() {
         generation++;
         loaded.clear();
+        renderedLatestKeys.clear();
+        renderedLoadedCount = 0;
+        listView.getItems().clear();
         nextOffset = 0;
         lastVisibleCount = 0;
         endReached = false;
@@ -333,7 +339,7 @@ public final class MindustryMapBrowserPane extends BorderPane implements PageAwa
             loaded.addAll(page);
             nextOffset = offset + page.size();
         }
-        rebuildVisibleMaps();
+        appendVisibleMaps();
         maybeAutoLoadMore();
     }
 
@@ -348,12 +354,73 @@ public final class MindustryMapBrowserPane extends BorderPane implements PageAwa
     private void rebuildVisibleMaps() {
         List<MindustryRemoteMap> visible = filteredMaps();
         lastVisibleCount = visible.size();
+        renderedLoadedCount = loaded.size();
+        renderedLatestKeys.clear();
+        if (latestOnly) {
+            for (MindustryRemoteMap map : visible) {
+                renderedLatestKeys.add(map.latestKey());
+            }
+        }
 
         rebuildVersionChips();
-        renderGrid(visible);
-        updateGridMetrics(scroll.getViewportBounds().getWidth());
+        listView.getItems().setAll(buildRows(visible));
         updateStatus();
-        updateNotice(visible);
+        updateNotice();
+    }
+
+    /// Appends rows for entries loaded after the last render.
+    ///
+    /// Existing rows stay untouched; only the newly arrived page is paired
+    /// into rows, so paging never rebuilds cards that are already on screen.
+    private void appendVisibleMaps() {
+        if (renderedLoadedCount >= loaded.size()) {
+            updateStatus();
+            updateNotice();
+            return;
+        }
+
+        List<MindustryRemoteMap> pending = new ArrayList<>(2);
+        ObservableList<MapRow> items = listView.getItems();
+        // Reuse a trailing single-item row so pairing continues across pages.
+        if (!items.isEmpty()) {
+            MapRow last = items.get(items.size() - 1);
+            if (last.items().size() == 1) {
+                pending.add(last.items().get(0));
+                items.remove(items.size() - 1);
+            }
+        }
+
+        for (int i = renderedLoadedCount; i < loaded.size(); i++) {
+            MindustryRemoteMap map = loaded.get(i);
+            if (latestOnly && !renderedLatestKeys.add(map.latestKey())) continue;
+            if (!matchesFilters(map)) continue;
+            pending.add(map);
+            lastVisibleCount++;
+        }
+        renderedLoadedCount = loaded.size();
+
+        for (int i = 0; i + 1 < pending.size(); i += 2) {
+            items.add(new MapRow(List.of(pending.get(i), pending.get(i + 1))));
+        }
+        if (pending.size() % 2 == 1) {
+            items.add(new MapRow(List.of(pending.get(pending.size() - 1))));
+        }
+
+        updateStatus();
+        updateNotice();
+    }
+
+    /// Pairs a filtered list into rows of one or two cards.
+    private static List<MapRow> buildRows(List<MindustryRemoteMap> visible) {
+        List<MapRow> result = new ArrayList<>((visible.size() + 1) / 2);
+        for (int i = 0; i < visible.size(); i += 2) {
+            if (i + 1 < visible.size()) {
+                result.add(new MapRow(List.of(visible.get(i), visible.get(i + 1))));
+            } else {
+                result.add(new MapRow(List.of(visible.get(i))));
+            }
+        }
+        return result;
     }
 
     private List<MindustryRemoteMap> filteredMaps() {
@@ -361,26 +428,92 @@ public final class MindustryMapBrowserPane extends BorderPane implements PageAwa
         Set<String> seenLatest = latestOnly ? new LinkedHashSet<>() : null;
         for (MindustryRemoteMap map : loaded) {
             if (seenLatest != null && !seenLatest.add(map.latestKey())) continue;
-            if (selectedMode != null && !selectedMode.equalsIgnoreCase(map.displayMode())) continue;
-            if (cpOnly && !map.hasCpTag()) continue;
-            if (selectedVersionTag != null) {
-                String version = map.versionTag();
-                if (version == null || !selectedVersionTag.equalsIgnoreCase(version)) continue;
-            }
+            if (!matchesFilters(map)) continue;
             out.add(map);
         }
         return out;
     }
 
-    private void renderGrid(List<MindustryRemoteMap> visible) {
-        renderedCards.clear();
-        grid.getChildren().clear();
-        for (int i = 0; i < visible.size(); i++) {
-            MindustryRemoteMap map = visible.get(i);
-            MapCard card = createCard(map);
-            GridPane.setHgrow(card, Priority.ALWAYS);
-            grid.add(card, i % 2, i / 2);
-            renderedCards.add(card);
+    /// Applies the chip filters that do not depend on list position.
+    private boolean matchesFilters(MindustryRemoteMap map) {
+        if (selectedMode != null && !selectedMode.equalsIgnoreCase(map.displayMode())) return false;
+        if (cpOnly && !map.hasCpTag()) return false;
+        if (selectedVersionTag != null) {
+            String version = map.versionTag();
+            if (version == null || !selectedVersionTag.equalsIgnoreCase(version)) return false;
+        }
+        return true;
+    }
+
+    /// One virtualized card-list row holding one or two map cards.
+    private record MapRow(List<MindustryRemoteMap> items) {
+    }
+
+    /// Virtualized cell rendering one row of one or two map cards.
+    private final class MapRowCell extends ListCell<MapRow> {
+        /// Container for the cards of the current row.
+        private final HBox cards = new HBox(CARD_GAP);
+
+        MapRowCell() {
+            cards.setAlignment(Pos.TOP_LEFT);
+            cards.setMaxWidth(Double.MAX_VALUE);
+            // The row gap lives here because the `no-padding` style class
+            // forces the cell's own padding to zero.
+            cards.setPadding(new Insets(0, 0, CARD_GAP, 0));
+            setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+            setMinHeight(Region.USE_PREF_SIZE);
+            widthProperty().addListener((obs, oldWidth, newWidth) ->
+                    updateCardWidths(newWidth.doubleValue()));
+        }
+
+        @Override
+        protected double computePrefWidth(double height) {
+            // Cells take the viewport width; the cards shrink instead of
+            // forcing a horizontal scrollbar.
+            return 0;
+        }
+
+        @Override
+        protected void updateItem(@Nullable MapRow row, boolean empty) {
+            super.updateItem(row, empty);
+            if (empty || row == null) {
+                setGraphic(null);
+                return;
+            }
+
+            List<Node> nodes = new ArrayList<>(2);
+            for (MindustryRemoteMap map : row.items()) {
+                nodes.add(createCard(map));
+            }
+            for (Node node : nodes) {
+                HBox.setHgrow(node, Priority.ALWAYS);
+            }
+            if (nodes.size() < 2) {
+                Region spacer = new Region();
+                HBox.setHgrow(spacer, Priority.ALWAYS);
+                spacer.setMaxWidth(Double.MAX_VALUE);
+                nodes.add(spacer);
+            }
+            cards.getChildren().setAll(nodes);
+            setGraphic(cards);
+            updateCardWidths(getWidth());
+
+            // Prefetch the next page slightly before the user reaches the end.
+            if (getIndex() >= listView.getItems().size() - 2) {
+                loadNextPage();
+            }
+        }
+
+        /// Sizes both card slots from the cell width, keeping the same 32px
+        /// inner padding the grid layout used.
+        private void updateCardWidths(double width) {
+            if (width <= 0) return;
+            double tileWidth = Math.max(CARD_MIN_WIDTH, (width - CARD_GAP) / 2.0);
+            for (Node node : cards.getChildren()) {
+                if (node instanceof MapCard card) {
+                    card.updateWidth(tileWidth);
+                }
+            }
         }
     }
 
@@ -467,12 +600,12 @@ public final class MindustryMapBrowserPane extends BorderPane implements PageAwa
         return card;
     }
 
-    private void updateNotice(List<MindustryRemoteMap> visible) {
-        boolean showNotice = visible.isEmpty();
+    private void updateNotice() {
+        boolean showNotice = lastVisibleCount == 0;
         notice.setVisible(showNotice);
         notice.setManaged(showNotice);
-        scroll.setVisible(!showNotice);
-        scroll.setManaged(!showNotice);
+        listView.setVisible(!showNotice);
+        listView.setManaged(!showNotice);
         if (!showNotice) return;
 
         if (loadingPage && loaded.isEmpty()) {
@@ -707,15 +840,6 @@ public final class MindustryMapBrowserPane extends BorderPane implements PageAwa
     private String normalizedSearch() {
         String text = search.getText();
         return text == null ? "" : text.trim();
-    }
-
-    private void updateGridMetrics(double viewportWidth) {
-        double width = Math.max(0, viewportWidth);
-        if (width <= 0) return;
-        double tileWidth = Math.max(CARD_MIN_WIDTH, (width - grid.getHgap()) / 2.0);
-        for (MapCard card : renderedCards) {
-            card.updateWidth(tileWidth);
-        }
     }
 
     private static int versionNumber(String versionTag) {

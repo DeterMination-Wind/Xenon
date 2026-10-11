@@ -19,6 +19,7 @@ package determination.xenon.mindustry.ui;
 
 import com.jfoenix.controls.JFXButton;
 import com.jfoenix.controls.JFXDialogLayout;
+import com.jfoenix.controls.JFXListView;
 import com.jfoenix.controls.JFXTextArea;
 import com.jfoenix.controls.JFXTextField;
 import determination.xenon.mindustry.MindustryImportFlow;
@@ -42,28 +43,30 @@ import determination.xenon.ui.SVG;
 import determination.xenon.ui.construct.DialogCloseEvent;
 import determination.xenon.ui.construct.MessageDialogPane;
 import determination.xenon.ui.construct.PageAware;
+import determination.xenon.util.ImageMemoryCache;
 import determination.xenon.util.TaskCancellationAction;
 import determination.xenon.util.io.FileUtils;
 import javafx.animation.PauseTransition;
 import javafx.application.Platform;
 import javafx.beans.binding.Bindings;
+import javafx.collections.FXCollections;
+import javafx.collections.ObservableList;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.ContentDisplay;
 import javafx.scene.control.Label;
+import javafx.scene.control.ListCell;
 import javafx.scene.control.OverrunStyle;
-import javafx.scene.control.ScrollPane;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.layout.BorderPane;
-import javafx.scene.layout.ColumnConstraints;
 import javafx.scene.layout.FlowPane;
-import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.stage.FileChooser;
@@ -92,8 +95,6 @@ import static determination.xenon.util.logging.Logger.LOG;
 public final class MdtbbsResourcePane extends BorderPane implements PageAware {
     /// Entries fetched per page.
     private static final int PAGE_SIZE = 20;
-    /// Scroll fraction that triggers the next page.
-    private static final double LOAD_MORE_THRESHOLD = 0.88;
     /// Preview tile height.
     private static final double PREVIEW_HEIGHT = 150.0;
     /// Card gap in the two-column grid.
@@ -102,6 +103,8 @@ public final class MdtbbsResourcePane extends BorderPane implements PageAware {
     /// each map preview on demand, so a full page of cards must not hit it
     /// with twenty simultaneous renders.
     private static final int MAX_CONCURRENT_PREVIEWS = 3;
+    /// Upper bound for the failed-preview set before it is reset.
+    private static final int MAX_FAILED_PREVIEWS = 1024;
 
     /// Shared account coordinator.
     private final MdtbbsCommunity community = CommunityServices.community();
@@ -114,10 +117,10 @@ public final class MdtbbsResourcePane extends BorderPane implements PageAware {
     private final ComboBox<MindustryVersion> targetVersion = new ComboBox<>();
     /// Status line.
     private final Label status = new Label();
-    /// Card grid.
-    private final GridPane grid = new GridPane();
-    /// Scrollable card grid.
-    private final ScrollPane scroll = new ScrollPane(grid);
+    /// Virtualized card list; each row holds one or two cards.
+    private final JFXListView<Row> listView = new JFXListView<>();
+    /// Rows backing the card list.
+    private final ObservableList<Row> rows = FXCollections.observableArrayList();
     /// Empty/loading/error notice.
     private final Label notice = new Label();
     /// Mode chips (blueprints / maps).
@@ -131,9 +134,6 @@ public final class MdtbbsResourcePane extends BorderPane implements PageAware {
     private final List<Blueprint> blueprints = new ArrayList<>();
     /// Loaded maps.
     private final List<MapItem> maps = new ArrayList<>();
-    /// Decoded preview images keyed by URL.
-    private final java.util.concurrent.ConcurrentHashMap<String, Image> previewCache =
-            new java.util.concurrent.ConcurrentHashMap<>();
     /// Preview URLs that already failed, so they are not requested again.
     private final java.util.Set<String> failedPreviews =
             java.util.concurrent.ConcurrentHashMap.newKeySet();
@@ -199,24 +199,30 @@ public final class MdtbbsResourcePane extends BorderPane implements PageAware {
         header.setPadding(new Insets(0, 0, 8, 0));
         setTop(header);
 
-        ColumnConstraints first = new ColumnConstraints();
-        first.setPercentWidth(50);
-        first.setHgrow(Priority.ALWAYS);
-        first.setFillWidth(true);
-        ColumnConstraints second = new ColumnConstraints();
-        second.setPercentWidth(50);
-        second.setHgrow(Priority.ALWAYS);
-        second.setFillWidth(true);
-        grid.getColumnConstraints().setAll(first, second);
-        grid.setHgap(CARD_GAP);
-        grid.setVgap(CARD_GAP);
-        grid.setMaxWidth(Double.MAX_VALUE);
-
-        scroll.setFitToWidth(true);
-        scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
-        FXUtils.smoothScrolling(scroll);
-        scroll.vvalueProperty().addListener((obs, oldValue, newValue) -> {
-            if (newValue.doubleValue() >= LOAD_MORE_THRESHOLD) loadNextPage();
+        listView.getStyleClass().add("no-padding");
+        listView.setItems(rows);
+        listView.setCellFactory(lv -> new RowCell());
+        // The cells must fit the viewport width: cards shrink instead of
+        // pushing a horizontal scrollbar.
+        listView.lookupAll(".scroll-bar").forEach(n -> {
+            if (n instanceof javafx.scene.control.ScrollBar bar
+                    && bar.getOrientation() == javafx.geometry.Orientation.HORIZONTAL) {
+                bar.setVisible(false);
+                bar.setManaged(false);
+            }
+        });
+        listView.skinProperty().addListener((obs, oldSkin, newSkin) -> {
+            if (newSkin != null) {
+                Platform.runLater(() -> {
+                    for (Node sb : listView.lookupAll(".scroll-bar")) {
+                        if (sb instanceof javafx.scene.control.ScrollBar bar
+                                && bar.getOrientation() == javafx.geometry.Orientation.HORIZONTAL) {
+                            bar.setVisible(false);
+                            bar.setManaged(false);
+                        }
+                    }
+                });
+            }
         });
 
         notice.getStyleClass().add("subtitle-label");
@@ -227,7 +233,7 @@ public final class MdtbbsResourcePane extends BorderPane implements PageAware {
         notice.setPadding(new Insets(24));
         FXUtils.onClicked(notice, this::handleNoticeClick);
 
-        StackPane center = new StackPane(scroll, notice);
+        StackPane center = new StackPane(listView, notice);
         StackPane.setAlignment(notice, Pos.TOP_CENTER);
         setCenter(center);
 
@@ -282,7 +288,7 @@ public final class MdtbbsResourcePane extends BorderPane implements PageAware {
         generation++;
         blueprints.clear();
         maps.clear();
-        grid.getChildren().clear();
+        rebuildRows();
         cursor = null;
         hasMore = true;
         loading = false;
@@ -322,7 +328,7 @@ public final class MdtbbsResourcePane extends BorderPane implements PageAware {
         blueprints.addAll(page.items());
         cursor = page.nextCursor();
         hasMore = page.hasMore();
-        renderGrid();
+        appendRows();
         updateNotice();
         updateStatus();
     }
@@ -334,7 +340,7 @@ public final class MdtbbsResourcePane extends BorderPane implements PageAware {
         maps.addAll(page.items());
         cursor = page.nextCursor();
         hasMore = page.hasMore();
-        renderGrid();
+        appendRows();
         updateNotice();
         updateStatus();
     }
@@ -352,20 +358,142 @@ public final class MdtbbsResourcePane extends BorderPane implements PageAware {
     // Rendering
     // ------------------------------------------------------------------
 
-    /// Rebuilds the card grid for the current mode.
-    private void renderGrid() {
-        grid.getChildren().clear();
+    /// Rebuilds every row from the loaded entries (mode switch, search restart).
+    private void rebuildRows() {
+        rows.clear();
+        appendRows();
+    }
+
+    /// Appends rows for entries added since the last render.
+    ///
+    /// Existing rows are left untouched, so paging never rebuilds the cards
+    /// that are already on screen.
+    private void appendRows() {
+        int rendered = renderedItemCount();
+        int total = currentCount();
+        if (rendered >= total) return;
+
+        List<Row> added = new ArrayList<>();
         if (mapMode) {
-            for (int i = 0; i < maps.size(); i++) {
-                javafx.scene.Node card = createMapCard(maps.get(i));
-                GridPane.setHgrow(card, Priority.ALWAYS);
-                grid.add(card, i % 2, i / 2);
+            for (int i = rendered; i < total; i += 2) {
+                List<MapItem> pair = new ArrayList<>(2);
+                pair.add(maps.get(i));
+                if (i + 1 < total) pair.add(maps.get(i + 1));
+                added.add(new MapRow(pair));
             }
         } else {
-            for (int i = 0; i < blueprints.size(); i++) {
-                javafx.scene.Node card = createBlueprintCard(blueprints.get(i));
-                GridPane.setHgrow(card, Priority.ALWAYS);
-                grid.add(card, i % 2, i / 2);
+            for (int i = rendered; i < total; i += 2) {
+                List<Blueprint> pair = new ArrayList<>(2);
+                pair.add(blueprints.get(i));
+                if (i + 1 < total) pair.add(blueprints.get(i + 1));
+                added.add(new BlueprintRow(pair));
+            }
+        }
+        rows.addAll(added);
+    }
+
+    /// Number of entries already paired into rows.
+    private int renderedItemCount() {
+        int count = 0;
+        for (Row row : rows) {
+            count += row.size();
+        }
+        return count;
+    }
+
+    /// One virtualized card-list row holding one or two entries.
+    private interface Row {
+        /// Number of entries carried by this row.
+        int size();
+    }
+
+    /// A row of blueprint entries.
+    private record BlueprintRow(List<Blueprint> items) implements Row {
+        @Override
+        public int size() {
+            return items.size();
+        }
+    }
+
+    /// A row of map entries.
+    private record MapRow(List<MapItem> items) implements Row {
+        @Override
+        public int size() {
+            return items.size();
+        }
+    }
+
+    /// Virtualized cell rendering one row of one or two cards.
+    ///
+    /// The cell is recycled by the list view, so it rebuilds its cards on every
+    /// `updateItem` call instead of keeping per-entry nodes alive.
+    private final class RowCell extends ListCell<Row> {
+        /// Container for the cards of the current row.
+        private final HBox cards = new HBox(CARD_GAP);
+
+        RowCell() {
+            cards.setAlignment(Pos.TOP_LEFT);
+            cards.setMaxWidth(Double.MAX_VALUE);
+            // The row gap lives here because the `no-padding` style class
+            // forces the cell's own padding to zero.
+            cards.setPadding(new Insets(0, 0, CARD_GAP, 0));
+            setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+            setMinHeight(Region.USE_PREF_SIZE);
+            widthProperty().addListener((obs, oldWidth, newWidth) ->
+                    updateCardWidths(newWidth.doubleValue()));
+        }
+
+        @Override
+        protected double computePrefWidth(double height) {
+            // Cells take the viewport width; the cards shrink instead of
+            // forcing a horizontal scrollbar.
+            return 0;
+        }
+
+        @Override
+        protected void updateItem(@Nullable Row row, boolean empty) {
+            super.updateItem(row, empty);
+            if (empty || row == null) {
+                setGraphic(null);
+                return;
+            }
+
+            List<Node> nodes = new ArrayList<>(2);
+            if (row instanceof BlueprintRow blueprintRow) {
+                for (Blueprint blueprint : blueprintRow.items()) {
+                    nodes.add(createBlueprintCard(blueprint));
+                }
+            } else if (row instanceof MapRow mapRow) {
+                for (MapItem map : mapRow.items()) {
+                    nodes.add(createMapCard(map));
+                }
+            }
+            if (nodes.size() < 2) {
+                Region spacer = new Region();
+                spacer.setMaxWidth(Double.MAX_VALUE);
+                nodes.add(spacer);
+            }
+            cards.getChildren().setAll(nodes);
+            setGraphic(cards);
+            updateCardWidths(getWidth());
+
+            // Prefetch the next page slightly before the user reaches the end.
+            if (getIndex() >= listView.getItems().size() - 2) {
+                loadNextPage();
+            }
+        }
+
+        /// Splits the cell width evenly between the two card slots, matching
+        /// the two equal columns of the previous grid layout.
+        private void updateCardWidths(double width) {
+            if (width <= 0) return;
+            double tileWidth = Math.max(0, (width - CARD_GAP) / 2.0);
+            for (Node node : cards.getChildren()) {
+                if (node instanceof VBox card) {
+                    card.setMinWidth(tileWidth);
+                    card.setPrefWidth(tileWidth);
+                    card.setMaxWidth(tileWidth);
+                }
             }
         }
     }
@@ -540,7 +668,8 @@ public final class MdtbbsResourcePane extends BorderPane implements PageAware {
     /// @param url  preview URL, possibly blank
     private void loadPreview(ImageView view, @Nullable String url) {
         if (url == null || url.isBlank() || failedPreviews.contains(url)) return;
-        Image cached = previewCache.get(url);
+        String cacheKey = "mdtbbs|" + url;
+        Image cached = ImageMemoryCache.shared().get(cacheKey);
         if (cached != null) {
             view.setImage(cached);
             return;
@@ -554,21 +683,30 @@ public final class MdtbbsResourcePane extends BorderPane implements PageAware {
                 Image image = new Image(new java.io.ByteArrayInputStream(bytes), 720, 0, true, true);
                 Platform.runLater(() -> {
                     if (image.isError()) {
-                        failedPreviews.add(url);
+                        rememberFailedPreview(url);
                         return;
                     }
-                    previewCache.put(url, image);
+                    ImageMemoryCache.shared().put(cacheKey, image);
                     view.setImage(image);
                 });
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             } catch (IOException | RuntimeException e) {
-                failedPreviews.add(url);
+                rememberFailedPreview(url);
                 LOG.info("MDTBBS preview unavailable: " + url + " (" + e.getMessage() + ")");
             } finally {
                 if (acquired) previewSlots.release();
             }
         });
+    }
+
+    /// Remembers a preview URL that failed to load, resetting the set when it
+    /// grows past [#MAX_FAILED_PREVIEWS].
+    private void rememberFailedPreview(String url) {
+        if (failedPreviews.size() >= MAX_FAILED_PREVIEWS) {
+            failedPreviews.clear();
+        }
+        failedPreviews.add(url);
     }
 
     /// Returns the first non-blank URL.
@@ -611,8 +749,8 @@ public final class MdtbbsResourcePane extends BorderPane implements PageAware {
         boolean showNotice = currentCount() == 0;
         notice.setVisible(showNotice);
         notice.setManaged(showNotice);
-        scroll.setVisible(!showNotice);
-        scroll.setManaged(!showNotice);
+        listView.setVisible(!showNotice);
+        listView.setManaged(!showNotice);
         if (!showNotice) return;
         if (loading) {
             notice.setText(i18n("xenon.resource.loading"));

@@ -45,6 +45,7 @@ import determination.xenon.ui.construct.PageAware;
 import determination.xenon.ui.construct.RipplerContainer;
 import determination.xenon.ui.construct.TwoLineListItem;
 import determination.xenon.util.TaskCancellationAction;
+import javafx.animation.PauseTransition;
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
@@ -58,6 +59,8 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.util.Duration;
+import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -65,8 +68,10 @@ import java.nio.file.Path;
 import java.time.format.DateTimeFormatter;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 
 import static determination.xenon.ui.FXUtils.newToggleButton4;
@@ -103,6 +108,12 @@ public final class MindustryModBrowserPane extends BorderPane implements PageAwa
     private final JFXListView<MindustryRemoteMod> listView = new JFXListView<>();
 
     private final ObservableList<MindustryRemoteMod> all = FXCollections.observableArrayList();
+    /// Lower-cased search haystack per mod (name, repo, author, description).
+    private final Map<MindustryRemoteMod, String> lowerHaystack = new HashMap<>();
+    /// Whitespace-normalized description per mod, computed once per index load.
+    private final Map<MindustryRemoteMod, String> oneLineDescription = new HashMap<>();
+    /// Debounce timer for the search field.
+    private final PauseTransition searchPause = new PauseTransition(Duration.millis(300));
 
     public MindustryModBrowserPane() {
         setPadding(new Insets(12));
@@ -115,7 +126,10 @@ public final class MindustryModBrowserPane extends BorderPane implements PageAwa
 
         search.setPromptText(i18n("xenon.mindustry.mod.browser.search"));
         HBox.setHgrow(search, Priority.ALWAYS);
-        search.textProperty().addListener((obs, o, n) -> rebuildList());
+        // Debounce keystrokes so a burst of typing filters once instead of
+        // rebuilding the visible list on every character.
+        search.textProperty().addListener((obs, o, n) -> searchPause.playFromStart());
+        searchPause.setOnFinished(e -> rebuildList());
 
         // Pick up HMCL's JFoenix combo-box look without using JFXComboBox —
         // JFXComboBox crashes on JavaFX 25 (arrowButtonHandle == null in
@@ -183,9 +197,8 @@ public final class MindustryModBrowserPane extends BorderPane implements PageAwa
         // the async refresh; falls back to "loading..." if cache miss.
         List<MindustryRemoteMod> cached = repo.loadCache();
         if (!cached.isEmpty()) {
-            all.setAll(cached);
+            setMods(cached);
             status.setText(i18n("xenon.mindustry.mod.browser.cache.loaded", cached.size()));
-            rebuildList();
         } else {
             status.setText(i18n("xenon.mindustry.mod.browser.loading"));
         }
@@ -238,9 +251,8 @@ public final class MindustryModBrowserPane extends BorderPane implements PageAwa
             try {
                 List<MindustryRemoteMod> mods = repo.refresh();
                 Platform.runLater(() -> {
-                    all.setAll(mods);
+                    setMods(mods);
                     status.setText(i18n("xenon.mindustry.mod.browser.count", mods.size()));
-                    rebuildList();
                 });
             } catch (Throwable ex) {
                 LOG.warning("Failed to refresh mindustry-mods index", ex);
@@ -261,6 +273,41 @@ public final class MindustryModBrowserPane extends BorderPane implements PageAwa
     // ------------------------------------------------------------------
     // List rendering / filtering
     // ------------------------------------------------------------------
+
+    /// Replaces the index contents and rebuilds the precomputed search data.
+    ///
+    /// The haystack and the single-line description are computed once per
+    /// index load instead of on every cell render.
+    private void setMods(List<MindustryRemoteMod> mods) {
+        lowerHaystack.clear();
+        oneLineDescription.clear();
+        for (MindustryRemoteMod mod : mods) {
+            lowerHaystack.put(mod, buildHaystack(mod));
+            String description = mod.getDescription();
+            oneLineDescription.put(mod,
+                    description == null ? "" : description.replaceAll("\\s+", " ").trim());
+        }
+        all.setAll(mods);
+        rebuildList();
+    }
+
+    /// Builds the lower-cased search haystack for one mod.
+    private static String buildHaystack(MindustryRemoteMod mod) {
+        StringBuilder builder = new StringBuilder();
+        appendHaystack(builder, mod.displayName());
+        appendHaystack(builder, mod.getRepo());
+        appendHaystack(builder, mod.getAuthor());
+        appendHaystack(builder, mod.getDescription());
+        return builder.toString();
+    }
+
+    /// Appends one lower-cased field to a haystack, separated from the previous
+    /// field so a query can never match across field boundaries.
+    private static void appendHaystack(StringBuilder builder, @Nullable String value) {
+        if (value == null) return;
+        if (builder.length() > 0) builder.append('\u0000');
+        builder.append(value.toLowerCase(Locale.ROOT));
+    }
 
     /**
      * Repos that should always sort first when the search box is empty.
@@ -317,17 +364,10 @@ public final class MindustryModBrowserPane extends BorderPane implements PageAwa
         return null;
     }
 
-    private static boolean matches(MindustryRemoteMod mod, String q) {
+    private boolean matches(MindustryRemoteMod mod, String q) {
         if (q.isEmpty()) return true;
-        if (contains(mod.displayName(), q)) return true;
-        if (contains(mod.getRepo(), q)) return true;
-        if (contains(mod.getAuthor(), q)) return true;
-        if (contains(mod.getDescription(), q)) return true;
-        return false;
-    }
-
-    private static boolean contains(String s, String q) {
-        return s != null && s.toLowerCase(Locale.ROOT).contains(q);
+        String haystack = lowerHaystack.get(mod);
+        return haystack != null && haystack.contains(q);
     }
 
     // ------------------------------------------------------------------
@@ -966,10 +1006,10 @@ public final class MindustryModBrowserPane extends BorderPane implements PageAwa
                 if (subtitle.length() > 0) subtitle.append("  ·  ");
                 subtitle.append(DATE.format(mod.getLastUpdated()));
             }
-            String desc = mod.getDescription();
+            String desc = oneLineDescription.get(mod);
             if (desc != null && !desc.isBlank()) {
                 if (subtitle.length() > 0) subtitle.append("  ·  ");
-                subtitle.append(desc.replaceAll("\\s+", " ").trim());
+                subtitle.append(desc);
             }
             twoLine.setSubtitle(subtitle.length() == 0 ? null : subtitle.toString());
             // The subtitle label is built on demand by setSubtitle; clamp

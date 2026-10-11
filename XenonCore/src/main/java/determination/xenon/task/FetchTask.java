@@ -566,6 +566,9 @@ public abstract class FetchTask<T> extends Task<T> {
     private static final Timer timer = new Timer("DownloadSpeedRecorder", true);
     private static final AtomicLong downloadSpeed = new AtomicLong(0L);
     private static final SpeedSampler speedSampler = new SpeedSampler(System.nanoTime());
+    /// Speed published by the most recent non-idle tick; `0` once listeners
+    /// have been told the download stopped.
+    private static volatile long lastPublishedSpeed;
     public static final EventManager<SpeedEvent> SPEED_EVENT = EventBus.EVENT_BUS.channel(SpeedEvent.class);
 
     static {
@@ -574,6 +577,12 @@ public abstract class FetchTask<T> extends Task<T> {
             public void run() {
                 long bytes = downloadSpeed.getAndSet(0);
                 long bytesPerSecond = speedSampler.record(System.nanoTime(), bytes);
+                if (bytes == 0L && bytesPerSecond == 0L && lastPublishedSpeed == 0L) {
+                    // Idle and listeners already know: skip the event instead
+                    // of waking every listener twice a second.
+                    return;
+                }
+                lastPublishedSpeed = bytesPerSecond;
                 SPEED_EVENT.fireEvent(new SpeedEvent(SPEED_EVENT, bytesPerSecond));
             }
         }, SPEED_SAMPLE_INTERVAL_MS, SPEED_SAMPLE_INTERVAL_MS);

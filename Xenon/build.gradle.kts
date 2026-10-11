@@ -344,6 +344,9 @@ fun commonJPackageArgs(jarName: String, dest: java.io.File): MutableList<String>
         "--copyright", "(c) 2026 Xenon contributors",
         "--description", "Xenon - Mindustry launcher",
         "--java-options", "-Dxenon.installed=true",
+        // Keep the packaged launcher's heap bounded like the portable and
+        // `run` variants, and leave a heap dump behind if it ever exhausts.
+        "--java-options", "-Xms64m -Xmx1g -XX:+HeapDumpOnOutOfMemoryError",
     )
     addOpens.forEach { args.addAll(listOf("--java-options", "--add-opens=$it=ALL-UNNAMED")) }
     return args

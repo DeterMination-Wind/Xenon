@@ -76,6 +76,7 @@ import determination.xenon.ui.construct.MenuSeparator;
 import determination.xenon.ui.construct.PopupMenu;
 import determination.xenon.ui.image.ImageLoader;
 import determination.xenon.ui.image.ImageUtils;
+import determination.xenon.util.ImageMemoryCache;
 import determination.xenon.util.Lang;
 import determination.xenon.util.ResourceNotFoundError;
 import determination.xenon.util.io.FileUtils;
@@ -1241,6 +1242,14 @@ public final class FXUtils {
     public static Image loadImage(Path path,
                                   int requestedWidth, int requestedHeight,
                                   boolean preserveRatio, boolean smooth) throws Exception {
+        String cacheKey = imageCacheKey(path, requestedWidth, requestedHeight, preserveRatio, smooth);
+        ImageMemoryCache cache = ImageMemoryCache.shared();
+        Image cached = cache.get(cacheKey);
+        if (cached != null) {
+            return cached;
+        }
+
+        Image image;
         try (var input = new BufferedInputStream(Files.newInputStream(path))) {
             String ext = FileUtils.getExtension(path).toLowerCase(Locale.ROOT);
             ImageLoader loader = ImageUtils.EXT_TO_LOADER.get(ext);
@@ -1252,8 +1261,29 @@ public final class FXUtils {
             }
             if (loader == null)
                 loader = ImageUtils.DEFAULT;
-            return loader.load(input, requestedWidth, requestedHeight, preserveRatio, smooth);
+            image = loader.load(input, requestedWidth, requestedHeight, preserveRatio, smooth);
         }
+        cache.put(cacheKey, image);
+        return image;
+    }
+
+    /// Builds the in-memory cache key for a local image file.
+    ///
+    /// The key includes the file identity (mtime and size) so that replacing a
+    /// file on disk invalidates the cached decode, plus the requested decode
+    /// geometry. When the file attributes cannot be read, the key degrades to
+    /// the absolute path with the same geometry suffix.
+    private static String imageCacheKey(Path path, int requestedWidth, int requestedHeight,
+                                        boolean preserveRatio, boolean smooth) {
+        Path absolute = path.toAbsolutePath().normalize();
+        String identity;
+        try {
+            identity = Files.getLastModifiedTime(absolute).toMillis() + "|" + Files.size(absolute);
+        } catch (IOException e) {
+            identity = "unknown";
+        }
+        return absolute + "|" + identity + "|" + requestedWidth + "x" + requestedHeight
+                + "|" + preserveRatio + "|" + smooth;
     }
 
     public static Image loadImage(WebURL url) throws Exception {

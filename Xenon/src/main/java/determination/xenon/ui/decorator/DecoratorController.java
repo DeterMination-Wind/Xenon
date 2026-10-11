@@ -25,8 +25,8 @@ import javafx.beans.WeakInvalidationListener;
 import javafx.geometry.Insets;
 import javafx.scene.Node;
 import javafx.scene.image.Image;
+import javafx.scene.image.PixelFormat;
 import javafx.scene.image.PixelReader;
-import javafx.scene.image.PixelWriter;
 import javafx.scene.image.WritableImage;
 import javafx.scene.input.*;
 import javafx.scene.layout.*;
@@ -49,6 +49,7 @@ import determination.xenon.ui.animation.Motion;
 import determination.xenon.ui.animation.TransitionPane.AnimationProducer;
 import determination.xenon.ui.construct.JFXDialogPane;
 import determination.xenon.ui.construct.Navigator;
+import determination.xenon.ui.image.AnimationImage;
 import determination.xenon.ui.wizard.Refreshable;
 import determination.xenon.ui.wizard.WizardProvider;
 import determination.xenon.util.MathUtils;
@@ -73,8 +74,11 @@ import static determination.xenon.util.logging.Logger.LOG;
 public class DecoratorController {
     private final Decorator decorator;
     private final Navigator navigator;
+    /// Window owning this controller; used to pause hidden backgrounds.
+    private final Stage stage;
 
     public DecoratorController(Stage stage, Node mainPage) {
+        this.stage = stage;
         decorator = new Decorator(stage);
         decorator.titleTransparentProperty().bind(config().titleTransparentProperty());
 
@@ -90,7 +94,9 @@ public class DecoratorController {
         setupAuthlibInjectorDnD();
 
         // Setup background
-        decorator.setContentBackground(getBackground());
+        LoadedBackground initialBackground = loadBackground();
+        decorator.setContentBackground(initialBackground.background());
+        trackAnimatedBackground(initialBackground.image());
         changeBackgroundListener = o -> updateBackground();
         WeakInvalidationListener weakListener = new WeakInvalidationListener(changeBackgroundListener);
         config().backgroundImageTypeProperty().addListener(weakListener);
@@ -98,6 +104,10 @@ public class DecoratorController {
         config().backgroundImageUrlProperty().addListener(weakListener);
         config().backgroundPaintProperty().addListener(weakListener);
         config().backgroundImageOpacityProperty().addListener(weakListener);
+
+        // Pause animated backgrounds while the window cannot be seen.
+        stage.iconifiedProperty().addListener((obs, oldValue, newValue) -> updateBackgroundAnimationState());
+        stage.showingProperty().addListener((obs, oldValue, newValue) -> updateBackgroundAnimationState());
 
         // pass key events to current dialog / current page
         decorator.addEventFilter(KeyEvent.ANY, e -> {
@@ -169,21 +179,57 @@ public class DecoratorController {
     @SuppressWarnings("FieldCanBeLocal") // Strong reference
     private final InvalidationListener changeBackgroundListener;
 
+    /// Animated image currently backing the content background, or `null`.
+    private @Nullable Image animatedBackground;
+
+    /// A rendered background together with the source image it was built
+    /// from, so the controller can pause an animated background.
+    private record LoadedBackground(Background background, @Nullable Image image) {
+    }
+
     private void updateBackground() {
         final int currentCount = ++this.changeBackgroundCount;
-        Task.supplyAsync(Schedulers.io(), this::getBackground)
+        Task.supplyAsync(Schedulers.io(), this::loadBackground)
                 .setName("Update background")
-                .whenComplete(Schedulers.javafx(), (background, exception) -> {
+                .whenComplete(Schedulers.javafx(), (loaded, exception) -> {
                     if (exception == null) {
-                        if (this.changeBackgroundCount == currentCount)
-                            decorator.setContentBackground(background);
+                        if (this.changeBackgroundCount == currentCount) {
+                            decorator.setContentBackground(loaded.background());
+                            trackAnimatedBackground(loaded.image());
+                        }
                     } else {
                         LOG.warning("Failed to update background", exception);
                     }
                 }).start();
     }
 
-    private Background getBackground() {
+    /// Tracks the image backing the current background.
+    ///
+    /// A previously tracked animated image is paused before it is replaced,
+    /// because a running timeline keeps its image alive even after the
+    /// background is gone.
+    private void trackAnimatedBackground(@Nullable Image image) {
+        if (animatedBackground != image) {
+            if (animatedBackground instanceof AnimationImage previous) {
+                previous.pause();
+            }
+            animatedBackground = image instanceof AnimationImage ? image : null;
+        }
+        updateBackgroundAnimationState();
+    }
+
+    /// Pauses or resumes the animated background according to window visibility.
+    private void updateBackgroundAnimationState() {
+        if (animatedBackground instanceof AnimationImage animation) {
+            if (stage.isShowing() && !stage.isIconified()) {
+                animation.resume();
+            } else {
+                animation.pause();
+            }
+        }
+    }
+
+    private LoadedBackground loadBackground() {
         EnumBackgroundImage imageType = config().getBackgroundImageType();
         if (imageType == null)
             imageType = EnumBackgroundImage.DEFAULT;
@@ -216,7 +262,7 @@ public class DecoratorController {
                 image = newBuiltinImage("/assets/img/background-classic.jpg");
                 break;
             case TRANSLUCENT: // Deprecated
-                return new Background(new BackgroundFill(new Color(1, 1, 1, 0.5), CornerRadii.EMPTY, Insets.EMPTY));
+                return new LoadedBackground(new Background(new BackgroundFill(new Color(1, 1, 1, 0.5), CornerRadii.EMPTY, Insets.EMPTY)), null);
             case PAINT:
                 Paint paint = config().getBackgroundPaint();
                 double opacity = MathUtils.clamp(config().getBackgroundImageOpacity(), 0, 100) / 100.;
@@ -226,10 +272,10 @@ public class DecoratorController {
                         color = Color.WHITE; // Default to white if no color is set
                     if (opacity < 1.)
                         color = new Color(color.getRed(), color.getGreen(), color.getBlue(), opacity);
-                    return new Background(new BackgroundFill(color, CornerRadii.EMPTY, Insets.EMPTY));
+                    return new LoadedBackground(new Background(new BackgroundFill(color, CornerRadii.EMPTY, Insets.EMPTY)), null);
                 } else {
                     // TODO: Support opacity for non-color paints
-                    return new Background(new BackgroundFill(paint, CornerRadii.EMPTY, Insets.EMPTY));
+                    return new LoadedBackground(new Background(new BackgroundFill(paint, CornerRadii.EMPTY, Insets.EMPTY)), null);
                 }
         }
         if (image == null) {
@@ -238,36 +284,50 @@ public class DecoratorController {
         return createBackgroundWithOpacity(image, config().getBackgroundImageOpacity());
     }
 
-    private Background createBackgroundWithOpacity(Image image, int opacity) {
+    private LoadedBackground createBackgroundWithOpacity(Image image, int opacity) {
         if (opacity <= 0) {
-            return new Background(new BackgroundFill(new Color(1, 1, 1, 0), CornerRadii.EMPTY, Insets.EMPTY));
+            if (image instanceof AnimationImage animation) {
+                animation.pause();
+            }
+            return new LoadedBackground(new Background(new BackgroundFill(new Color(1, 1, 1, 0), CornerRadii.EMPTY, Insets.EMPTY)), null);
         } else if (opacity >= 100 || image.getPixelReader() == null) {
-            return new Background(new BackgroundImage(
+            return new LoadedBackground(new Background(new BackgroundImage(
                     image,
                     BackgroundRepeat.NO_REPEAT,
                     BackgroundRepeat.NO_REPEAT,
                     BackgroundPosition.DEFAULT,
                     new BackgroundSize(800, 480, false, false, true, true)
-            ));
+            )), image);
         } else {
-            WritableImage tempImage = new WritableImage((int) image.getWidth(), (int) image.getHeight());
+            int width = (int) image.getWidth();
+            int height = (int) image.getHeight();
+            WritableImage tempImage = new WritableImage(width, height);
             PixelReader pixelReader = image.getPixelReader();
-            PixelWriter pixelWriter = tempImage.getPixelWriter();
-            for (int y = 0; y < image.getHeight(); y++) {
-                for (int x = 0; x < image.getWidth(); x++) {
-                    Color color = pixelReader.getColor(x, y);
-                    Color newColor = new Color(color.getRed(), color.getGreen(), color.getBlue(), color.getOpacity() * opacity / 100);
-                    pixelWriter.setColor(x, y, newColor);
-                }
+            // Scale the whole image in one bulk read and one bulk write
+            // instead of millions of getColor/setColor round trips.
+            int[] pixels = new int[width * height];
+            pixelReader.getPixels(0, 0, width, height, PixelFormat.getIntArgbInstance(), pixels, 0, width);
+            for (int i = 0; i < pixels.length; i++) {
+                int argb = pixels[i];
+                int alpha = (argb >>> 24) & 0xFF;
+                alpha = alpha * opacity / 100;
+                pixels[i] = (argb & 0x00FFFFFF) | (alpha << 24);
+            }
+            tempImage.getPixelWriter().setPixels(0, 0, width, height, PixelFormat.getIntArgbInstance(), pixels, 0, width);
+
+            // The opacity-adjusted copy is static; an animated source image
+            // must not keep running behind it.
+            if (image instanceof AnimationImage animation) {
+                animation.pause();
             }
 
-            return new Background(new BackgroundImage(
+            return new LoadedBackground(new Background(new BackgroundImage(
                     tempImage,
                     BackgroundRepeat.NO_REPEAT,
                     BackgroundRepeat.NO_REPEAT,
                     BackgroundPosition.DEFAULT,
                     new BackgroundSize(800, 480, false, false, true, true)
-            ));
+            )), null);
         }
     }
 

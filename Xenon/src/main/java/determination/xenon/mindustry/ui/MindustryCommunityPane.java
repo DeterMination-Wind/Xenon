@@ -152,6 +152,8 @@ public final class MindustryCommunityPane extends BorderPane implements PageAwar
     private int nextReplyPage = 1;
     /// Generation token guarding stale list responses.
     private long generation;
+    /// Number of thread cards already attached to [#threadList].
+    private int renderedThreadCount;
     /// Generation token guarding stale detail responses.
     private long detailGeneration;
     /// Last list error message, or `null`.
@@ -287,6 +289,7 @@ public final class MindustryCommunityPane extends BorderPane implements PageAwar
         generation++;
         threads.clear();
         threadList.getChildren().clear();
+        renderedThreadCount = 0;
         nextPage = 1;
         hasMore = true;
         loading = false;
@@ -344,11 +347,15 @@ public final class MindustryCommunityPane extends BorderPane implements PageAwar
     // List rendering
     // ------------------------------------------------------------------
 
-    /// Rebuilds all thread cards.
+    /// Appends the thread cards that were not rendered yet.
+    ///
+    /// Paging only attaches the new page's cards; the cards already on screen
+    /// stay attached instead of being rebuilt from the full thread list.
     private void renderThreads() {
-        threadList.getChildren().setAll(threads.stream()
-                .map(this::createThreadCard)
-                .toList());
+        for (int i = renderedThreadCount; i < threads.size(); i++) {
+            threadList.getChildren().add(createThreadCard(threads.get(i)));
+        }
+        renderedThreadCount = threads.size();
     }
 
     /// Creates one clickable thread card.

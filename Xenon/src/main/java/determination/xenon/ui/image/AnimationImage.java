@@ -17,8 +17,22 @@
  */
 package determination.xenon.ui.image;
 
-/**
- * @author Glavo
- */
+/// Animated JavaFX image whose playback can be suspended.
+///
+/// Launcher backgrounds use this to stop the animation timeline while the
+/// window is minimized or hidden, instead of letting it repaint frames that
+/// nobody can see.
+///
+/// @author Glavo
 public interface AnimationImage {
+    /// Pauses the animation.
+    ///
+    /// Implementations must tolerate being paused before the first frame and
+    /// being paused more than once.
+    default void pause() {
+    }
+
+    /// Resumes the animation after [#pause()].
+    default void resume() {
+    }
 }

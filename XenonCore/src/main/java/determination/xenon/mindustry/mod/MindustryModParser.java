@@ -147,9 +147,8 @@ public final class MindustryModParser {
             return MindustryGameModNaming.keyName(string(obj, "name"));
         } catch (IOException | RuntimeException ex) {
             Logger.LOG.log(System.Logger.Level.DEBUG,
-                    "Game-side descriptor in " + file
-                            + " does not parse; the game would skip it, so no settings key is used",
-                    ex);
+                    "Game-side descriptor in " + file + " does not parse (" + ex.getMessage()
+                            + "); the game would skip it, so no settings key is used");
             return "";
         }
     }
@@ -222,9 +221,8 @@ public final class MindustryModParser {
             return JsonParser.parseString(raw).getAsJsonObject();
         } catch (JsonSyntaxException | IllegalStateException strictFailure) {
             Logger.LOG.log(System.Logger.Level.DEBUG,
-                    "Strict JSON parse failed for " + file + " (" + descriptorName
-                            + "), retrying as hjson",
-                    strictFailure);
+                    "Strict JSON parse failed for " + file + " (" + descriptorName + "): "
+                            + strictFailure.getMessage() + "; retrying as hjson");
             return parseHjsonOrJson(raw, file, descriptorName);
         }
     }

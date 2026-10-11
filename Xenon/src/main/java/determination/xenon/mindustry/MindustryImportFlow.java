@@ -37,6 +37,7 @@ import org.jetbrains.annotations.Nullable;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -158,7 +159,10 @@ public final class MindustryImportFlow {
             return List.of();
         }
         XenonGameRepository repo = repository(profile);
-        repo.refresh();
+        // The download pages call this on every tab switch; throttle the
+        // directory scan while still picking up freshly installed instances
+        // within a second.
+        repo.refreshThrottled(Duration.ofSeconds(1));
         if (isGlobalProfile(profile)) {
             return new ArrayList<>(repo.all());
         }
