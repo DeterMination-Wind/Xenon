@@ -61,6 +61,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.Random;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -94,7 +95,8 @@ public class DecoratorController {
         setupAuthlibInjectorDnD();
 
         // Setup background
-        LoadedBackground initialBackground = loadBackground();
+        LoadedBackground initialBackground = createBackground(
+                loadBackgroundSource(), config().getBackgroundImageOpacity());
         decorator.setContentBackground(initialBackground.background());
         trackAnimatedBackground(initialBackground.image());
         changeBackgroundListener = o -> updateBackground();
@@ -182,6 +184,13 @@ public class DecoratorController {
     /// Animated image currently backing the content background, or `null`.
     private @Nullable Image animatedBackground;
 
+    /// A resolved background source before the opacity pass.
+    ///
+    /// Exactly one component is non-null: `background` for paint-based
+    /// backgrounds and `image` for image-based ones.
+    private record BackgroundSource(@Nullable Image image, @Nullable Background background) {
+    }
+
     /// A rendered background together with the source image it was built
     /// from, so the controller can pause an animated background.
     private record LoadedBackground(Background background, @Nullable Image image) {
@@ -189,13 +198,22 @@ public class DecoratorController {
 
     private void updateBackground() {
         final int currentCount = ++this.changeBackgroundCount;
-        Task.supplyAsync(Schedulers.io(), this::loadBackground)
+        Task.supplyAsync(Schedulers.io(), this::loadBackgroundSource)
                 .setName("Update background")
-                .whenComplete(Schedulers.javafx(), (loaded, exception) -> {
+                .whenComplete(Schedulers.javafx(), (source, exception) -> {
                     if (exception == null) {
                         if (this.changeBackgroundCount == currentCount) {
+                            // The opacity pass runs on the FX thread: an
+                            // animated source is painted by its own timeline
+                            // there, so a worker must not read its pixels.
+                            LoadedBackground loaded = createBackground(
+                                    source, config().getBackgroundImageOpacity());
                             decorator.setContentBackground(loaded.background());
                             trackAnimatedBackground(loaded.image());
+                        } else if (source.image() instanceof AnimationImage stale) {
+                            // This load lost the race. Pause it so the cached
+                            // animation does not keep running unwatched.
+                            stale.pause();
                         }
                     } else {
                         LOG.warning("Failed to update background", exception);
@@ -229,7 +247,11 @@ public class DecoratorController {
         }
     }
 
-    private LoadedBackground loadBackground() {
+    /// Resolves the configured background source without rendering it.
+    ///
+    /// Runs on a worker thread: it may decode an image file. The opacity pass
+    /// happens later on the FX thread in [#createBackground].
+    private BackgroundSource loadBackgroundSource() {
         EnumBackgroundImage imageType = config().getBackgroundImageType();
         if (imageType == null)
             imageType = EnumBackgroundImage.DEFAULT;
@@ -262,7 +284,7 @@ public class DecoratorController {
                 image = newBuiltinImage("/assets/img/background-classic.jpg");
                 break;
             case TRANSLUCENT: // Deprecated
-                return new LoadedBackground(new Background(new BackgroundFill(new Color(1, 1, 1, 0.5), CornerRadii.EMPTY, Insets.EMPTY)), null);
+                return new BackgroundSource(null, new Background(new BackgroundFill(new Color(1, 1, 1, 0.5), CornerRadii.EMPTY, Insets.EMPTY)));
             case PAINT:
                 Paint paint = config().getBackgroundPaint();
                 double opacity = MathUtils.clamp(config().getBackgroundImageOpacity(), 0, 100) / 100.;
@@ -272,16 +294,32 @@ public class DecoratorController {
                         color = Color.WHITE; // Default to white if no color is set
                     if (opacity < 1.)
                         color = new Color(color.getRed(), color.getGreen(), color.getBlue(), opacity);
-                    return new LoadedBackground(new Background(new BackgroundFill(color, CornerRadii.EMPTY, Insets.EMPTY)), null);
+                    return new BackgroundSource(null, new Background(new BackgroundFill(color, CornerRadii.EMPTY, Insets.EMPTY)));
                 } else {
                     // TODO: Support opacity for non-color paints
-                    return new LoadedBackground(new Background(new BackgroundFill(paint, CornerRadii.EMPTY, Insets.EMPTY)), null);
+                    return new BackgroundSource(null, new Background(new BackgroundFill(paint, CornerRadii.EMPTY, Insets.EMPTY)));
                 }
         }
         if (image == null) {
             image = loadDefaultBackgroundImage();
         }
-        return createBackgroundWithOpacity(image, config().getBackgroundImageOpacity());
+        return new BackgroundSource(image, null);
+    }
+
+    /// Renders a resolved source into the final background.
+    ///
+    /// Must run on the FX thread: an animated source is painted by its own
+    /// timeline there, so the opacity pass must not read it concurrently.
+    ///
+    /// @param source  resolved background source
+    /// @param opacity requested background opacity in `[0, 100]`
+    /// @return the rendered background and the image it displays, if any
+    private LoadedBackground createBackground(BackgroundSource source, int opacity) {
+        if (source.background() != null) {
+            return new LoadedBackground(source.background(), null);
+        }
+        return createBackgroundWithOpacity(
+                Objects.requireNonNull(source.image(), "image"), opacity);
     }
 
     private LoadedBackground createBackgroundWithOpacity(Image image, int opacity) {

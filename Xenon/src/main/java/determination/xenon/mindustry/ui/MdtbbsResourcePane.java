@@ -373,6 +373,13 @@ public final class MdtbbsResourcePane extends BorderPane implements PageAware {
         int total = currentCount();
         if (rendered >= total) return;
 
+        // Reuse a trailing single-item row so pairing continues across pages
+        // even when the server returns an odd-sized non-final page.
+        if (!rows.isEmpty() && rows.get(rows.size() - 1).size() == 1) {
+            rows.remove(rows.size() - 1);
+            rendered--;
+        }
+
         List<Row> added = new ArrayList<>();
         if (mapMode) {
             for (int i = rendered; i < total; i += 2) {

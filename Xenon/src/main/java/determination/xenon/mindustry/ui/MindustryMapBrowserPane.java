@@ -357,7 +357,10 @@ public final class MindustryMapBrowserPane extends BorderPane implements PageAwa
         renderedLoadedCount = loaded.size();
         renderedLatestKeys.clear();
         if (latestOnly) {
-            for (MindustryRemoteMap map : visible) {
+            // Record every loaded key, not just the visible ones: the append
+            // path must deduplicate exactly like `filteredMaps`, which claims
+            // the key before applying the chip filters.
+            for (MindustryRemoteMap map : loaded) {
                 renderedLatestKeys.add(map.latestKey());
             }
         }
@@ -406,6 +409,9 @@ public final class MindustryMapBrowserPane extends BorderPane implements PageAwa
             items.add(new MapRow(List.of(pending.get(pending.size() - 1))));
         }
 
+        // The version chips list every version present in the loaded pages,
+        // so they must follow the paging path as well.
+        rebuildVersionChips();
         updateStatus();
         updateNotice();
     }
