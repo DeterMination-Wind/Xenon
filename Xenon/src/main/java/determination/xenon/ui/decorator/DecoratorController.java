@@ -210,9 +210,13 @@ public class DecoratorController {
                                     source, config().getBackgroundImageOpacity());
                             decorator.setContentBackground(loaded.background());
                             trackAnimatedBackground(loaded.image());
-                        } else if (source.image() instanceof AnimationImage stale) {
+                        } else if (source.image() instanceof AnimationImage stale
+                                && stale != animatedBackground) {
                             // This load lost the race. Pause it so the cached
-                            // animation does not keep running unwatched.
+                            // animation does not keep running unwatched — but
+                            // never the one already on screen: the shared
+                            // image cache can hand the same instance to the
+                            // winning load, which just tracked it above.
                             stale.pause();
                         }
                     } else {
