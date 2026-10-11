@@ -90,7 +90,9 @@ public final class MindustryVersionPage extends DecoratorAnimatedPage implements
         saveTab.setNodeSupplier(() -> new MindustrySaveListPane(repo, version, versionRoot));
         schematicTab.setNodeSupplier(() -> new MindustrySchematicListPane(dataDir));
         crashTab.setNodeSupplier(() -> new MindustryCrashListPane(launchDataDir, versionRoot, version.getVariant()));
-        healthTab.setNodeSupplier(() -> new MindustryHealthPane(version, versionRoot, dataDir));
+        // The health report audits the same directory the next launch reads:
+        // with a save archive selected that is the runtime copy, not `dataDir`.
+        healthTab.setNodeSupplier(() -> new MindustryHealthPane(version, versionRoot, launchDataDir));
         String launchSaveFile = version.getLaunchSaveFile();
         boolean archiveRuntime = launchSaveFile != null && !launchSaveFile.isBlank();
         settingsTab.setNodeSupplier(() ->

@@ -39,12 +39,25 @@ import java.util.Set;
 /// ({@code arc.util.Strings.stripColors} / {@code parseColorMarkup}) so that
 /// names carrying Mindustry color markup produce the same key on both
 /// sides.</p>
+///
+/// <p>The accepted color-name set combines Arc's built-in table
+/// ({@code arc.graphics.Colors.reset()}, 37 names) with the five extra names
+/// Mindustry registers in {@code mindustry.core.UI.loadColors()}
+/// ({@code accent}, {@code unlaunched}, {@code highlight}, {@code stat},
+/// {@code negstat}). The client runs {@code UI.loadColors()} before
+/// {@code Vars} loads mods, so descriptor names are cleaned with those five
+/// names active. Two limits remain: a mod may register more names at runtime
+/// with {@code Colors.put}, which the launcher cannot predict when it computes
+/// keys cold, and headless servers never call {@code UI.loadColors()}, so a
+/// name such as {@code [accent]Mod} maps differently there.</p>
 @NotNullByDefault
 public final class MindustryGameModNaming {
 
-    /// Every color name Arc's {@code Colors} map accepts, including the
-    /// lowercase variants it registers for each name. {@code stripColors}
-    /// only strips tags whose payload is one of these exact strings.
+    /// Every color name the game's {@code Colors} map accepts at mod-load
+    /// time, including the lowercase variants registered for each name:
+    /// Arc's {@code Colors.reset()} table plus Mindustry's
+    /// {@code UI.loadColors()} additions. {@code stripColors} only strips
+    /// tags whose payload is one of these exact strings.
     private static final @Unmodifiable Set<String> COLOR_NAMES = buildColorNames();
 
     /// Prevents instantiation of this utility class.
@@ -153,7 +166,10 @@ public final class MindustryGameModNaming {
                 "YELLOW", "GOLD", "GOLDENROD", "ORANGE",
                 "BROWN", "TAN", "BRICK",
                 "RED", "SCARLET", "CRIMSON", "CORAL", "SALMON", "PINK", "MAGENTA",
-                "PURPLE", "VIOLET", "MAROON");
+                "PURPLE", "VIOLET", "MAROON",
+                // Mindustry's UI.loadColors() registers these on top of Arc's table
+                // before mod descriptors are loaded (see class documentation).
+                "ACCENT", "UNLAUNCHED", "HIGHLIGHT", "STAT", "NEGSTAT");
         Set<String> names = new HashSet<>(base.size() * 2);
         for (String name : base) {
             names.add(name);

@@ -420,16 +420,43 @@ public final class MindustryRoutes {
         });
     }
 
-    /// Builds launch options and spawns the client process.
-    private static void spawnClient(XenonGameRepository repo, MindustryVersion version,
-                                    Path versionRoot) throws Exception {
-        String id = version.getId();
-        LaunchOptions opts = MindustryLaunchService.buildLaunchOptions(repo, version,
+    /// Builds launch options, materializing the save runtime as a side effect.
+    ///
+    /// <p>{@link MindustryLaunchService#buildLaunchOptions} validates the
+    /// archive selection and runs {@link MindustryLaunchSaveService#prepare},
+    /// so callers that write marker files or crash-recovery snapshots must
+    /// build first: a rebuild after those writes would wipe them out.</p>
+    ///
+    /// @param repo repository that owns the instance
+    /// @param version instance descriptor to launch
+    /// @return immutable options for the client process
+    /// @throws Exception when the jar, Java runtime, or save runtime cannot be prepared
+    private static LaunchOptions buildClientOptions(XenonGameRepository repo,
+                                                    MindustryVersion version) throws Exception {
+        return MindustryLaunchService.buildLaunchOptions(repo, version,
                 determination.xenon.mindustry.CurrentPlayerProfile.current());
+    }
+
+    /// Starts the client process for already-built launch options.
+    ///
+    /// @param version instance descriptor that owns the process
+    /// @param versionRoot instance root directory used for event routing
+    /// @param opts options returned by [#buildClientOptions]
+    /// @throws Exception when the runtime registry cannot start the process
+    private static void startClientProcess(MindustryVersion version, Path versionRoot,
+                                           LaunchOptions opts) throws Exception {
+        String id = version.getId();
         MindustryClientRuntimeRegistry.shared().launch(id, opts,
                 event -> onClientEvent(versionRoot, event),
                 line -> LOG.info("[mindustry] " + line),
                 line -> LOG.warning("[mindustry] " + line));
+    }
+
+    /// Builds launch options and spawns the client process.
+    private static void spawnClient(XenonGameRepository repo, MindustryVersion version,
+                                    Path versionRoot) throws Exception {
+        LaunchOptions opts = buildClientOptions(repo, version);
+        startClientProcess(version, versionRoot, opts);
     }
 
     /// Offers safe mode or a raw launch after an interrupted previous run.
@@ -453,8 +480,12 @@ public final class MindustryRoutes {
                                             Path versionRoot, Path effectiveDataDir) {
         Schedulers.io().execute(() -> {
             try {
+                // Materialize the runtime before writing state: prepare() may
+                // rebuild the data directory, which would discard a snapshot
+                // (and re-extract a stale launchid.dat) written any earlier.
+                LaunchOptions opts = buildClientOptions(repo, version);
                 MindustryCrashRecovery.takeOver(effectiveDataDir);
-                spawnClient(repo, version, versionRoot);
+                startClientProcess(version, versionRoot, opts);
                 Platform.runLater(() -> Controllers.showToast(
                         i18n("xenon.mindustry.modlist.crash.safe.done")));
             } catch (Throwable ex) {
@@ -472,8 +503,12 @@ public final class MindustryRoutes {
                                        Path effectiveDataDir) {
         Schedulers.io().execute(() -> {
             try {
+                // Build first so a runtime rebuild cannot resurrect the
+                // archive's launchid.dat after the marker was cleared.
+                LaunchOptions opts = buildClientOptions(
+                        MindustryImportFlow.repositoryForVersion(version), version);
                 Files.deleteIfExists(effectiveDataDir.resolve(MindustryCrashRecovery.LAUNCH_MARKER_NAME));
-                spawnClient(MindustryImportFlow.repositoryForVersion(version), version, versionRoot);
+                startClientProcess(version, versionRoot, opts);
             } catch (Throwable ex) {
                 LOG.warning("Mindustry launch failed", ex);
                 Platform.runLater(() -> Controllers.dialog(

@@ -48,6 +48,17 @@ public final class MindustryGameModNamingTest {
         assertEquals("", MindustryGameModNaming.keyName(null));
     }
 
+    /// The extra names Mindustry registers in UI.loadColors() are stripped too.
+    @Test
+    public void stripsMindustryUiColors() {
+        assertEquals("Mod", MindustryGameModNaming.stripColors("[accent]Mod"));
+        assertEquals("mod", MindustryGameModNaming.keyName("[accent]Mod"));
+        assertEquals("my-mod", MindustryGameModNaming.keyName("[stat]My Mod"));
+        assertEquals("Name", MindustryGameModNaming.stripColors("[unlaunched]Name"));
+        assertEquals("Name", MindustryGameModNaming.stripColors("[highlight]Name"));
+        assertEquals("Name", MindustryGameModNaming.stripColors("[negstat]Name"));
+    }
+
     /// The settings key mirrors the game's `mod-<internalName>-enabled` scheme.
     @Test
     public void buildsEnabledSettingKey() {

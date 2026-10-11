@@ -67,7 +67,9 @@ public final class MindustryHealthPane extends BorderPane {
     /// Instance root directory used to resolve the jar and playtime log.
     private final Path versionRoot;
 
-    /// Mindustry data directory whose `mods/` folder is evaluated.
+    /// Data directory the next launch actually uses, i.e. the runtime copy
+    /// when a save archive is selected. The compatibility scan and the mod
+    /// state audit both read this directory.
     private final Path dataDir;
 
     /// Status label for loading and issue counts.
@@ -87,7 +89,8 @@ public final class MindustryHealthPane extends BorderPane {
     ///
     /// @param version the Mindustry instance descriptor
     /// @param versionRoot instance root directory resolved for `version`
-    /// @param dataDir Mindustry data directory the instance launches with
+    /// @param dataDir data directory the next launch actually uses, i.e. the
+    ///     runtime copy when a save archive is selected
     public MindustryHealthPane(MindustryVersion version, Path versionRoot, Path dataDir) {
         this.version = version;
         this.versionRoot = versionRoot;

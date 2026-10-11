@@ -53,8 +53,12 @@ public final class MindustryCrashRecovery {
     /// Marker Mindustry writes at startup and deletes after a successful load.
     public static final String LAUNCH_MARKER_NAME = "launchid.dat";
 
+    /// Launcher-owned state folder inside a Mindustry data directory, also
+    /// preserved across save-runtime rebuilds.
+    public static final String STATE_DIR_NAME = ".xenon";
+
     /// Snapshot folder under the data directory.
-    private static final String SNAPSHOT_DIR_NAME = ".xenon/mod-state-snapshots";
+    private static final String SNAPSHOT_DIR_NAME = STATE_DIR_NAME + "/mod-state-snapshots";
 
     /// Settings key prefix and suffix for a mod's enabled flag.
     private static final String KEY_PREFIX = "mod-";
@@ -92,6 +96,9 @@ public final class MindustryCrashRecovery {
     public static Path takeOver(Path effectiveDataDir) throws IOException {
         Path modsDir = effectiveDataDir.resolve("mods");
         LinkedHashMap<String, Boolean> states = captureDesiredStates(effectiveDataDir, modsDir);
+        // A data directory keeps a single restore point: the snapshot about to
+        // be written replaces whatever an earlier takeover left behind.
+        clearSnapshots(effectiveDataDir.resolve(SNAPSHOT_DIR_NAME));
         Path snapshot = writeSnapshot(effectiveDataDir, states);
 
         LinkedHashMap<String, Object> disableAll = new LinkedHashMap<>();
@@ -238,6 +245,36 @@ public final class MindustryCrashRecovery {
             states.put(KEY_PREFIX + name + KEY_SUFFIX, mod.isEnabled());
         }
         return states;
+    }
+
+    /// Removes every existing snapshot so only the next capture survives.
+    ///
+    /// <p>Best-effort: a snapshot that cannot be deleted only leaves an extra
+    /// restore point behind, so it never blocks the launch path.</p>
+    ///
+    /// @param dir snapshot folder
+    private static void clearSnapshots(Path dir) {
+        if (!Files.isDirectory(dir)) {
+            return;
+        }
+        int removed = 0;
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(dir, "*.properties")) {
+            for (Path snapshot : stream) {
+                try {
+                    Files.deleteIfExists(snapshot);
+                    removed++;
+                } catch (IOException ex) {
+                    Logger.LOG.warning("Failed to remove old crash-recovery snapshot " + snapshot
+                            + ": " + ex.getMessage());
+                }
+            }
+        } catch (IOException ex) {
+            Logger.LOG.warning("Failed to clean crash-recovery snapshots: " + ex.getMessage());
+        }
+        if (removed > 0) {
+            Logger.LOG.info("Crash-recovery safe mode: removed " + removed
+                    + " previous snapshot(s); only the newest restore point is kept");
+        }
     }
 
     /// Serializes one capture under the data directory's snapshot folder.

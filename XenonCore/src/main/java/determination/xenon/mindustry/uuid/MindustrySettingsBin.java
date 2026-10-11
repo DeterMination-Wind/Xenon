@@ -144,8 +144,11 @@ public final class MindustrySettingsBin {
      * failures to the caller. Use it for launch-time state that must be
      * persisted before the game starts.</p>
      *
-     * <p>A corrupt primary is recovered from Mindustry's backup chain first,
-     * mirroring what the game does on its next startup. When no backup parses
+     * <p>A corrupt primary is rebuilt from Mindustry's backup chain: this
+     * method reads the best parseable backup as the merge base and then writes
+     * the merged result to both the primary and its backup. The game repairs
+     * the file the same way on startup (Arc's {@code Settings.loadValues()}
+     * copies a readable backup over the primary file). When no backup parses
      * either, the write aborts so the corrupt file is never replaced by a
      * file containing only the launcher values.</p>
      */
@@ -170,17 +173,19 @@ public final class MindustrySettingsBin {
     }
 
     /**
-     * Reads the entries a merge write should start from, with the same
-     * recovery chain Mindustry uses.
+     * Reads the entries a merge write should start from, consulting the same
+     * backup chain Mindustry uses.
      *
      * <p>Reading order: the primary file, then {@code settings_backup.bin},
-     * then the newest parseable snapshot in {@code settings_backups/}. A
-     * missing primary whose backup parses is recovered (the game behaves the
-     * same way, because a failed primary load falls through to the backups).
-     * Only a corrupt primary with no usable backup throws.</p>
+     * then the newest parseable snapshot in {@code settings_backups/}. The
+     * backup chain only supplies a merge baseline on this path: nothing is
+     * written back, so a missing or corrupt primary is not repaired by a
+     * call to this method alone. The repair happens when a mutating caller
+     * such as {@link #putValuesOrThrow(Path, Map)} writes the merged result to
+     * the primary and its backup.</p>
      *
      * @param dataDir Mindustry data directory that owns {@code settings.bin}
-     * @return the recovered base entry set, never {@code null}
+     * @return the merge-base entry set, never {@code null}
      * @throws IOException when the primary exists but neither it nor any
      *     backup can be parsed
      */
@@ -190,8 +195,9 @@ public final class MindustrySettingsBin {
         if (!Files.isRegularFile(file)) {
             @Nullable LinkedHashMap<String, Object> recovered = tryReadBackups(dataDir);
             if (recovered != null) {
-                Logger.LOG.warning("settings.bin is missing; recovered " + recovered.size()
-                        + " value(s) from a backup in " + dataDir);
+                Logger.LOG.warning("settings.bin is missing; using " + recovered.size()
+                        + " value(s) from a backup as the merge baseline (read-only, not written back) in "
+                        + dataDir);
                 return recovered;
             }
             return new LinkedHashMap<>();
@@ -204,7 +210,9 @@ public final class MindustrySettingsBin {
                 throw primaryFailure;
             }
             Logger.LOG.warning("settings.bin is corrupt (" + primaryFailure.getMessage()
-                    + "); recovered " + recovered.size() + " value(s) from a backup in " + dataDir);
+                    + "); using " + recovered.size()
+                    + " value(s) from a backup as the merge baseline (read-only, not written back) in "
+                    + dataDir);
             return recovered;
         }
     }

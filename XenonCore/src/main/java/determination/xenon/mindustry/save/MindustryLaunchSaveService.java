@@ -19,6 +19,7 @@ package determination.xenon.mindustry.save;
 
 import kala.compress.archivers.zip.ZipArchiveEntry;
 import kala.compress.archivers.zip.ZipArchiveReader;
+import determination.xenon.mindustry.mod.MindustryCrashRecovery;
 import determination.xenon.mindustry.uuid.MindustrySettingsBin;
 import determination.xenon.util.io.CompressingUtils;
 import determination.xenon.util.io.FileUtils;
@@ -163,6 +164,11 @@ public final class MindustryLaunchSaveService {
                     .unzip();
             applyRuntimeModState(runtimeDir, preserved);
             removeLegacyAutoLoadFiles(runtimeDir);
+            // The freshly extracted runtime has never run, so a `launchid.dat`
+            // shipped inside the archive is not a real failed launch. Clearing
+            // it here (and only on the rebuild branch) keeps the game's own
+            // mass-disable recovery from firing on the next start.
+            Files.deleteIfExists(runtimeDir.resolve(MindustryCrashRecovery.LAUNCH_MARKER_NAME));
             writeMarker(runtimeDir, archive);
         }
         return runtimeDir;
@@ -195,8 +201,12 @@ public final class MindustryLaunchSaveService {
     /// User-owned state of a runtime directory captured before a rebuild.
     ///
     /// @param modsBackup temporary copy of the runtime's mods folder, or `null` when it did not exist
+    /// @param xenonStateBackup temporary copy of the runtime's launcher state
+    ///     folder (crash-recovery snapshots), or `null` when it did not exist
     /// @param enabledFlags `mod-*-enabled` settings values from the runtime
-    private record RuntimeModState(@Nullable Path modsBackup, LinkedHashMap<String, Object> enabledFlags) {
+    private record RuntimeModState(@Nullable Path modsBackup,
+                                   @Nullable Path xenonStateBackup,
+                                   LinkedHashMap<String, Object> enabledFlags) {
     }
 
     /// Captures the runtime copy's mods folder and mod settings flags so a
@@ -217,10 +227,18 @@ public final class MindustryLaunchSaveService {
                 flags.put(entry.getKey(), entry.getValue());
             }
         }
-        if (backupDir == null && flags.isEmpty()) {
+        // Crash-recovery snapshots live under `.xenon`; a rebuild must not turn
+        // a restore point the user can still see into a dangling banner.
+        Path stateDir = runtimeDir.resolve(MindustryCrashRecovery.STATE_DIR_NAME);
+        @Nullable Path stateBackup = null;
+        if (Files.isDirectory(stateDir)) {
+            stateBackup = Files.createTempDirectory("xenon-runtime-state-");
+            FileUtils.copyDirectory(stateDir, stateBackup);
+        }
+        if (backupDir == null && stateBackup == null && flags.isEmpty()) {
             return null;
         }
-        return new RuntimeModState(backupDir, flags);
+        return new RuntimeModState(backupDir, stateBackup, flags);
     }
 
     /// Replays a captured runtime mod state onto a freshly extracted runtime.
@@ -238,14 +256,11 @@ public final class MindustryLaunchSaveService {
                 Path modsDir = runtimeDir.resolve("mods");
                 Files.createDirectories(modsDir);
                 try (DirectoryStream<Path> stream = Files.newDirectoryStream(state.modsBackup())) {
-                    for (Path file : stream) {
-                        if (!Files.isRegularFile(file)) {
-                            continue;
-                        }
+                    for (Path entry : stream) {
                         try {
-                            applyPreservedModFile(modsDir, file);
+                            applyPreservedModEntry(modsDir, entry);
                         } catch (IOException ex) {
-                            Logger.LOG.warning("Failed to preserve runtime mod " + file.getFileName()
+                            Logger.LOG.warning("Failed to preserve runtime mod " + entry.getFileName()
                                     + ": " + ex.getMessage());
                         }
                     }
@@ -258,12 +273,45 @@ public final class MindustryLaunchSaveService {
                     Logger.LOG.warning("Failed to preserve runtime mod flags: " + ex.getMessage());
                 }
             }
+            if (state.xenonStateBackup() != null) {
+                Path stateDir = runtimeDir.resolve(MindustryCrashRecovery.STATE_DIR_NAME);
+                // Newly extracted content wins, but no data archive ships a
+                // `.xenon` folder, so this normally restores the snapshots.
+                if (!Files.exists(stateDir)) {
+                    FileUtils.copyDirectory(state.xenonStateBackup(), stateDir);
+                }
+            }
         } catch (IOException ex) {
             Logger.LOG.warning("Failed to replay runtime mod state: " + ex.getMessage());
         } finally {
             if (state.modsBackup() != null) {
                 FileUtils.deleteDirectoryQuietly(state.modsBackup());
             }
+            if (state.xenonStateBackup() != null) {
+                FileUtils.deleteDirectoryQuietly(state.xenonStateBackup());
+            }
+        }
+    }
+
+    /// Replays one preserved mods entry into the freshly extracted mods folder.
+    ///
+    /// <p>Directory mods cannot be toggled by renaming, so they are restored
+    /// under their original name; newly extracted content wins when the
+    /// archive already provides the same name. Regular archives keep the
+    /// `.disabled` handling of {@link #applyPreservedModFile(Path, Path)},
+    /// and any other entry type is skipped.</p>
+    ///
+    /// @param modsDir freshly extracted mods folder
+    /// @param preserved preserved entry from the pre-rebuild mods folder
+    /// @throws IOException when the entry cannot be copied
+    private static void applyPreservedModEntry(Path modsDir, Path preserved) throws IOException {
+        if (Files.isDirectory(preserved)) {
+            Path target = modsDir.resolve(preserved.getFileName().toString());
+            if (!Files.exists(target)) {
+                FileUtils.copyDirectory(preserved, target);
+            }
+        } else if (Files.isRegularFile(preserved)) {
+            applyPreservedModFile(modsDir, preserved);
         }
     }
 

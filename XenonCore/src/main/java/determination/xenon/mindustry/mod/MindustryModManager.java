@@ -344,7 +344,9 @@ public final class MindustryModManager {
                     Object previous = current.get(key);
                     // A missing key means "enabled" for the game; restoring it
                     // as an explicit true keeps the effective state identical.
-                    previousSettings.put(key, previous instanceof Boolean ? previous : Boolean.TRUE);
+                    // An existing non-boolean value is written back unchanged,
+                    // so an undo never rewrites data this class does not own.
+                    previousSettings.put(key, previous != null ? previous : Boolean.TRUE);
                 }
                 settingsWriter.write(dataDir, pendingSettings);
             } catch (IOException | RuntimeException ex) {

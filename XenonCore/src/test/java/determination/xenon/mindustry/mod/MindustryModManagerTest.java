@@ -539,6 +539,26 @@ public final class MindustryModManagerTest {
         assertFalse(Files.exists(modsDir.resolve("alpha.zip.disabled")));
     }
 
+    /// A rename failure writes back the exact previous value, even a non-boolean one.
+    @Test
+    public void renameFailureRestoresExactPreviousNonBooleanSetting(@TempDir Path tempDir)
+            throws IOException {
+        Path modsDir = tempDir.resolve("mods");
+        writeMod(modsDir.resolve("alpha.zip"), "alpha", "Alpha");
+        MindustrySettingsBin.putValuesOrThrow(tempDir, Map.of("mod-alpha-enabled", 41));
+        MindustryModManager manager = new MindustryModManager(modsDir);
+        List<MindustryLocalMod> mods = manager.scan();
+        Object before = MindustrySettingsBin.read(tempDir).values().get("mod-alpha-enabled");
+        Files.delete(alphaFile(mods));
+
+        MindustryModManager.BatchResult result = manager.setEnabled(mods, false);
+
+        assertEquals(1, result.failures().size());
+        Object after = MindustrySettingsBin.read(tempDir).values().get("mod-alpha-enabled");
+        assertEquals(before, after);
+        assertEquals(41, after);
+    }
+
     /// The settings key follows the descriptor the game itself reads.
     @Test
     public void settingsKeyFollowsTheGameDescriptor(@TempDir Path tempDir) throws IOException {

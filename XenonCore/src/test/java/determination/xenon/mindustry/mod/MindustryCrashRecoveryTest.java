@@ -26,6 +26,8 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -78,6 +80,29 @@ public final class MindustryCrashRecoveryTest {
     @Test
     public void pendingRequiresMarker(@TempDir Path tempDir) {
         assertFalse(MindustryCrashRecovery.pending(tempDir));
+    }
+
+    /// Each takeover replaces the previous restore point, keeping exactly one snapshot.
+    @Test
+    public void keepsOnlyTheNewestSnapshot(@TempDir Path tempDir) throws IOException {
+        Path modsDir = tempDir.resolve("mods");
+        writeMod(modsDir.resolve("alpha.zip"), "alpha", "Alpha");
+        MindustrySettingsBin.putValuesOrThrow(tempDir, Map.of("mod-alpha-enabled", Boolean.TRUE));
+
+        MindustryCrashRecovery.takeOver(tempDir);
+        // Change the state so the second capture supersedes the first one.
+        MindustrySettingsBin.putValuesOrThrow(tempDir, Map.of("mod-alpha-enabled", Boolean.TRUE));
+        Path second = MindustryCrashRecovery.takeOver(tempDir);
+
+        Path snapshotDir = tempDir.resolve(MindustryCrashRecovery.STATE_DIR_NAME)
+                .resolve("mod-state-snapshots");
+        List<Path> snapshots = new ArrayList<>();
+        try (var stream = Files.newDirectoryStream(snapshotDir, "*.properties")) {
+            stream.forEach(snapshots::add);
+        }
+        assertEquals(1, snapshots.size());
+        assertEquals(second, snapshots.get(0));
+        assertEquals(second, MindustryCrashRecovery.latestSnapshot(tempDir));
     }
 
     private static Path writeMod(Path archive, String internalName, String displayName)

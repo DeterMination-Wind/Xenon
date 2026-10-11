@@ -174,6 +174,21 @@ public final class MindustrySettingsBinTest {
         assertEquals(2, values.get("count"));
     }
 
+    /// A read-only backup recovery leaves the corrupt primary byte-for-byte intact.
+    @Test
+    public void readValuesDoesNotRewriteCorruptPrimary(@TempDir Path tempDir) throws IOException {
+        MindustrySettingsBin.putValuesOrThrow(tempDir, Map.of("name", "Xenon"));
+        Files.copy(tempDir.resolve(MindustrySettingsBin.FILE_NAME),
+                tempDir.resolve(MindustrySettingsBin.BACKUP_NAME),
+                StandardCopyOption.REPLACE_EXISTING);
+        Path file = tempDir.resolve(MindustrySettingsBin.FILE_NAME);
+        Files.writeString(file, "not a settings file");
+        byte[] before = Files.readAllBytes(file);
+
+        assertEquals("Xenon", MindustrySettingsBin.readValues(tempDir).get("name"));
+        assertArrayEquals(before, Files.readAllBytes(file));
+    }
+
     /// When the primary is missing, a valid backup still seeds the write.
     @Test
     public void recoversMissingPrimaryFromBackup(@TempDir Path tempDir) throws IOException {
