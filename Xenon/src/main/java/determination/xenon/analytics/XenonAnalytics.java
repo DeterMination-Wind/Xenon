@@ -68,6 +68,12 @@ public final class XenonAnalytics {
     /// Period between regular usage reports.
     static final Duration REPORT_INTERVAL = Duration.ofMinutes(10);
 
+    /// Upper bound for a single usage report; longer deltas are clamped.
+    static final double MAX_REPORTED_MINUTES = 600.0D;
+
+    /// Deltas above this are treated as a system clock jump and dropped.
+    static final double DISCARD_ABOVE_MINUTES = 1440.0D;
+
     private static final Object LOCK = new Object();
 
     private static Clock clock = Clock.systemUTC();
@@ -204,17 +210,30 @@ public final class XenonAnalytics {
             return;
         }
 
-        double usageMinutes = timer.elapsedMinutes(now);
-        if (usageMinutes <= 0.0D) {
+        double rawMinutes = timer.elapsedMinutes(now);
+        if (rawMinutes <= 0.0D) {
             timer.markReported(now);
             return;
         }
+        if (rawMinutes > DISCARD_ABOVE_MINUTES) {
+            // A delta this large means the wall clock jumped (for example the
+            // machine woke from sleep with a corrected time), not that the
+            // launcher was really used for that long; reporting it would
+            // poison every usage dashboard, so drop the sample entirely.
+            LOG.warning("[Xenon/PostHog] dropping implausible usage delta: " + rawMinutes
+                    + " minutes; assuming a system clock jump");
+            timer.markReported(now);
+            return;
+        }
+        boolean clamped = rawMinutes > MAX_REPORTED_MINUTES;
+        double usageMinutes = clamped ? MAX_REPORTED_MINUTES : rawMinutes;
 
         boolean firstLaunch = !config.isAnalyticsFirstLaunchSent();
         PlayerIdentity identity = resolvePlayerIdentity();
         Map<String, Object> properties = buildUsageProperties(
                 identity,
                 usageMinutes,
+                clamped ? rawMinutes : null,
                 firstLaunch,
                 SystemSnapshot.current());
         local.capture(identity.distinctId(), EVENT_USAGE, properties);
@@ -315,13 +334,28 @@ public final class XenonAnalytics {
         }
     }
 
+    /// Builds the regular usage event payload.
+    ///
+    /// @param identity the resolved player identity
+    /// @param usageMinutes the reported usage delta in minutes, already clamped
+    ///                     to {@link #MAX_REPORTED_MINUTES}
+    /// @param rawMinutes the pre-clamp delta when it was clamped, otherwise
+    ///                   {@code null}; only present in the payload when clamped
+    /// @param firstLaunch whether this is the first usage event for the install
+    /// @param system the system context snapshot
+    /// @return the ordered PostHog property map
     static Map<String, Object> buildUsageProperties(
             PlayerIdentity identity,
             double usageMinutes,
+            @Nullable Double rawMinutes,
             boolean firstLaunch,
             SystemSnapshot system) {
         Map<String, Object> properties = new LinkedHashMap<>();
         properties.put("usage_minutes", usageMinutes);
+        if (rawMinutes != null) {
+            properties.put("usage_clamped", true);
+            properties.put("usage_raw_minutes", rawMinutes);
+        }
         properties.put("mod_version", Metadata.VERSION);
         properties.put("player_name", identity.playerName());
         properties.put("player_id", identity.playerId());

@@ -65,7 +65,7 @@ public final class XenonAnalyticsTest {
         XenonAnalytics.SystemSnapshot system = new XenonAnalytics.SystemSnapshot(
                 "Windows 11", 32768, "21.0.3", "x64", 16, "zh_CN");
 
-        Map<String, Object> properties = XenonAnalytics.buildUsageProperties(identity, 10.5D, true, system);
+        Map<String, Object> properties = XenonAnalytics.buildUsageProperties(identity, 10.5D, null, true, system);
 
         assertEquals("xenon_event", XenonAnalytics.EVENT_USAGE);
         assertEquals("uuid-123", properties.get("player_id"));
@@ -74,6 +74,8 @@ public final class XenonAnalyticsTest {
         assertEquals(10.5D, properties.get("usage_minutes"));
         assertEquals(true, properties.get("is_first_launch"));
         assertNotEquals("unknown", properties.get("player_name"));
+        assertFalse(properties.containsKey("usage_clamped"));
+        assertFalse(properties.containsKey("usage_raw_minutes"));
     }
 
     /// Crash payloads carry the Xenon exception details and the same player identity fields.
@@ -143,6 +145,71 @@ public final class XenonAnalyticsTest {
             assertEquals(0, client.captureCalls);
             assertEquals(0, client.flushCalls);
             assertEquals(1, client.closeCalls);
+        } finally {
+            XenonAnalytics.resetForTesting();
+            globalConfigField.set(null, previousGlobalConfig);
+            if (previousApiKey == null) {
+                System.clearProperty("xenon.posthog.api_key");
+            } else {
+                System.setProperty("xenon.posthog.api_key", previousApiKey);
+            }
+        }
+    }
+
+    /// Usage deltas beyond ten hours are clamped and tagged with the raw value.
+    @Test
+    public void clampsLongUsageReports() throws Exception {
+        withFreshGlobalConfig(() -> {
+            FakeClient client = new FakeClient();
+            MutableClock mutableClock = new MutableClock(Instant.parse("2026-07-06T00:00:00Z"));
+            XenonAnalytics.setClockForTesting(mutableClock);
+            XenonAnalytics.setClientFactoryForTesting(apiKey -> client);
+
+            XenonAnalytics.start();
+            mutableClock.advance(Duration.ofHours(12));
+            XenonAnalytics.shutdown();
+
+            assertEquals(1, client.captureCalls);
+            assertEquals(XenonAnalytics.MAX_REPORTED_MINUTES,
+                    ((Number) client.properties.get("usage_minutes")).doubleValue(), 0.0001D);
+            assertEquals(true, client.properties.get("usage_clamped"));
+            assertEquals(720.0D, ((Number) client.properties.get("usage_raw_minutes")).doubleValue(), 0.0001D);
+        });
+    }
+
+    /// Absurd usage deltas (system clock jumps) are dropped without an event.
+    @Test
+    public void discardsAbsurdUsageReports() throws Exception {
+        withFreshGlobalConfig(() -> {
+            FakeClient client = new FakeClient();
+            MutableClock mutableClock = new MutableClock(Instant.parse("2026-07-06T00:00:00Z"));
+            XenonAnalytics.setClockForTesting(mutableClock);
+            XenonAnalytics.setClientFactoryForTesting(apiKey -> client);
+
+            XenonAnalytics.start();
+            mutableClock.advance(Duration.ofDays(365L * 17L));
+            XenonAnalytics.shutdown();
+
+            assertEquals(0, client.captureCalls);
+            assertEquals(0, client.flushCalls);
+        });
+    }
+
+    /// Runs {@code body} with an isolated enabled global config and restores the previous state.
+    private static void withFreshGlobalConfig(Runnable body) throws Exception {
+        Field globalConfigField = ConfigHolder.class.getDeclaredField("globalConfigInstance");
+        globalConfigField.setAccessible(true);
+        Object previousGlobalConfig = globalConfigField.get(null);
+        String previousApiKey = System.getProperty("xenon.posthog.api_key");
+
+        GlobalConfig config = new GlobalConfig();
+        config.setAnalyticsEnabled(true);
+        config.setAnalyticsInstallId("install-1");
+
+        try {
+            globalConfigField.set(null, config);
+            System.setProperty("xenon.posthog.api_key", "test-key");
+            body.run();
         } finally {
             XenonAnalytics.resetForTesting();
             globalConfigField.set(null, previousGlobalConfig);
