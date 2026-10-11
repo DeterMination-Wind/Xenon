@@ -50,22 +50,22 @@ public final class SteamAccountDiscoveryTest {
         write(steam.resolve("config/loginusers.vdf"), """
                 "users"
                 {
-                	"%d"
-                	{
-                		"AccountName"		"mainaccount"
-                		"PersonaName"		"Main Persona"
-                		"RememberPassword"		"1"
-                		"AutoLogin"		"1"
-                		"Timestamp"		"1700000000"
-                	}
-                	"%d"
-                	{
-                		"AccountName"		"secondaccount"
-                		"PersonaName"		"Second Persona"
-                		"RememberPassword"		"0"
-                		"AutoLogin"		"0"
-                		"Timestamp"		"1800000000"
-                	}
+                \t"%d"
+                \t{
+                \t\t"AccountName"\t\t"mainaccount"
+                \t\t"PersonaName"\t\t"Main Persona"
+                \t\t"RememberPassword"\t\t"1"
+                \t\t"AutoLogin"\t\t"1"
+                \t\t"Timestamp"\t\t"1700000000"
+                \t}
+                \t"%d"
+                \t{
+                \t\t"AccountName"\t\t"secondaccount"
+                \t\t"PersonaName"\t\t"Second Persona"
+                \t\t"RememberPassword"\t\t"0"
+                \t\t"AutoLogin"\t\t"0"
+                \t\t"Timestamp"\t\t"1800000000"
+                \t}
                 }
                 """.formatted(ACCOUNT_42, ACCOUNT_84));
 
@@ -100,20 +100,20 @@ public final class SteamAccountDiscoveryTest {
         write(steam.resolve("config/loginusers.vdf"), """
                 "users"
                 {
-                	"%d"
-                	{
-                		"AccountName"		"mainaccount"
-                		"PersonaName"		"Main Persona"
-                		"AutoLogin"		"1"
-                		"Timestamp"		"1700000000"
-                	}
-                	"%d"
-                	{
-                		"AccountName"		"secondaccount"
-                		"PersonaName"		"Second Persona"
-                		"AutoLogin"		"0"
-                		"Timestamp"		"1800000000"
-                	}
+                \t"%d"
+                \t{
+                \t\t"AccountName"\t\t"mainaccount"
+                \t\t"PersonaName"\t\t"Main Persona"
+                \t\t"AutoLogin"\t\t"1"
+                \t\t"Timestamp"\t\t"1700000000"
+                \t}
+                \t"%d"
+                \t{
+                \t\t"AccountName"\t\t"secondaccount"
+                \t\t"PersonaName"\t\t"Second Persona"
+                \t\t"AutoLogin"\t\t"0"
+                \t\t"Timestamp"\t\t"1800000000"
+                \t}
                 }
                 """.formatted(ACCOUNT_42, ACCOUNT_84));
 
@@ -134,22 +134,22 @@ public final class SteamAccountDiscoveryTest {
         write(steam.resolve("config/config.vdf"), """
                 "InstallConfigStore"
                 {
-                	"Software"
-                	{
-                		"Valve"
-                		{
-                			"Steam"
-                			{
-                				"Accounts"
-                				{
-                					"cfgaccount"
-                					{
-                						"SteamID"		"%d"
-                					}
-                				}
-                			}
-                		}
-                	}
+                \t"Software"
+                \t{
+                \t\t"Valve"
+                \t\t{
+                \t\t\t"Steam"
+                \t\t\t{
+                \t\t\t\t"Accounts"
+                \t\t\t\t{
+                \t\t\t\t\t"cfgaccount"
+                \t\t\t\t\t{
+                \t\t\t\t\t\t"SteamID"\t\t"%d"
+                \t\t\t\t\t}
+                \t\t\t\t}
+                \t\t\t}
+                \t\t}
+                \t}
                 }
                 """.formatted(ACCOUNT_42));
 
@@ -189,21 +189,21 @@ public final class SteamAccountDiscoveryTest {
         write(steam.resolve("config/loginusers.vdf"), """
                 "users"
                 {
-                	"%d"
-                	{
-                		"AccountName"		"mainaccount"
-                		"PersonaName"		"Main Persona"
-                		"AutoLogin"		"1"
-                		"Timestamp"		"1700000000"
-                	}
+                \t"%d"
+                \t{
+                \t\t"AccountName"\t\t"mainaccount"
+                \t\t"PersonaName"\t\t"Main Persona"
+                \t\t"AutoLogin"\t\t"1"
+                \t\t"Timestamp"\t\t"1700000000"
+                \t}
                 }
                 """.formatted(ACCOUNT_42));
         write(steam.resolve("steamapps/appmanifest_1127400.acf"), """
                 "AppState"
                 {
-                	"appid"		"1127400"
-                	"name"		"Mindustry"
-                	"LastOwner"		"%d"
+                \t"appid"\t\t"1127400"
+                \t"name"\t\t"Mindustry"
+                \t"LastOwner"\t\t"%d"
                 }
                 """.formatted(ACCOUNT_84));
 
@@ -226,42 +226,42 @@ public final class SteamAccountDiscoveryTest {
         write(steam.resolve("config/loginusers.vdf"), """
                 "users"
                 {
-                	"%d"
-                	{
-                		"AccountName"		"mainaccount"
-                		"PersonaName"		"Main Persona"
-                		"AutoLogin"		"1"
-                		"Timestamp"		"1700000000"
-                	}
+                \t"%d"
+                \t{
+                \t\t"AccountName"\t\t"mainaccount"
+                \t\t"PersonaName"\t\t"Main Persona"
+                \t\t"AutoLogin"\t\t"1"
+                \t\t"Timestamp"\t\t"1700000000"
+                \t}
                 }
                 """.formatted(ACCOUNT_42));
         write(steam.resolve("config/config.vdf"), """
                 "InstallConfigStore"
                 {
-                	"Software"
-                	{
-                		"Valve"
-                		{
-                			"Steam"
-                			{
-                				"Accounts"
-                				{
-                					"mainaccount"
-                					{
-                						"SteamID"		"%d"
-                					}
-                				}
-                			}
-                		}
-                	}
+                \t"Software"
+                \t{
+                \t\t"Valve"
+                \t\t{
+                \t\t\t"Steam"
+                \t\t\t{
+                \t\t\t\t"Accounts"
+                \t\t\t\t{
+                \t\t\t\t\t"mainaccount"
+                \t\t\t\t\t{
+                \t\t\t\t\t\t"SteamID"\t\t"%d"
+                \t\t\t\t\t}
+                \t\t\t\t}
+                \t\t\t}
+                \t\t}
+                \t}
                 }
                 """.formatted(ACCOUNT_42));
         Files.createDirectories(steam.resolve("userdata/42"));
         write(steam.resolve("steamapps/appmanifest_1127400.acf"), """
                 "AppState"
                 {
-                	"appid"		"1127400"
-                	"LastOwner"		"%d"
+                \t"appid"\t\t"1127400"
+                \t"LastOwner"\t\t"%d"
                 }
                 """.formatted(ACCOUNT_42));
 
