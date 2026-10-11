@@ -2,6 +2,27 @@
 
 All notable changes to Xenon will be documented in this file.
 
+## [1.15.0] — 2026-10-11
+
+### Added
+- Offline accounts can import the Steam player UID: Xenon reads the local Steam client data (`loginusers.vdf`, `config.vdf`, the Mindustry app manifest and `userdata/`) and reproduces the exact UUID the Steam build uses.
+- Mindustry instances can be duplicated together with their game data and player settings.
+- Instances can view and edit every `settings.bin` entry by its original type, with automatic backups before saves and restore of the latest backup.
+- The mod list supports batch enable/disable/delete and drag-and-drop installation, including nested archive unpacking.
+- A launch interrupted during mod initialization can start in safe mode: Xenon snapshots the current configuration, disables all mods for that launch, and can restore the full configuration with one click.
+- Starting Xenon again focuses the already running window and forwards `xenon://` join links; launching a different version asks whether to open a second window.
+- GitHub API requests can reuse the credentials of a locally signed-in GitHub CLI, and the rate-limit dialog points to the token settings.
+
+### Changed
+- Download-page image thumbnails are cached with a bounded memory budget, the MDTBBS resource and map browsers are virtualized, community threads append incrementally, mod search is debounced, and the packaged launcher caps its heap at 1g with heap dumps on OOM.
+
+### Fixed
+- Mod state and crash-recovery snapshots survive runtime rebuilds, and the health check audits the effective launch data directory.
+- The Chinese language bundles are valid UTF-8 again.
+- Map version chips rebuild when paging appends rows, and a stale background load no longer pauses the displayed background.
+
+See the [bilingual release notes](release-notes/v1.15.0.md) for details.
+
 ## [1.14.1] — 2026-10-05
 
 ### Fixed
