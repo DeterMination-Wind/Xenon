@@ -77,6 +77,7 @@ public final class DownloadThrottleTest {
         long elapsedMillis() {
             return nanos.get() / NANOS_PER_MILLI;
         }
+
         /// Returns a snapshot of the requested wait slices.
         ///
         /// @return copied slice list in milliseconds

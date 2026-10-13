@@ -41,7 +41,9 @@ import java.util.concurrent.atomic.AtomicLong;
 /// fall back to a single stream. Every range loop passes its chunks through
 /// [DownloadThrottle#global()], so the segments share one byte budget rather
 /// than getting one each.
-public final class MdtbbsSegmentedDownloader {    private static final long SEGMENT_SIZE = 4L * 1024 * 1024;
+public final class MdtbbsSegmentedDownloader {
+
+    private static final long SEGMENT_SIZE = 4L * 1024 * 1024;
     private static final int MAX_SEGMENTS = 16;
     private static final int RETRIES = 3;
 
