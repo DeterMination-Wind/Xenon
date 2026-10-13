@@ -26,6 +26,7 @@ import determination.xenon.mindustry.community.MindustryCloudSaveSync.SaveCompar
 import determination.xenon.mindustry.community.MindustryCloudSaveSync.SaveIdentity;
 import determination.xenon.mindustry.community.MindustryCloudSaveSync.Verdict;
 import org.jetbrains.annotations.NotNullByDefault;
+import org.jetbrains.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -36,6 +37,7 @@ import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
@@ -53,6 +55,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /// Tests the read-only cloud-save comparison and the quota-cleanup planner.
 ///
@@ -165,22 +168,28 @@ public final class MindustryCloudSaveSyncTest {
 
     /// The check never writes to the saves directory, not even a temp file.
     ///
-    /// The saves tree is mounted from a read-only zip, so *any* write —
-    /// creating a file, creating a temp file, or even touching an mtime —
-    /// throws `ReadOnlyFileSystemException` instead of silently succeeding.
-    /// That turns "the check is read-only" from a code-review claim into an
-    /// enforced property.
+    /// The save tree is mounted from something the platform genuinely refuses
+    /// to write to, so *any* write — creating a file, creating a temp file, or
+    /// touching an mtime — fails instead of silently succeeding. That turns
+    /// "the check is read-only" from a code-review claim into an enforced
+    /// property.
+    ///
+    /// Two fixture strategies are needed because neither works everywhere: a
+    /// zip mounted with `accessMode=readOnly`, and a POSIX directory with its
+    /// write bits cleared. The fixture is verified before it is relied on, and
+    /// the test is skipped when the host can write to it anyway (a root user
+    /// ignores the POSIX bits) rather than reporting a false failure.
+    ///
+    /// @param dir scratch directory for the fixture
+    /// @throws IOException when the fixture cannot be built
     @Test
     public void checkNeverWritesToTheSavesDirectory(@TempDir Path dir) throws Exception {
-        Path zip = dir.resolve("saves.zip");
-        try (ZipOutputStream out = new ZipOutputStream(Files.newOutputStream(zip))) {
-            putEntry(out, "saves/live.msav", "first");
-            putEntry(out, "saves/backups/live-20260101.msav", "second");
-        }
-
-        try (FileSystem fs = FileSystems.newFileSystem(zip, Map.of("accessMode", "readOnly"))) {
-            Path saves = fs.getPath("/saves");
-            assertTrue(fs.isReadOnly(), "the fixture must really be read-only");
+        @Nullable ReadOnlyTree tree = buildReadOnlyTree(dir);
+        assumeTrue(tree != null, "no read-only fixture is available on this platform/JDK");
+        try (tree) {
+            Path saves = tree.savesDir();
+            assumeTrue(rejectsWrites(saves),
+                    "the fixture is writable here, so it cannot prove anything");
 
             CheckResult result = MindustryCloudSaveSync.check(saves,
                     () -> List.of(head("live.msav", "first", FAR)));
@@ -194,12 +203,80 @@ public final class MindustryCloudSaveSyncTest {
             assertEquals("first", Files.readString(saves.resolve("live.msav")));
             assertEquals(List.of("live-20260101.msav"), listNames(saves.resolve("backups")));
 
-            // Positive control: the fixture really rejects writes, so a write
-            // on the check path could not have gone unnoticed.
-            assertThrows(java.nio.file.ReadOnlyFileSystemException.class,
-                    () -> Files.writeString(saves.resolve("probe.msav"), "x"));
-            assertThrows(java.nio.file.ReadOnlyFileSystemException.class,
-                    () -> Files.createTempFile(saves, "xenon", ".tmp"));
+            // The check completed without a single write having been able to
+            // land, and the fixture still refuses writes afterwards.
+            assertTrue(rejectsWrites(saves),
+                    "the fixture must stay read-only after the check");
+        }
+    }
+
+    /// Something the platform will not let a test write to.
+    ///
+    /// @param savesDir    root of the save tree to hand to the check
+    /// @param zipFileSystem mounted zip backing the tree, or `null` for the POSIX fixture
+    /// @param posixDirectory directory whose write bits were cleared, or `null`
+    private record ReadOnlyTree(Path savesDir, FileSystem zipFileSystem,
+                               Path posixDirectory) implements AutoCloseable {
+        @Override
+        public void close() throws IOException {
+            if (zipFileSystem != null) {
+                zipFileSystem.close();
+            }
+        }
+    }
+
+    /// Builds a save tree that rejects writes, or returns `null` when the host offers none.
+    ///
+    /// @param work scratch directory
+    /// @return the fixture, or `null` when neither strategy is available
+    /// @throws IOException when the fixture cannot be created
+    private static @Nullable ReadOnlyTree buildReadOnlyTree(Path work) throws IOException {
+        Path zip = work.resolve("saves.zip");
+        try (ZipOutputStream out = new ZipOutputStream(Files.newOutputStream(zip))) {
+            putEntry(out, "saves/live.msav", "first");
+            putEntry(out, "saves/backups/live-20260101.msav", "second");
+        }
+        try {
+            // Only honoured from JDK 21 on; older providers silently return a
+            // writable file system, which isReadOnly() then reports.
+            FileSystem fs = FileSystems.newFileSystem(zip, Map.of("accessMode", "readOnly"));
+            if (fs.isReadOnly()) {
+                return new ReadOnlyTree(fs.getPath("/saves"), fs, null);
+            }
+            fs.close();
+        } catch (IOException | UnsupportedOperationException ignored) {
+            // Fall through to the POSIX strategy.
+        }
+
+        Path root = work.resolve("posix");
+        Path saves = root.resolve("saves");
+        write(saves.resolve("live.msav"), "first", BASE);
+        write(saves.resolve("backups/live-20260101.msav"), "second", BASE);
+        try {
+            Files.setPosixFilePermissions(saves,
+                    PosixFilePermissions.fromString("r-xr-xr-x"));
+        } catch (UnsupportedOperationException | IOException e) {
+            return null;
+        }
+        return new ReadOnlyTree(saves, null, saves);
+    }
+
+    /// Whether a save tree really rejects writes.
+    ///
+    /// Doubles as the fixture's positive control: a root user on Linux can
+    /// still write into a `chmod 0555` directory, and a test that quietly
+    /// passed there would prove nothing.
+    ///
+    /// @param savesDir tree to probe
+    /// @return `true` when a probe file could not be created
+    private static boolean rejectsWrites(Path savesDir) {
+        Path probe = savesDir.resolve("xenon-readonly-probe.tmp");
+        try {
+            Files.writeString(probe, "probe");
+            Files.deleteIfExists(probe);
+            return false;
+        } catch (IOException e) {
+            return true;
         }
     }
 
