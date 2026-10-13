@@ -2,6 +2,18 @@
 
 All notable changes to Xenon will be documented in this file.
 
+## [Unreleased] — 2026-10-12
+
+### Added
+- Global download rate limiting for the whole Mindustry download chain: unlimited, 1 / 2 / 5 MB/s presets or a custom KiB/s rate with a 32 KB/s floor, applied live to racing mirrors, range segments and resumable streams through one shared token bucket.
+- Mindustry download source tiers: prefer domestic, prefer official, domestic only and official only. The tier picks the version feed, gates every implicit fallback and is wired to the variant entries, so a variant that has no allowed feed is offered as a disabled card with the reason instead of failing later.
+- Downloads are verified against the source manifest. The file station publishes a SHA-256 for every asset, so a mismatch now deletes the artifact, retries the same source once, then switches to the other source family, and finally reports the exact size or hash discrepancy. A pause or cancel never switches sides.
+- Cloud saves are compared with the cloud once after startup, read-only, and files that differ are listed with both timestamps and sizes. A conflicting file can be resolved from a small prompt: overwrite local with the cloud copy after a backup, keep local and upload it, or decide later.
+- Uploading a cloud save makes room in the storage quota first by dropping the oldest unpinned snapshots, never a pinned one and never the newest one, logging each irreversible deletion before it happens.
+
+### Changed
+- The competitor table in both READMEs was re-verified against each project's own repository (descriptions, licenses, last push and per-cell evidence) as of 2026-10-12, with new Java-management and download-source-policy rows and three newly found Windows-capable launchers.
+
 ## [1.15.0] — 2026-10-11
 
 ### Added

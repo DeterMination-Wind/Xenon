@@ -62,23 +62,25 @@ Mod、地图、蓝图和存档都可以围绕具体实例整理、备份和导�
 
 ### 与竞品的比较
 
-> 官方发行版与 Steam 版不提供启动器，Java、数据目录和 Mod/存档整理都需要手动完成。下表按各项目公开文档整理（截至 2026-10-10），竞品能力可能随版本变化，请以各自项目为准。
+> 官方发行版与 Steam 版不提供启动器，Java、数据目录和 Mod/存档整理都需要手动完成。下表按各项目公开文档整理（截至 2026-10-12），竞品能力可能随版本变化，请以各自项目为准。
 
 | 能力 | Xenon | [BookMdtLauncher](https://github.com/ch-BookBanana/BookMdtLauncher) | [Copper Launcher](https://github.com/MDTCopper/launcher) | [MDL](https://github.com/colorgarden/mindustry_launcherMDL) | [MindustryLauncher](https://github.com/BalaM314/MindustryLauncher) |
 | --- | --- | --- | --- | --- | --- |
 | 平台 / 形态 | Windows / Linux / macOS · 图形界面 | Windows · 图形界面（PySide6，单文件便携） | Windows / Linux / macOS / Android · 图形界面（Flutter，开发阶段） | Windows 7+ · 图形界面（WPF，需 .NET 10） | Windows / Linux / macOS · 命令行（需 Node.js，npm 分发） |
 | 移动端运行（Android） | ❌ 桌面启动器；同维护者另有独立项目 [Xenon-Mobile](https://github.com/DeterMination-Wind/Xenon-Mobile) | ❌ | ✅ 自带 Java 运行环境与 Copper 桥（模组支持开发中） | ❌ | ❌ |
 | 游戏来源 | 原版 / Bleeding-Edge / MindustryX / CN-ARC / Foo Client，本地 jar 与 Steam 导入 | 原版 / MindustryX / MindustryARC | 原版 / Bleeding-Edge | 原版（GitHub Release） | 原版 / Bleeding-Edge / Foo Client，自定义 jar 与源码目录 |
+| Java 管理 | ✅ 多运行环境管理、自动检测与 Adoptium 下载，按游戏版本自动匹配 | ✅ 自动嗅探，缺失时从清华镜像 / Adoptium 竞速下载 JDK 17 | ✅ 多运行环境管理、Adoptium 自动下载，按游戏版本自动选择 | ✅ 扫描 + 全局 / 单版本路径 + 智能内存分配 | ⚠️ 仅可配置 Java 路径 |
 | 实例隔离 | ✅ 独立数据目录 | ✅ | ✅ | ✅ | ⚠️ 仅版本目录，数据目录未说明 |
 | Mod 管理 | ✅ 社区索引、GitHub 直装、启停、依赖补齐 | ❌ | ✅ 浏览、启停、搜索与分类筛选 | ✅ 浏览、搜索、安装卸载 | ⚠️ 面向 Mod 开发 |
 | Mod 批量操作 / 拖拽导入 | ✅ 多选与 Shift/Ctrl 连选，批量启停 / 删除，拖入文件或文件夹导入（双层压缩包自动拆包） | ❌ | ✅ 多选与拖动连选，拖入文件导入 | ❌ | ❌ |
 | 地图 / 蓝图 | ✅ mindustry.top 浏览安装，.msch 与分享码导入导出 | ❌ | ⚠️ 资源导入导出；蓝图浏览页因缺少数据源尚未开放 | ✅ 社区蓝图下载 | ❌ |
-| 存档 | ✅ 备份 / 导出，云存档 | ❌ | ✅ 导入导出、跨版本迁移 | ✅ 扫描 / 解析 / 删除 | ❌ |
+| 存档 | ✅ 备份 / 导出，云存档只读检查与冲突处理 | ❌ | ⚠️ 资源导入导出（存档 / 地图 / 模组 / 蓝图），导入功能仍在完善中 | ✅ 扫描 / 解析 / 删除 | ❌ |
 | 游戏内设置编辑（settings.bin） | ✅ 表格化全量编辑、搜索、自动备份（保留 10 份）与一键恢复 | ❌ | ⚠️ 启动时覆盖游戏内设置与多人用户名 | ✅ 表格化编辑、搜索、自动备份 | ❌ |
 | 社区与联机 | ✅ MDTBBS 社区、好友与联机邀请 | ❌ | ❌ | ✅ EasyTier P2P 联机大厅 | ❌ |
 | Mod 开发工作流（源码编译 / 改动自动重启） | ❌ | ❌ | ❌ | ❌ | ✅ 编译源码、构建 Mod，文件变动自动重启 |
 | 国内下载 | ✅ 多镜像自动回退，支持 GitHub CLI 自动认证 | ⚠️ JDK 走清华镜像，游戏本体依赖 GitHub 网络 | ✅ github / raw / api 分类测速切换，支持自定义节点 | ✅ 内置 6 种 GitHub 代理 | ❌ |
-| 下载限速 | ❌ | ❌ | ✅ | ❌ | ❌ |
+| 下载来源策略 | ✅ 四档：优先国内源 / 优先官方源 / 仅国内源 / 仅官方源，与版本列表和变体入口联动 | ⚠️ 多来源 Release 与测速选优，无档位开关 | ✅ 三档：直连优先 / 镜像优先 / 仅官方 | ❌ | ❌ |
+| 下载限速 | ✅ 全局令牌桶限速（不限速 / 1 / 2 / 5 MB/s / 自定义，下限 32 KB/s） | ❌ | ✅ | ❌ | ❌ |
 | 服务器管理 | ✅ 控制台、自动重启、ScriptAgent | ❌ | ❌ | ❌ | ❌ |
 | 最后更新 | ![last commit](https://img.shields.io/github/last-commit/DeterMination-Wind/Xenon) | ![last commit](https://img.shields.io/github/last-commit/ch-BookBanana/BookMdtLauncher) | ![last commit](https://img.shields.io/github/last-commit/MDTCopper/launcher) | ![last commit](https://img.shields.io/github/last-commit/colorgarden/mindustry_launcherMDL) | ![last commit](https://img.shields.io/github/last-commit/BalaM314/MindustryLauncher) |
 | 许可 | GPLv3 | GPL-3.0 | MIT | AGPL-3.0 | 未标注 |
@@ -87,11 +89,14 @@ Mod、地图、蓝图和存档都可以围绕具体实例整理、备份和导�
 
 其他同样支持 Windows 的 Mindustry 启动器：
 
-- [GIML](https://github.com/SquareCM2/GIML)（WinUI 3）![last commit](https://img.shields.io/github/last-commit/SquareCM2/GIML)
+- [GIML](https://github.com/SquareCM2/GIML)（WinUI 3，开发中，暂无 Release）![last commit](https://img.shields.io/github/last-commit/SquareCM2/GIML)
 - [zenonet/MindustryLauncher](https://github.com/zenonet/MindustryLauncher)（Avalonia，Windows/Linux 实例管理）![last commit](https://img.shields.io/github/last-commit/zenonet/MindustryLauncher)
 - [GXFQE/mindustry-launcher](https://github.com/GXFQE/mindustry-launcher)（Python 标准库 + tkinter，CAS 去重、隔离存档与自动备份）![last commit](https://img.shields.io/github/last-commit/GXFQE/mindustry-launcher)
 - [Walker196/Mindustry-Launcher](https://github.com/Walker196/Mindustry-Launcher)（Tauri + React + Rust）![last commit](https://img.shields.io/github/last-commit/Walker196/Mindustry-Launcher)
 - [NixaVulpi/MindustryLauncher](https://github.com/NixaVulpi/MindustryLauncher)（便携包装，需自备 Mindustry.jar 与 JRE）![last commit](https://img.shields.io/github/last-commit/NixaVulpi/MindustryLauncher)
+- [kabaka9527/MindustryLauncher](https://github.com/kabaka9527/MindustryLauncher)（Tauri 2 + Rust + React 19，便携式版本管理）![last commit](https://img.shields.io/github/last-commit/kabaka9527/MindustryLauncher)
+- [UnQuis/SingularityLauncher](https://github.com/UnQuis/SingularityLauncher)（Java + Arc Scene2D，扫描 versions/ 目录启动）![last commit](https://img.shields.io/github/last-commit/UnQuis/SingularityLauncher)
+- [Plain-Mindustry-Launcher](https://github.com/taiko525/Plain-Mindustry-Launcher)（WPF，固定 Java 17，需自备 Mindustry.jar）![last commit](https://img.shields.io/github/last-commit/taiko525/Plain-Mindustry-Launcher)
 
 Xenon 的差异在于把整条链路放进同一个界面：镜像下载与回退、实例隔离、Mod/地图/蓝图/存档、云存档、MDTBBS 社区与好友联机、服务器管理，以及 `.xenon` 打包和 `xenon://` 链接。
 
@@ -190,23 +195,25 @@ Every instance has its own logs and crash records. When a game exits or a mod ca
 
 ### Comparison with alternatives
 
-> Official builds and Steam do not ship a launcher: Java, data directories, and mod/save organization are all manual there. The table below is compiled from each project's public documentation (as of 2026-10-10); competitor features can change between releases, so check the respective projects for the current state.
+> Official builds and Steam do not ship a launcher: Java, data directories, and mod/save organization are all manual there. The table below is compiled from each project's public documentation (as of 2026-10-12); competitor features can change between releases, so check the respective projects for the current state.
 
 | Capability | Xenon | [BookMdtLauncher](https://github.com/ch-BookBanana/BookMdtLauncher) | [Copper Launcher](https://github.com/MDTCopper/launcher) | [MDL](https://github.com/colorgarden/mindustry_launcherMDL) | [MindustryLauncher](https://github.com/BalaM314/MindustryLauncher) |
 | --- | --- | --- | --- | --- | --- |
 | Platforms / form | Windows / Linux / macOS · GUI | Windows · GUI (PySide6, single-file portable) | Windows / Linux / macOS / Android · GUI (Flutter, in development) | Windows 7+ · GUI (WPF, requires .NET 10) | Windows / Linux / macOS · CLI (requires Node.js; distributed via npm) |
 | Mobile (Android) | ❌ Desktop launcher; the same maintainer ships the separate [Xenon-Mobile](https://github.com/DeterMination-Wind/Xenon-Mobile) | ❌ | ✅ Bundled Java runtime and Copper bridge (mod support in progress) | ❌ | ❌ |
 | Game sources | Vanilla / Bleeding-Edge / MindustryX / CN-ARC / Foo Client, local jar and Steam import | Vanilla / MindustryX / MindustryARC | Vanilla / Bleeding-Edge | Vanilla (GitHub releases) | Vanilla / Bleeding-Edge / Foo Client, custom jars and source directories |
+| Java management | ✅ Multiple runtimes, detection and Adoptium download, picked per game version | ✅ Auto-discovery, JDK 17 raced from the Tsinghua mirror and Adoptium when missing | ✅ Multiple runtimes, Adoptium download, picked per game version | ✅ Discovery plus global / per-version paths and automatic heap sizing | ⚠️ Configurable Java path only |
 | Instance isolation | ✅ Separate data directories | ✅ | ✅ | ✅ | ⚠️ Version folders only; data isolation not documented |
 | Mod management | ✅ Community index, GitHub install, enable/disable, dependency resolution | ❌ | ✅ Browse, toggle, search and category filters | ✅ Browse, search, install/uninstall | ⚠️ Mod development focused |
 | Batch mod actions / drag-and-drop import | ✅ Multi-select with Shift/Ctrl range, batch enable/disable/delete, drag files or folders in to import (nested archives are unpacked) | ❌ | ✅ Multi-select and drag-select, drag files in to import | ❌ | ❌ |
 | Maps / schematics | ✅ Browse and install from mindustry.top, .msch and share-code import/export | ❌ | ⚠️ Resource import/export; schematic browser paused for lack of a data source | ✅ Community schematic downloads | ❌ |
-| Saves | ✅ Backup/export plus cloud saves | ❌ | ✅ Import/export, cross-version migration | ✅ Scan / parse / delete | ❌ |
+| Saves | ✅ Backup/export plus read-only cloud-save checking and conflict handling | ❌ | ⚠️ Resource import/export (saves, maps, mods, schematics); import is still being finished | ✅ Scan / parse / delete | ❌ |
 | In-game settings editing (settings.bin) | ✅ Full table editor, search, automatic backup (latest 10 kept) and one-click restore | ❌ | ⚠️ Overrides in-game settings and the multiplayer username at launch | ✅ Table editor, search, automatic backup | ❌ |
 | Community & multiplayer | ✅ MDTBBS community, friends and invites | ❌ | ❌ | ✅ EasyTier P2P lobby | ❌ |
 | Mod development workflow (source compile / restart on change) | ❌ | ❌ | ❌ | ❌ | ✅ Compiles sources, builds mods, restarts on file changes |
 | China-friendly downloads | ✅ Automatic mirror fallback, optional GitHub CLI authentication | ⚠️ Tsinghua mirror for the JDK; game downloads depend on GitHub | ✅ Speed-tested mirrors per github/raw/api category, custom nodes supported | ✅ Six built-in GitHub proxies | ❌ |
-| Download rate limiting | ❌ | ❌ | ✅ | ❌ | ❌ |
+| Download source policy | ✅ Four tiers: prefer domestic / prefer official / domestic only / official only, wired to the version list and variant entries | ⚠️ Multiple Release sources with speed-based selection, no tier switch | ✅ Three tiers: direct first / mirror first / official only | ❌ | ❌ |
+| Download rate limiting | ✅ Global token bucket (unlimited / 1 / 2 / 5 MB/s / custom, 32 KB/s floor) | ❌ | ✅ | ❌ | ❌ |
 | Server management | ✅ Console, auto-restart, ScriptAgent | ❌ | ❌ | ❌ | ❌ |
 | Last update | ![last commit](https://img.shields.io/github/last-commit/DeterMination-Wind/Xenon) | ![last commit](https://img.shields.io/github/last-commit/ch-BookBanana/BookMdtLauncher) | ![last commit](https://img.shields.io/github/last-commit/MDTCopper/launcher) | ![last commit](https://img.shields.io/github/last-commit/colorgarden/mindustry_launcherMDL) | ![last commit](https://img.shields.io/github/last-commit/BalaM314/MindustryLauncher) |
 | License | GPLv3 | GPL-3.0 | MIT | AGPL-3.0 | Not declared |
@@ -215,11 +222,14 @@ Every instance has its own logs and crash records. When a game exits or a mod ca
 
 Other Windows-capable Mindustry launchers:
 
-- [GIML](https://github.com/SquareCM2/GIML) (WinUI 3) ![last commit](https://img.shields.io/github/last-commit/SquareCM2/GIML)
+- [GIML](https://github.com/SquareCM2/GIML) (WinUI 3, still in development, no releases yet) ![last commit](https://img.shields.io/github/last-commit/SquareCM2/GIML)
 - [zenonet/MindustryLauncher](https://github.com/zenonet/MindustryLauncher) (Avalonia, Windows/Linux instance management) ![last commit](https://img.shields.io/github/last-commit/zenonet/MindustryLauncher)
 - [GXFQE/mindustry-launcher](https://github.com/GXFQE/mindustry-launcher) (Python standard library + tkinter; CAS deduplication, isolated save profiles and automatic backups) ![last commit](https://img.shields.io/github/last-commit/GXFQE/mindustry-launcher)
 - [Walker196/Mindustry-Launcher](https://github.com/Walker196/Mindustry-Launcher) (Tauri + React + Rust) ![last commit](https://img.shields.io/github/last-commit/Walker196/Mindustry-Launcher)
 - [NixaVulpi/MindustryLauncher](https://github.com/NixaVulpi/MindustryLauncher) (portable wrapper, needs your own Mindustry.jar and JRE) ![last commit](https://img.shields.io/github/last-commit/NixaVulpi/MindustryLauncher)
+- [kabaka9527/MindustryLauncher](https://github.com/kabaka9527/MindustryLauncher) (Tauri 2 + Rust + React 19, portable version management) ![last commit](https://img.shields.io/github/last-commit/kabaka9527/MindustryLauncher)
+- [UnQuis/SingularityLauncher](https://github.com/UnQuis/SingularityLauncher) (Java + Arc Scene2D, launches whatever sits in `versions/`) ![last commit](https://img.shields.io/github/last-commit/UnQuis/SingularityLauncher)
+- [Plain-Mindustry-Launcher](https://github.com/taiko525/Plain-Mindustry-Launcher) (WPF, pinned to Java 17, needs your own Mindustry.jar) ![last commit](https://img.shields.io/github/last-commit/taiko525/Plain-Mindustry-Launcher)
 
 What sets Xenon apart is keeping the whole pipeline in one window: mirror downloads and fallback, instance isolation, mods/maps/schematics/saves, cloud saves, the MDTBBS community with friends and invites, server management, plus `.xenon` packaging and `xenon://` links.
 
