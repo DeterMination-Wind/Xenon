@@ -284,7 +284,8 @@ public final class ResumableDownloader {
                 }
                 // Gate on the shared shaper before the chunk is written, so
                 // the recorded speed reflects the shaped rate rather than the
-                // socket's speed.
+                // socket's speed. The wait is short (one chunk at the target
+                // rate) because the socket buffer absorbs the server's send.
                 DownloadThrottle.admit(read, gate);
                 out.write(buffer, 0, read);
                 written += read;

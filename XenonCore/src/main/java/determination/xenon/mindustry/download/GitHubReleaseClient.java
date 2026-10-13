@@ -237,7 +237,10 @@ public final class GitHubReleaseClient {
             int n;
             while ((n = in.read(buf)) > 0) {
                 // Gate on the shared shaper so the single-mirror fallback is
-                // shaped exactly like the racing path above it.
+                // shaped exactly like the racing path above it. Admitting the
+                // chunk *after* the read lets the kernel socket buffer absorb
+                // part of the server's send during the wait; reserving the
+                // buffer before the read measured out several times slower.
                 DownloadThrottle.admit(n, null);
                 out.write(buf, 0, n);
                 read += n;
