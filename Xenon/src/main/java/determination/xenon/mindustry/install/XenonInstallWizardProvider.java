@@ -23,6 +23,7 @@ import determination.xenon.mindustry.MindustryVersion;
 import determination.xenon.mindustry.VersionVariant;
 import determination.xenon.mindustry.XenonGameRepository;
 import determination.xenon.mindustry.download.GitHubReleaseClient;
+import determination.xenon.mindustry.download.MindustryDownloadSource;
 import determination.xenon.mindustry.download.MindustryDownloadTask;
 import determination.xenon.mindustry.download.MindustryRemoteVersion;
 import determination.xenon.mindustry.migrate.InstanceDataMigration;
@@ -44,6 +45,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 
 import static determination.xenon.util.i18n.I18n.i18n;
@@ -159,8 +161,10 @@ public final class XenonInstallWizardProvider implements WizardProvider {
         MindustryDownloadTask download = new MindustryDownloadTask(
                 artifact.getDownloadUrl(), jar, artifact.getSize(),
                 MindustryImportFlow.cachesDirectory(), artifact.isArchive(),
-                artifact.getFallbackUrl());
-        download.setName(i18n("xenon.install.task.download", id));
+                artifact.getFallbackUrl(), artifact.getHash());
+        download.setName(i18n("xenon.install.task.download", id)
+                + "  ·  " + i18n("settings.launcher.mindustry_download.source."
+                        + MindustryDownloadSource.current().name().toLowerCase(Locale.ROOT)));
 
         Task<Void> installJar = prepareDir.thenComposeAsync(Schedulers.io(), reusableJar -> {
             if (reusableJar == null) {

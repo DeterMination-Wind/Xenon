@@ -59,8 +59,20 @@ public final class BeVersionList extends MindustryVersionList {
             Pattern.compile("(?i)build[-_ ]?(\\d+)");
 
     public BeVersionList(GitHubReleaseClient client) {
-        super(VersionVariant.BE, client);
+        this(client, MindustryDownloadSource.current());
     }
+
+    /// Creates the BE list bound to a source tier.
+    ///
+    /// @param client official release feed client
+    /// @param source tier that decides whether the domestic scraper may be used
+    public BeVersionList(GitHubReleaseClient client, MindustryDownloadSource source) {
+        super(VersionVariant.BE, client);
+        this.source = source;
+    }
+
+    /// Tier in effect when this list was created.
+    private final MindustryDownloadSource source;
 
     @Override
     public List<MindustryRemoteVersion> refresh() throws IOException {
@@ -92,6 +104,11 @@ public final class BeVersionList extends MindustryVersionList {
         } catch (IOException e) {
             Logger.LOG.warning("GitHub BE feed failed (" + e.getMessage()
                     + "); falling back to mindustry.top");
+        }
+        if (!source.allowsDomesticFeed()) {
+            // "Official only" must not reach for a domestic scraper.
+            throw new IOException("Official BE feed failed and the domestic fallback is"
+                    + " disabled by " + source);
         }
         try {
             List<MindustryRemoteVersion> scraped = new MindustryTopScraper().fetchVariant(variant);

@@ -52,6 +52,11 @@ import java.util.Properties;
 /// Cancelling deletes the partial files ("cancel means cleanup"); pausing
 /// parks the streaming thread at a chunk boundary and keeps the partial
 /// file for the resume.
+///
+/// Every payload chunk passes through [DownloadThrottle#global()], so a
+/// configured speed limit is honoured here as well as in the racing and
+/// segmented downloaders. While a shaped wait blocks, a
+/// [DownloadControl#awaitGate()] callback keeps pause and cancel responsive.
 @NotNullByDefault
 public final class ResumableDownloader {
 
@@ -247,6 +252,11 @@ public final class ResumableDownloader {
                     StandardOpenOption.TRUNCATE_EXISTING);
         }
         long written = 0;
+        // Built once per stream: a shaped wait can last a whole chunk at the
+        // configured rate, and the gate wakes it as soon as the user pauses or
+        // cancels. The bytes already read are still written, and the loop head
+        // re-checks the control state on the next iteration.
+        @Nullable DownloadThrottle.AwaitGate gate = control == null ? null : control.awaitGate();
         try (InputStream in = response.body();
              OutputStream out = Files.newOutputStream(part,
                      options.toArray(new StandardOpenOption[0]))) {
@@ -272,6 +282,10 @@ public final class ResumableDownloader {
                 if (read == 0) {
                     continue;
                 }
+                // Gate on the shared shaper before the chunk is written, so
+                // the recorded speed reflects the shaped rate rather than the
+                // socket's speed.
+                DownloadThrottle.admit(read, gate);
                 out.write(buffer, 0, read);
                 written += read;
                 // Feed the launcher-wide speed counter so the task list shows

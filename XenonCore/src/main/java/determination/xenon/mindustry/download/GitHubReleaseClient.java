@@ -236,6 +236,9 @@ public final class GitHubReleaseClient {
             long lastProgressNs = System.nanoTime();
             int n;
             while ((n = in.read(buf)) > 0) {
+                // Gate on the shared shaper so the single-mirror fallback is
+                // shaped exactly like the racing path above it.
+                DownloadThrottle.admit(n, null);
                 out.write(buf, 0, n);
                 read += n;
                 lastProgressNs = System.nanoTime();

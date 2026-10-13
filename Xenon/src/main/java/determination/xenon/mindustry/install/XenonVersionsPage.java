@@ -24,6 +24,7 @@ import determination.xenon.mindustry.MindustryImportFlow;
 import determination.xenon.mindustry.MindustryVersionDisplay;
 import determination.xenon.mindustry.VersionVariant;
 import determination.xenon.mindustry.download.GitHubReleaseClient;
+import determination.xenon.mindustry.download.MindustryDownloadSource;
 import determination.xenon.mindustry.download.MindustryRemoteVersion;
 import determination.xenon.mindustry.download.MindustryVersionList;
 import determination.xenon.mindustry.download.VersionCache;
@@ -54,6 +55,7 @@ import org.jetbrains.annotations.Nullable;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Locale;
 
 import static determination.xenon.ui.FXUtils.newToggleButton4;
 import static determination.xenon.util.i18n.I18n.i18n;
@@ -78,6 +80,13 @@ public final class XenonVersionsPage extends VBox implements WizardPage, Refresh
     private final Label status;
     private final Label legacyHint;
     private final JFXButton next;
+
+    /// Shows which source tier is serving this list.
+    ///
+    /// Refreshed together with the list so a settings change made while the
+    /// wizard is open is visible before the next download starts.
+    private final Label sourceHint = new Label();
+
     private VersionVariant variant;
 
     public XenonVersionsPage(WizardController controller, GitHubReleaseClient client) {
@@ -97,6 +106,9 @@ public final class XenonVersionsPage extends VBox implements WizardPage, Refresh
         legacyHint.setWrapText(true);
         legacyHint.setManaged(false);
         legacyHint.setVisible(false);
+
+        sourceHint.setWrapText(true);
+        sourceHint.getStyleClass().add("subtitle-label");
 
         list = new JFXListView<>();
         list.getStyleClass().add("no-padding");
@@ -120,7 +132,15 @@ public final class XenonVersionsPage extends VBox implements WizardPage, Refresh
             }
         });
 
-        getChildren().addAll(title, status, list, legacyHint, next);
+        getChildren().addAll(title, status, sourceHint, list, legacyHint, next);
+    }
+
+    /// Updates the source line to describe the tier in effect.
+    private void updateSourceHint() {
+        MindustryDownloadSource source = MindustryDownloadSource.current();
+        sourceHint.setText(i18n("xenon.install.versions.source",
+                i18n("settings.launcher.mindustry_download.source."
+                        + source.name().toLowerCase(Locale.ROOT))));
     }
 
     /// Shows a compatibility warning when a pre-v7 vanilla build is selected.
@@ -160,11 +180,19 @@ public final class XenonVersionsPage extends VBox implements WizardPage, Refresh
         VersionVariant target = variant;
         next.setDisable(true);
         updateLegacyHint(null);
+        updateSourceHint();
 
         // Cache-first: prime the picker with whatever we last fetched so
         // the UI never shows a blank list, then kick off the async
         // network refresh that overwrites both the list and the cache.
-        List<MindustryRemoteVersion> cached = VersionCache.load(target, MindustryImportFlow.cachesDirectory());
+        // Cached rows were produced under whatever tier was in effect then,
+        // so drop the ones this tier may not fetch instead of showing an entry
+        // whose download is guaranteed to be refused.
+        MindustryDownloadSource source = MindustryDownloadSource.current();
+        List<MindustryRemoteVersion> cached = VersionCache
+                .load(target, MindustryImportFlow.cachesDirectory()).stream()
+                .filter(version -> version.isServableUnder(source))
+                .toList();
         if (!cached.isEmpty()) {
             list.getItems().setAll(cached);
             status.setText(i18n("xenon.install.versions.count", cached.size())
@@ -205,7 +233,9 @@ public final class XenonVersionsPage extends VBox implements WizardPage, Refresh
                     } else {
                         // First offline start: fall back to the snapshot
                         // bundled with the launcher instead of an empty list.
-                        List<MindustryRemoteVersion> bundled = VersionCache.loadBundled(target);
+                        List<MindustryRemoteVersion> bundled = VersionCache.loadBundled(target).stream()
+                                .filter(version -> version.isServableUnder(source))
+                                .toList();
                         if (!bundled.isEmpty()) {
                             list.getItems().setAll(bundled);
                             status.setText(i18n("xenon.install.versions.offline_snapshot", bundled.size()));

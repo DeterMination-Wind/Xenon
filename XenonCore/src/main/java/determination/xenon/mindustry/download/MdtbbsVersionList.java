@@ -51,27 +51,63 @@ public final class MdtbbsVersionList extends MindustryVersionList {
     private final String clientVersion;
     private final HttpClient http;
 
+    /// Tier in effect when this list was created.
+    ///
+    /// Captured once so a refresh decides consistently: reading the live value
+    /// could otherwise flip the fallback rule halfway through a request.
+    private final MindustryDownloadSource source;
+
     public MdtbbsVersionList(GitHubReleaseClient fallbackClient) {
         this(fallbackClient, "@develop@");
     }
 
     /** Creates the MDTbbs source with the launcher version used for attribution. */
     public MdtbbsVersionList(GitHubReleaseClient fallbackClient, String clientVersion) {
-        this(fallbackClient, clientVersion, MANIFEST_URL, HttpClient.newBuilder()
+        this(fallbackClient, clientVersion, MindustryDownloadSource.current());
+    }
+
+    /// Creates the MDTbbs source with an explicit client version and source tier.
+    ///
+    /// @param fallbackClient client used when the manifest is unreachable
+    /// @param clientVersion  launcher version sent as the user agent
+    /// @param source         tier that decides whether GitHub is allowed as a fallback
+    public MdtbbsVersionList(GitHubReleaseClient fallbackClient, String clientVersion,
+                             MindustryDownloadSource source) {
+        this(fallbackClient, clientVersion, MANIFEST_URL, defaultHttpClient(), source);
+    }
+
+    /// Builds the default manifest HTTP client.
+    ///
+    /// @return a client configured for the file station's HTTP/1.1 endpoint
+    private static HttpClient defaultHttpClient() {
+        return HttpClient.newBuilder()
                 .version(HttpClient.Version.HTTP_1_1)
                 .followRedirects(HttpClient.Redirect.NORMAL)
                 .connectTimeout(Duration.ofSeconds(10))
                 .proxy(ProxySelector.getDefault())
-                .build());
+                .build();
     }
 
     MdtbbsVersionList(GitHubReleaseClient fallbackClient, String clientVersion,
                       String manifestUrl, HttpClient http) {
+        this(fallbackClient, clientVersion, manifestUrl, http, MindustryDownloadSource.current());
+    }
+
+    /// Creates the MDTbbs source with an explicit source tier.
+    ///
+    /// @param fallbackClient   client used when the manifest is unreachable
+    /// @param clientVersion    launcher version sent as the user agent
+    /// @param manifestUrl      manifest endpoint
+    /// @param http              HTTP client
+    /// @param source           tier that decides whether GitHub is allowed as a fallback
+    MdtbbsVersionList(GitHubReleaseClient fallbackClient, String clientVersion,
+                      String manifestUrl, HttpClient http, MindustryDownloadSource source) {
         super(VersionVariant.VANILLA, fallbackClient);
         this.manifestUrl = manifestUrl;
         this.clientVersion = clientVersion == null || clientVersion.isBlank()
                 ? "@develop@" : clientVersion;
         this.http = http;
+        this.source = source;
     }
 
     @Override
@@ -95,9 +131,17 @@ public final class MdtbbsVersionList extends MindustryVersionList {
             if (!result.isEmpty()) return result;
             throw new IOException("MDTbbs manifest returned no Mindustry builds");
         } catch (IOException | RuntimeException e) {
+            if (!source.allowsOfficialFeed()) {
+                // "Domestic only" must not leak a GitHub request: the manifest is
+                // the only allowed feed, so its failure is terminal here.
+                Logger.LOG.warning("MDTbbs version feed failed (" + e.getMessage()
+                        + "); GitHub fallback is disabled by " + source);
+                throw e instanceof IOException io ? io
+                        : new IOException("MDTbbs manifest failed: " + e.getMessage(), e);
+            }
             Logger.LOG.warning("MDTbbs version feed failed (" + e.getMessage()
                     + "); falling back to GitHub");
-            return new VanillaVersionList(client).refresh();
+            return new VanillaVersionList(client, source).refresh();
         }
     }
 
@@ -123,6 +167,9 @@ public final class MdtbbsVersionList extends MindustryVersionList {
         if (fileName == null || fileName.isBlank()) fileName = "Mindustry.jar";
         long size = chosen.has("size") && chosen.get("size").isJsonPrimitive()
                 ? chosen.get("size").getAsLong() : 0L;
+        // The file station publishes a SHA-256 for every asset, so manifest
+        // rows can be hash-verified; GitHub-backed rows cannot and stay size-only.
+        String sha256 = text(chosen, "sha256");
         String repo = text(release, "source_repository");
         if (repo == null) repo = "Anuken/Mindustry";
         String fallback = "https://github.com/" + repo + "/releases/download/"
@@ -134,7 +181,7 @@ public final class MdtbbsVersionList extends MindustryVersionList {
         String version = tag.replaceFirst("^[vV]", "");
         Map<String, MindustryRemoteVersion.Artifact> artifacts = new LinkedHashMap<>();
         MindustryRemoteVersion.Artifact artifact = new MindustryRemoteVersion.Artifact(
-                "universal", downloadUrl, size, fileName, false, fallback);
+                "universal", downloadUrl, size, fileName, false, fallback, sha256);
         artifacts.put("universal", artifact);
         return new MindustryRemoteVersion(parseBuildNumber(version),
                 buildType, VersionVariant.VANILLA, downloadUrl, null, size, tag,

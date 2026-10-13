@@ -58,6 +58,10 @@ import java.util.concurrent.atomic.AtomicLong;
 /// complete temp file into place. It reports progress as final-file progress,
 /// while global speed accounting uses every HTTP body byte actually read from
 /// every active racing stream.
+///
+/// Every payload chunk passes through [DownloadThrottle#global()], so a
+/// configured speed limit bounds the aggregate throughput of the whole race
+/// instead of being applied per mirror.
 @NotNullByDefault
 public final class MirrorDownloader {
 
@@ -204,16 +208,37 @@ public final class MirrorDownloader {
             return;
         }
 
-        // 像素工厂文件站 is the first mirror. Use it when the manifest lists this asset.
-        @Nullable String fileStation = MdtbbsFileMirror.lookup(githubUrl);
-        if (fileStation != null) {
-            try {
-                downloadDirect(fileStation, target, expectedSize, progress);
-                Logger.LOG.info("MirrorDownloader: file.mdtbbs.cn won " + target.getFileName());
-                return;
-            } catch (IOException e) {
-                Logger.LOG.warning("MirrorDownloader: file station failed for " + githubUrl
-                        + " (" + e.getMessage() + "); racing other mirrors");
+        MindustryDownloadSource source = MindustryDownloadSource.current();
+        // The tier decides which routes exist at all; the racing strategy only
+        // decides which one wins. `includeDirectOrigin` stays a constructor
+        // flag so the tests can pin the pool they want.
+        boolean allowDirect = includeDirectOrigin && source.allowsDirectOrigin();
+        boolean preferOfficial = source.artifactRoutes().preferred()
+                == MindustryDownloadSource.Route.OFFICIAL;
+
+        if (!source.allowsDomesticArtifacts()) {
+            // "Official only": the direct origin is the single allowed route,
+            // so skip probing and racing entirely.
+            Logger.LOG.info("MirrorDownloader: " + source + " forbids domestic routes; "
+                    + "downloading " + target.getFileName() + " from github.com directly");
+            downloadDirect(githubUrl, target, expectedSize, progress);
+            return;
+        }
+
+        if (!preferOfficial) {
+            // 像素工厂文件站 is the first mirror. Use it when the manifest lists this asset.
+            // A "prefer official" tier skips this shortcut so the official
+            // origin is genuinely attempted before any domestic route.
+            @Nullable String fileStation = MdtbbsFileMirror.lookup(githubUrl);
+            if (fileStation != null) {
+                try {
+                    downloadDirect(fileStation, target, expectedSize, progress);
+                    Logger.LOG.info("MirrorDownloader: file.mdtbbs.cn won " + target.getFileName());
+                    return;
+                } catch (IOException e) {
+                    Logger.LOG.warning("MirrorDownloader: file station failed for " + githubUrl
+                            + " (" + e.getMessage() + "); racing other mirrors");
+                }
             }
         }
 
@@ -236,12 +261,18 @@ public final class MirrorDownloader {
             try {
                 // 1. Probe + filter.
                 List<Probe> survivors = probeAll(githubUrl);
-                // Add direct origin so unrestricted networks aren't forced through a mirror.
-                if (includeDirectOrigin) {
+                // Add direct origin unless the tier is domestic-only, so
+                // unrestricted networks aren't forced through a mirror.
+                if (allowDirect) {
                     @Nullable Probe direct = probeOnce("direct", githubUrl);
                     if (direct != null) survivors.add(direct);
                 }
-                survivors.sort(Comparator.comparingLong(p -> p.latencyMs));
+                // Route preference outranks latency: a "prefer official" user
+                // must not be pushed onto a mirror just because it answered
+                // first, and a "domestic only" user must never see the origin.
+                survivors.sort(Comparator
+                        .comparingInt((Probe p) -> routeRank(p, preferOfficial))
+                        .thenComparingLong(p -> p.latencyMs));
 
                 // Promote the cached preferred mirror to the front, if still valid.
                 @Nullable String preferred = readPreferredMirror();
@@ -347,21 +378,49 @@ public final class MirrorDownloader {
                     "Cancelled before starting " + target);
         }
 
+        MindustryDownloadSource source = MindustryDownloadSource.current();
+        boolean allowDirect = includeDirectOrigin && source.allowsDirectOrigin();
+        boolean allowDomestic = source.allowsDomesticArtifacts();
+        boolean preferOfficial = source.artifactRoutes().preferred()
+                == MindustryDownloadSource.Route.OFFICIAL;
+
         List<Candidate> candidates = new ArrayList<>();
-        if (isGithubOrigin(githubUrl)) {
-            // 像素工厂文件站 first: it is the fastest source in mainland China.
-            @Nullable String fileStation = MdtbbsFileMirror.lookup(githubUrl);
-            if (fileStation != null) {
-                candidates.add(new Candidate("file station", fileStation, null));
+        if (isGithubOrigin(githubUrl) && !allowDomestic) {
+            // "Official only": the origin is the only route, so do not probe
+            // or list a single mirror candidate.
+            Logger.LOG.info("MirrorDownloader: " + source + " forbids domestic routes; "
+                    + "using the official origin for " + target.getFileName());
+            candidates.add(new Candidate("direct", githubUrl, null));
+        } else if (isGithubOrigin(githubUrl)) {
+            // Ordered by route preference, then latency: "prefer official"
+            // puts the origin in front, "prefer domestic" puts the file
+            // station and the mirror pool in front.
+            if (!preferOfficial) {
+                // 像素工厂文件站 first: it is the fastest source in mainland China.
+                @Nullable String fileStation = MdtbbsFileMirror.lookup(githubUrl);
+                if (fileStation != null) {
+                    candidates.add(new Candidate("file station", fileStation, null));
+                }
             }
             List<Probe> survivors = probeAll(githubUrl);
-            survivors.sort(Comparator.comparingLong(p -> p.latencyMs));
+            survivors.sort(Comparator
+                    .comparingInt((Probe p) -> routeRank(p, preferOfficial))
+                    .thenComparingLong(p -> p.latencyMs));
             @Nullable String preferred = readPreferredMirror();
             if (preferred != null) {
                 for (int i = 0; i < survivors.size(); i++) {
                     if (survivors.get(i).label.equals("mirror:" + preferred)) {
                         Probe p = survivors.remove(i);
-                        survivors.add(0, p);
+                        // Keep the preferred mirror inside its own route band:
+                        // promoting it past a higher-ranked origin would undo
+                        // the tier's ordering.
+                        int insertAt = 0;
+                        while (insertAt < survivors.size()
+                                && routeRank(survivors.get(insertAt), preferOfficial)
+                                        <= routeRank(p, preferOfficial)) {
+                            insertAt++;
+                        }
+                        survivors.add(insertAt, p);
                         Logger.LOG.info("MirrorDownloader: cached preferred mirror "
                                 + preferred + " promoted for resumable download");
                         break;
@@ -373,7 +432,7 @@ public final class MirrorDownloader {
                         ? p.label.substring("mirror:".length()) : null;
                 candidates.add(new Candidate(p.label, p.url, base));
             }
-            if (includeDirectOrigin) {
+            if (allowDirect) {
                 candidates.add(new Candidate("direct", githubUrl, null));
             }
         } else {
@@ -409,6 +468,16 @@ public final class MirrorDownloader {
     // ------------------------------------------------------------------
     // Probing
     // ------------------------------------------------------------------
+
+    /// Ranks a probe by how well it matches the preferred route family.
+    ///
+    /// @param probe          probed candidate
+    /// @param preferOfficial whether the official origin is the preferred family
+    /// @return `0` for the preferred family, `1` for the other one
+    private static int routeRank(Probe probe, boolean preferOfficial) {
+        boolean official = "direct".equals(probe.label);
+        return official == preferOfficial ? 0 : 1;
+    }
 
     /// Probes all configured mirror bases for one GitHub URL.
     private List<Probe> probeAll(String githubUrl) {
@@ -582,10 +651,15 @@ public final class MirrorDownloader {
                 byte[] buf = new byte[64 * 1024];
                 int n;
                 while ((n = in.read(buf)) > 0) {
-                    FetchTask.recordDownloadedBytes(n);
+                    if (s.aborted) throw new IOException("aborted");
+                    // Every racer is shaped by the same bucket, so the race
+                    // still ranks mirrors fairly while the aggregate stays
+                    // inside the configured limit.
+                    DownloadThrottle.admit(n, s.abortGate);
                     if (s.aborted) throw new IOException("aborted");
                     out.write(buf, 0, n);
                     s.bytes.addAndGet(n);
+                    FetchTask.recordDownloadedBytes(n);
                 }
             }
             s.finishedAt = System.currentTimeMillis();
@@ -776,6 +850,8 @@ public final class MirrorDownloader {
         volatile boolean failed;
         /// Whether this stream should stop as soon as possible.
         volatile boolean aborted;
+        /// Shaper gate that abandons a throttled wait when the race aborts this stream.
+        final DownloadThrottle.AwaitGate abortGate = () -> aborted;
         /// Completion timestamp used to pick the earliest winner.
         volatile long finishedAt;
         /// Failure cause when `failed` is true.
@@ -930,6 +1006,7 @@ public final class MirrorDownloader {
             long read = 0;
             int n;
             while ((n = in.read(buf)) > 0) {
+                DownloadThrottle.admit(n, null);
                 FetchTask.recordDownloadedBytes(n);
                 out.write(buf, 0, n);
                 read += n;

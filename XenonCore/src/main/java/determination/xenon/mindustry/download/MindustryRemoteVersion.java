@@ -58,20 +58,37 @@ public final class MindustryRemoteVersion {
         private final String fileName;
         private final boolean archive;
         private final @Nullable String fallbackUrl;
+        private final @Nullable String hash;
 
         public Artifact(String platform, String downloadUrl, long size,
                         String fileName, boolean archive) {
-            this(platform, downloadUrl, size, fileName, archive, null);
+            this(platform, downloadUrl, size, fileName, archive, null, null);
         }
 
         public Artifact(String platform, String downloadUrl, long size,
                         String fileName, boolean archive, @Nullable String fallbackUrl) {
+            this(platform, downloadUrl, size, fileName, archive, fallbackUrl, null);
+        }
+
+        /// Creates an artifact.
+        ///
+        /// @param platform    platform key, or `null` for a universal jar
+        /// @param downloadUrl primary download URL
+        /// @param size        expected size in bytes, or `0` when the feed omitted it
+        /// @param fileName    asset file name
+        /// @param archive     whether the URL is a zip that must be unpacked
+        /// @param fallbackUrl alternate URL on the other source family, or `null`
+        /// @param hash        expected lowercase-hex SHA-256, or `null` when the feed omits it
+        public Artifact(String platform, String downloadUrl, long size,
+                        String fileName, boolean archive, @Nullable String fallbackUrl,
+                        @Nullable String hash) {
             this.platform = platform == null ? "universal" : platform;
             this.downloadUrl = Objects.requireNonNull(downloadUrl, "downloadUrl");
             this.size = Math.max(0, size);
             this.fileName = fileName == null ? "" : fileName;
             this.archive = archive;
             this.fallbackUrl = fallbackUrl == null || fallbackUrl.isBlank() ? null : fallbackUrl;
+            this.hash = hash == null || hash.isBlank() ? null : hash.toLowerCase(java.util.Locale.ROOT);
         }
 
         public String getPlatform() { return platform; }
@@ -86,6 +103,15 @@ public final class MindustryRemoteVersion {
 
         /** Alternate URL tried after the primary download fails. May be {@code null}. */
         public @Nullable String getFallbackUrl() { return fallbackUrl; }
+
+        /// Expected content hash of the artifact.
+        ///
+        /// The 像素工厂文件站 manifest publishes a SHA-256 for every asset; the
+        /// GitHub release API does not, so an official artifact carries `null`
+        /// and is only size-checked.
+        ///
+        /// @return lowercase-hex SHA-256, or `null` when the feed omitted it
+        public @Nullable String getHash() { return hash; }
     }
 
     /**
@@ -189,6 +215,24 @@ public final class MindustryRemoteVersion {
             return artifacts.get("universal");
         }
         return new Artifact("universal", downloadUrl, size, fileName, false);
+    }
+
+    /// Whether this row can be downloaded under `source`.
+    ///
+    /// Used to drop cached rows that were produced under a different tier —
+    /// switching to "official only" must not leave a 像素工厂文件站 row in the
+    /// list that can no longer be fetched.
+    ///
+    /// @param source tier currently in effect
+    /// @return `true` when at least one artifact route is allowed
+    public boolean isServableUnder(MindustryDownloadSource source) {
+        if (artifacts != null && !artifacts.isEmpty()) {
+            for (Artifact artifact : artifacts.values()) {
+                if (source.allowsArtifactUrl(artifact.getDownloadUrl())) return true;
+            }
+            return false;
+        }
+        return source.allowsArtifactUrl(downloadUrl);
     }
 
     /** Best-effort human-readable identifier: tag if present, else "build N". */

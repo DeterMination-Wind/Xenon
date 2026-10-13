@@ -63,24 +63,39 @@ public final class MindustryXVersionList extends MindustryVersionList {
     private static final Pattern ANY_NUMBER = Pattern.compile("(\\d+)");
 
     public MindustryXVersionList(GitHubReleaseClient client) {
-        super(VersionVariant.MINDUSTRY_X, client);
+        this(client, MindustryDownloadSource.current());
     }
+
+    /// Creates the MindustryX list bound to a source tier.
+    ///
+    /// @param client official release feed client
+    /// @param source tier that decides whether the domestic sources may be used
+    public MindustryXVersionList(GitHubReleaseClient client, MindustryDownloadSource source) {
+        super(VersionVariant.MINDUSTRY_X, client);
+        this.source = source;
+    }
+
+    /// Tier in effect when this list was created.
+    private final MindustryDownloadSource source;
 
     @Override
     public List<MindustryRemoteVersion> refresh() throws IOException {
         // Priority 1: alist mirror at alist.mindustry.ltd — empirically
         // fastest source for users in mainland China, updates within
         // minutes of a TinyLake release. We try this first and only fall
-        // back to GitHub when it's unreachable.
-        try {
-            List<MindustryRemoteVersion> alist = new AlistMindustryXVersionList().refresh();
-            if (!alist.isEmpty()) {
-                Logger.LOG.info("MindustryX: alist returned " + alist.size() + " releases");
-                return alist;
+        // back to GitHub when it's unreachable. "Official only" skips it
+        // because it is a domestic mirror.
+        if (source.allowsDomesticFeed()) {
+            try {
+                List<MindustryRemoteVersion> alist = new AlistMindustryXVersionList().refresh();
+                if (!alist.isEmpty()) {
+                    Logger.LOG.info("MindustryX: alist returned " + alist.size() + " releases");
+                    return alist;
+                }
+            } catch (IOException e) {
+                Logger.LOG.warning("MindustryX alist source failed (" + e.getMessage()
+                        + "); falling back to GitHub");
             }
-        } catch (IOException e) {
-            Logger.LOG.warning("MindustryX alist source failed (" + e.getMessage()
-                    + "); falling back to GitHub");
         }
 
         // Priority 2: GitHub Releases API for TinyLake/MindustryX.
@@ -120,7 +135,11 @@ public final class MindustryXVersionList extends MindustryVersionList {
                     + "); falling back to mindustry.top");
         }
 
-        // Priority 3: mindustry.top scraper (last-resort).
+        // Priority 3: mindustry.top scraper (last-resort, domestic).
+        if (!source.allowsDomesticFeed()) {
+            throw new IOException("Official MindustryX feed failed and the domestic"
+                    + " fallback is disabled by " + source);
+        }
         try {
             return new MindustryTopScraper().fetchVariant(variant);
         } catch (IOException e) {

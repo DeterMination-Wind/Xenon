@@ -109,6 +109,10 @@ public final class ConfigHolder {
         globalConfigInstance = loadGlobalConfig();
         globalConfigInstance.addListener(source -> FileSaver.save(GLOBAL_CONFIG_PATH, globalConfigInstance.toJson()));
 
+        // The Mindustry download chain lives in XenonCore, which cannot read
+        // GlobalConfig: push the speed limit and source tier into its holders.
+        MindustryDownloadSettings.init(globalConfigInstance);
+
         Locale.setDefault(config().getLocalization().getLocale());
         I18n.setLocale(configInstance.getLocalization());
         LOG.setLogRetention(globalConfig().getLogRetention());

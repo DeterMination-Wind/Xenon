@@ -79,4 +79,17 @@ public final class DownloadControl {
             }
         }
     }
+
+    /// Returns a shaper gate that wakes a throttled wait early.
+    ///
+    /// A shaped wait can last as long as one chunk takes at the configured
+    /// rate, which would otherwise delay pause and cancel by that much. The
+    /// returned gate is polled between wait slices so the streaming thread
+    /// comes back to the loop, re-checks this object, and still writes the
+    /// bytes it already owns.
+    ///
+    /// @return a gate that reports `true` while paused or cancelled
+    public DownloadThrottle.AwaitGate awaitGate() {
+        return () -> paused || cancelled;
+    }
 }

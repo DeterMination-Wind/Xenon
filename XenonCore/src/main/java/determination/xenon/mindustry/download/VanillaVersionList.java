@@ -62,8 +62,20 @@ public final class VanillaVersionList extends MindustryVersionList {
     private static final Pattern BUILD_FROM_TAG = Pattern.compile("(\\d+)");
 
     public VanillaVersionList(GitHubReleaseClient client) {
-        super(VersionVariant.VANILLA, client);
+        this(client, MindustryDownloadSource.current());
     }
+
+    /// Creates the official vanilla list bound to a source tier.
+    ///
+    /// @param client official release feed client
+    /// @param source tier that decides whether the domestic scraper may be used
+    public VanillaVersionList(GitHubReleaseClient client, MindustryDownloadSource source) {
+        super(VersionVariant.VANILLA, client);
+        this.source = source;
+    }
+
+    /// Tier in effect when this list was created; see [MdtbbsVersionList].
+    private final MindustryDownloadSource source;
 
     @Override
     public List<MindustryRemoteVersion> refresh() throws IOException {
@@ -95,6 +107,11 @@ public final class VanillaVersionList extends MindustryVersionList {
         } catch (IOException e) {
             Logger.LOG.warning("GitHub Vanilla feed failed (" + e.getMessage()
                     + "); falling back to mindustry.top");
+        }
+        if (!source.allowsDomesticFeed()) {
+            // "Official only" must not reach for a domestic scraper.
+            throw new IOException("Official Vanilla feed failed and the domestic fallback is"
+                    + " disabled by " + source);
         }
         // Fallback: mindustry.top/download
         try {

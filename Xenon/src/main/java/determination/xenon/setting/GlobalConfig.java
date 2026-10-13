@@ -23,6 +23,7 @@ import com.google.gson.annotations.SerializedName;
 import javafx.beans.property.*;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableSet;
+import determination.xenon.mindustry.download.MindustryDownloadSource;
 import determination.xenon.util.gson.ObservableSetting;
 import org.jetbrains.annotations.Nullable;
 
@@ -205,6 +206,62 @@ public final class GlobalConfig extends ObservableSetting {
 
     public ObservableSet<String> getUserJava() {
         return userJava;
+    }
+
+    @SerializedName("mindustryDownloadSpeedKbps")
+    private final IntegerProperty mindustryDownloadSpeedKbps = new SimpleIntegerProperty(0);
+
+    /// Global speed limit applied to the whole Mindustry download chain.
+    ///
+    /// The value is in KiB/s; `0` means unlimited, which is the default and
+    /// takes a lock-free fast path inside `DownloadThrottle`. Mainland
+    /// configurations written before this option existed keep the unlimited
+    /// behaviour because the field is absent from their JSON.
+    public IntegerProperty mindustryDownloadSpeedKbpsProperty() {
+        return mindustryDownloadSpeedKbps;
+    }
+
+    /// Returns the configured Mindustry download speed limit.
+    ///
+    /// @return KiB/s, or `0` for unlimited
+    public int getMindustryDownloadSpeedKbps() {
+        return Math.max(0, mindustryDownloadSpeedKbps.get());
+    }
+
+    /// Sets the Mindustry download speed limit.
+    ///
+    /// @param kbps KiB/s, or `0` for unlimited; negative values become unlimited
+    public void setMindustryDownloadSpeedKbps(int kbps) {
+        mindustryDownloadSpeedKbps.set(Math.max(0, kbps));
+    }
+
+    @SerializedName("mindustryDownloadSource")
+    private final ObjectProperty<MindustryDownloadSource> mindustryDownloadSource =
+            new SimpleObjectProperty<>(MindustryDownloadSource.defaultForLocale());
+
+    /// Source tier used to list and download Mindustry builds.
+    ///
+    /// The initialiser is locale aware, so a configuration that never stored
+    /// this field keeps the historical behaviour: mainland users prefer the
+    /// domestic source, everyone else prefers the official origin.
+    public ObjectProperty<MindustryDownloadSource> mindustryDownloadSourceProperty() {
+        return mindustryDownloadSource;
+    }
+
+    /// Returns the configured Mindustry download-source tier.
+    ///
+    /// @return the tier, never `null`
+    public MindustryDownloadSource getMindustryDownloadSource() {
+        MindustryDownloadSource source = mindustryDownloadSource.get();
+        return source == null ? MindustryDownloadSource.defaultForLocale() : source;
+    }
+
+    /// Sets the Mindustry download-source tier.
+    ///
+    /// @param source tier to use, or `null` to restore the locale default
+    public void setMindustryDownloadSource(@Nullable MindustryDownloadSource source) {
+        mindustryDownloadSource.set(source == null
+                ? MindustryDownloadSource.defaultForLocale() : source);
     }
 
     @SerializedName("disabledJava")

@@ -28,8 +28,11 @@ import javafx.scene.control.ScrollPane;
 import javafx.scene.control.ToggleGroup;
 import javafx.scene.layout.*;
 import determination.xenon.Metadata;
+import determination.xenon.mindustry.download.DownloadThrottle;
 import determination.xenon.mindustry.download.GitHubAuth;
 import determination.xenon.mindustry.download.GitHubCliAuth;
+import determination.xenon.mindustry.download.MindustryDownloadSource;
+import determination.xenon.setting.ConfigHolder;
 import determination.xenon.setting.EnumCommonDirectory;
 import determination.xenon.setting.GitHubCliTokenSource;
 import determination.xenon.setting.Settings;
@@ -53,10 +56,12 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static determination.xenon.setting.ConfigHolder.config;
+import static determination.xenon.ui.FXUtils.stringConverter;
 import static determination.xenon.util.i18n.I18n.i18n;
 import static determination.xenon.util.logging.Logger.LOG;
 
@@ -222,7 +227,8 @@ public class DownloadSettingsPage extends StackPane {
                 }
             }
 
-            downloadList.getContent().addAll(fileCommonLocationSublist, githubSublist, downloadThreads);
+            downloadList.getContent().addAll(fileCommonLocationSublist, githubSublist, downloadThreads,
+                    buildMindustrySublist());
             content.getChildren().addAll(ComponentList.createComponentListTitle(i18n("download")), downloadList);
         }
 
@@ -557,4 +563,153 @@ public class DownloadSettingsPage extends StackPane {
             FileUtils.cleanDirectoryQuietly(Path.of(commonDirectory, "cache"));
         }
     }
+
+    // ------------------------------------------------------------------
+    // Mindustry download
+    // ------------------------------------------------------------------
+
+    /// Builds the "Mindustry download" settings section.
+    ///
+    /// Both controls write straight into [GlobalConfig];
+    /// [determination.xenon.setting.MindustryDownloadSettings] mirrors them into
+    /// XenonCore, so a change applies to the next chunk instead of the next launch.
+    ///
+    /// @return the configured section
+    private ComponentSublist buildMindustrySublist() {
+        ComponentSublist sublist = new ComponentSublist();
+        sublist.setTitle(i18n("settings.launcher.mindustry_download"));
+        sublist.setHasSubtitle(true);
+        sublist.subtitleProperty().set(i18n("settings.launcher.mindustry_download.hint"));
+
+        VBox pane = new VBox(12);
+        pane.setPadding(new Insets(8, 0, 0, 0));
+        pane.getChildren().addAll(buildMindustrySpeedRow(), buildMindustrySourceRow());
+        sublist.getContent().add(pane);
+        return sublist;
+    }
+
+    /// Builds the speed-limit row: a preset combo box plus a custom KiB/s field.
+    ///
+    /// @return the row
+    private Region buildMindustrySpeedRow() {
+        Label label = new Label(i18n("settings.launcher.mindustry_download.speed"));
+        JFXComboBox<Integer> speedBox = new JFXComboBox<>();
+        speedBox.setPrefWidth(170);
+        speedBox.getItems().setAll(SPEED_PRESETS_KBPS);
+        speedBox.getItems().add(CUSTOM_SPEED_SENTINEL);
+        speedBox.setConverter(stringConverter(kbps -> {
+            if (kbps == null) return "";
+            if (kbps == CUSTOM_SPEED_SENTINEL) {
+                return i18n("settings.launcher.mindustry_download.speed.custom");
+            }
+            if (kbps == DownloadThrottle.UNLIMITED) {
+                return i18n("settings.launcher.mindustry_download.speed.unlimited");
+            }
+            return i18n("settings.launcher.mindustry_download.speed.mb", kbps / 1024);
+        }));
+
+        JFXTextField customField = new JFXTextField();
+        FXUtils.setLimitWidth(customField, 96);
+        customField.setPromptText(Integer.toString(CUSTOM_SPEED_DEFAULT_KBPS));
+        // Sits next to the label in custom mode; the combo box is the only
+        // control otherwise. Bound to the same property the presets write, so
+        // switching preset -> custom starts editing from the previous value.
+        FXUtils.bind(customField, ConfigHolder.globalConfig().mindustryDownloadSpeedKbpsProperty(),
+                SafeStringConverter.fromInteger()
+                        .restrict(it -> it >= DownloadThrottle.MIN_LIMIT_KBPS)
+                        .fallbackTo(CUSTOM_SPEED_DEFAULT_KBPS)
+                        .asPredicate(Validator.addTo(customField)));
+
+        HintPane speedHint = new HintPane(MessageDialogPane.MessageType.INFO);
+        speedHint.setText(i18n("settings.launcher.mindustry_download.speed.hint",
+                DownloadThrottle.MIN_LIMIT_KBPS));
+        speedHint.setVisible(false);
+        speedHint.setManaged(false);
+
+        holder.add(FXUtils.onWeakChange(speedBox.getSelectionModel().selectedItemProperty(), selection -> {
+            if (selection == null) return;
+            boolean custom = selection == CUSTOM_SPEED_SENTINEL;
+            customField.setVisible(custom);
+            customField.setManaged(custom);
+            speedHint.setVisible(custom);
+            speedHint.setManaged(custom);
+            int value = ConfigHolder.globalConfig().getMindustryDownloadSpeedKbps();
+            if (!custom) {
+                ConfigHolder.globalConfig().setMindustryDownloadSpeedKbps(selection);
+            } else if (value < DownloadThrottle.MIN_LIMIT_KBPS) {
+                // The combo box was showing "unlimited"; seed the field with a
+                // usable custom rate instead of leaving it on an invalid value.
+                ConfigHolder.globalConfig().setMindustryDownloadSpeedKbps(CUSTOM_SPEED_DEFAULT_KBPS);
+            }
+        }));
+
+        int currentKbps = ConfigHolder.globalConfig().getMindustryDownloadSpeedKbps();
+        speedBox.getSelectionModel().select(SPEED_PRESETS_KBPS.contains(currentKbps)
+                ? currentKbps : CUSTOM_SPEED_SENTINEL);
+
+        HBox row = new HBox(8, label, speedBox, customField);
+        row.setAlignment(Pos.CENTER_LEFT);
+        return new VBox(6, row, speedHint);
+    }
+
+    /// Builds the source-tier row: one radio button per tier plus a live description.
+    ///
+    /// @return the row
+    private Region buildMindustrySourceRow() {
+        MindustryDownloadSource current = ConfigHolder.globalConfig().getMindustryDownloadSource();
+
+        Label label = new Label(i18n("settings.launcher.mindustry_download.source"));
+
+        FlowPane options = new FlowPane(16, 6);
+        ToggleGroup group = new ToggleGroup();
+        for (MindustryDownloadSource source : MindustryDownloadSource.values()) {
+            JFXRadioButton button = new JFXRadioButton(i18n(mindustrySourceKey(source)));
+            button.setToggleGroup(group);
+            button.setUserData(source);
+            button.setSelected(source == current);
+            options.getChildren().add(button);
+        }
+
+        Label description = new Label(i18n(mindustrySourceDescriptionKey(current)));
+        description.setWrapText(true);
+        description.getStyleClass().add("subtitle-label");
+
+        holder.add(FXUtils.onWeakChange(group.selectedToggleProperty(), toggle -> {
+            if (toggle == null) return;
+            Object data = toggle.getUserData();
+            if (!(data instanceof MindustryDownloadSource source)) return;
+            ConfigHolder.globalConfig().setMindustryDownloadSource(source);
+            description.setText(i18n(mindustrySourceDescriptionKey(source)));
+        }));
+
+        VBox box = new VBox(6, label, options, description);
+        box.setFillWidth(true);
+        return box;
+    }
+
+    /// Returns the i18n key of a source tier's radio label.
+    ///
+    /// @param source tier to name
+    /// @return translation key
+    private static String mindustrySourceKey(MindustryDownloadSource source) {
+        return "settings.launcher.mindustry_download.source." + source.name().toLowerCase(Locale.ROOT);
+    }
+
+    /// Returns the i18n key of a source tier's explanatory sentence.
+    ///
+    /// @param source tier to describe
+    /// @return translation key
+    private static String mindustrySourceDescriptionKey(MindustryDownloadSource source) {
+        return mindustrySourceKey(source) + ".desc";
+    }
+
+    /// Speed presets offered by the combo box, in KiB/s.
+    private static final List<Integer> SPEED_PRESETS_KBPS = List.of(
+            DownloadThrottle.UNLIMITED, 1024, 2048, 5120);
+
+    /// Combo-box item used to reveal the custom speed field.
+    private static final int CUSTOM_SPEED_SENTINEL = -1;
+
+    /// Custom rate a user sees first, in KiB/s.
+    private static final int CUSTOM_SPEED_DEFAULT_KBPS = 1024;
 }

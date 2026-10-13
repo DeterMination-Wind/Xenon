@@ -35,9 +35,13 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicLong;
 
-/** Range-based downloader for the MDTbbs file host. */
-public final class MdtbbsSegmentedDownloader {
-    private static final long SEGMENT_SIZE = 4L * 1024 * 1024;
+/// Range-based downloader for the MDTbbs file host.
+///
+/// Large payloads are split into up to sixteen concurrent ranges; small ones
+/// fall back to a single stream. Every range loop passes its chunks through
+/// [DownloadThrottle#global()], so the segments share one byte budget rather
+/// than getting one each.
+public final class MdtbbsSegmentedDownloader {    private static final long SEGMENT_SIZE = 4L * 1024 * 1024;
     private static final int MAX_SEGMENTS = 16;
     private static final int RETRIES = 3;
 
@@ -195,6 +199,10 @@ public final class MdtbbsSegmentedDownloader {
                         if (Thread.currentThread().isInterrupted()) {
                             throw new IOException("Range download interrupted");
                         }
+                        // All segments draw from the one shared shaper, so the
+                        // sixteen concurrent range requests add up to a single
+                        // shaped stream instead of sixteen unshaped ones.
+                        DownloadThrottle.admit(read, DownloadThrottle.INTERRUPT_GATE);
                         java.nio.ByteBuffer chunk = java.nio.ByteBuffer.wrap(buffer, 0, read);
                         while (chunk.hasRemaining()) {
                             int written = output.write(chunk, position);
@@ -249,6 +257,7 @@ public final class MdtbbsSegmentedDownloader {
                 long readTotal = 0;
                 int read;
                 while ((read = input.read(buffer)) > 0) {
+                    DownloadThrottle.admit(read, DownloadThrottle.INTERRUPT_GATE);
                     output.write(buffer, 0, read);
                     readTotal += read;
                     FetchTask.recordDownloadedBytes(read);

@@ -18,6 +18,7 @@
 package determination.xenon.mindustry.install;
 
 import determination.xenon.mindustry.VersionVariant;
+import determination.xenon.mindustry.download.MindustryDownloadSource;
 import determination.xenon.ui.wizard.WizardController;
 import determination.xenon.ui.wizard.WizardPage;
 import determination.xenon.util.SettingsMap;
@@ -46,25 +47,40 @@ import static determination.xenon.util.i18n.I18n.i18n;
 public final class VariantSelectionPage extends VBox implements WizardPage {
     private final WizardController controller;
 
+    /// Page heading, kept as a field so [#rebuild()] can re-add it.
+    private final Label title = new Label(i18n("xenon.install.variant.title"));
+
+    /// Page hint, kept as a field so [#rebuild()] can re-add it.
+    private final Label hint = new Label(i18n("xenon.install.variant.hint"));
+
     public VariantSelectionPage(WizardController controller) {
         this.controller = controller;
         setSpacing(8);
         setPadding(new Insets(16));
 
-        Label title = new Label(i18n("xenon.install.variant.title"));
         title.getStyleClass().add("title");
-        getChildren().add(title);
-        Label hint = new Label(i18n("xenon.install.variant.hint"));
         hint.setWrapText(true);
-        getChildren().add(hint);
+        rebuild();
+    }
 
+    /// Rebuilds the variant cards against the tier currently in effect.
+    ///
+    /// The download source can change while the launcher is open, so the
+    /// availability of each variant is re-evaluated on every navigation. A
+    /// variant with no allowed feed is offered as a disabled card with the
+    /// reason spelled out rather than silently dropped from the list.
+    private void rebuild() {
+        MindustryDownloadSource source = MindustryDownloadSource.current();
+        getChildren().setAll(title, hint);
         for (VersionVariant variant : VersionVariant.values()) {
             if (variant == VersionVariant.CUSTOM) continue;
-            getChildren().add(buildCard(variant));
+            getChildren().add(buildCard(variant, source));
         }
     }
 
-    private Region buildCard(VersionVariant variant) {
+    private Region buildCard(VersionVariant variant, MindustryDownloadSource source) {
+        boolean available = source.allowsVariant(variant);
+
         VBox card = new VBox(4);
         card.setPadding(new Insets(12));
         card.getStyleClass().add("card");
@@ -78,6 +94,7 @@ public final class VariantSelectionPage extends VBox implements WizardPage {
         actions.setAlignment(Pos.CENTER_LEFT);
 
         Button choose = new Button(i18n("xenon.install.variant.choose"));
+        choose.setDisable(!available);
         choose.setOnAction(e -> {
             controller.getSettings().put(WizardKeys.VARIANT, variant);
             controller.onNext();
@@ -97,12 +114,23 @@ public final class VariantSelectionPage extends VBox implements WizardPage {
 
         actions.getChildren().addAll(choose, upstream);
         card.getChildren().addAll(name, desc, actions);
+
+        if (!available) {
+            Label reason = new Label(i18n("xenon.install.variant.unavailable",
+                    i18n("settings.launcher.mindustry_download.source."
+                            + source.name().toLowerCase(Locale.ROOT))));
+            reason.setWrapText(true);
+            reason.getStyleClass().add("subtitle-label");
+            card.getChildren().add(reason);
+        }
         return card;
     }
 
     @Override
     public void onNavigate(SettingsMap settings) {
-        // No reset required — variant gets overwritten when the user clicks a card.
+        // No reset required — variant gets overwritten when the user clicks a
+        // card. The rebuild is what keeps the cards in step with the tier.
+        rebuild();
     }
 
     @Override
