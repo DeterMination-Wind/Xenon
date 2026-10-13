@@ -2,7 +2,7 @@
 
 All notable changes to Xenon will be documented in this file.
 
-## [Unreleased] — 2026-10-12
+## [1.16.0] — 2026-10-13
 
 ### Added
 - Global download rate limiting for the whole Mindustry download chain: unlimited, 1 / 2 / 5 MB/s presets or a custom KiB/s rate with a 32 KB/s floor, applied live to racing mirrors, range segments and resumable streams through one shared token bucket.
@@ -13,6 +13,8 @@ All notable changes to Xenon will be documented in this file.
 
 ### Changed
 - The competitor table in both READMEs was re-verified against each project's own repository (descriptions, licenses, last push and per-cell evidence) as of 2026-10-12, with new Java-management and download-source-policy rows and three newly found Windows-capable launchers.
+
+See the [bilingual release notes](release-notes/v1.16.0.md) for details.
 
 ## [1.15.0] — 2026-10-11
 
