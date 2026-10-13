@@ -19,11 +19,10 @@ package determination.xenon.mindustry.download;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
-import determination.xenon.JavaFXLauncher;
 import org.jetbrains.annotations.NotNullByDefault;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.ByteArrayOutputStream;
@@ -52,6 +51,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /// primary source, another the other side of the failover. Every request is
 /// counted so the assertions can prove which route was actually used instead
 /// of inferring it from the outcome.
+///
+/// The policy is exercised directly rather than through
+/// [MindustryDownloadTask] because that adapter reports progress through
+/// HMCL's task plumbing, which needs a JavaFX toolkit — and the CI runner is
+/// headless, so the check would not run where it matters most.
 @NotNullByDefault
 public final class MindustryDownloadVerificationTest {
 
@@ -64,12 +68,6 @@ public final class MindustryDownloadVerificationTest {
     /// A same-length but different body, so only the hash can reject it.
     private static final byte[] CORRUPT = corruptCopyOfGood();
 
-    /// Starts the JavaFX toolkit because `Task` progress updates use `Platform.runLater`.
-    @BeforeAll
-    public static void startJavaFx() {
-        JavaFXLauncher.start();
-    }
-
     /// Restores the default tier so one test cannot leak into the next.
     @AfterEach
     public void restoreTier() {
@@ -81,7 +79,7 @@ public final class MindustryDownloadVerificationTest {
     public void matchingArtifactPassesVerification(@TempDir Path dir) throws Exception {
         try (FakeSource server = new FakeSource(GOOD, GOOD)) {
             Path target = dir.resolve("Mindustry.jar");
-            task(server.primaryUrl(), target, GOOD.length, sha256(GOOD), null).run();
+            download(server.primaryUrl(), target, GOOD.length, sha256(GOOD), null);
 
             assertArrayEquals(GOOD, Files.readAllBytes(target));
             assertEquals(1, server.primaryHits(), "a good artifact needs a single request");
@@ -96,8 +94,8 @@ public final class MindustryDownloadVerificationTest {
         MindustryDownloadSource.setCurrent(MindustryDownloadSource.PREFER_DOMESTIC);
         try (FakeSource server = new FakeSource(SHORT, GOOD)) {
             Path target = dir.resolve("Mindustry.jar");
-            task(server.primaryUrl(), target, GOOD.length, sha256(GOOD),
-                    server.failoverUrl()).run();
+            download(server.primaryUrl(), target, GOOD.length, sha256(GOOD),
+                    server.failoverUrl());
 
             assertArrayEquals(GOOD, Files.readAllBytes(target),
                     "the other source family must supply the verified artifact");
@@ -114,10 +112,10 @@ public final class MindustryDownloadVerificationTest {
     public void hashMismatchDeletesTheArtifact(@TempDir Path dir) throws Exception {
         try (FakeSource server = new FakeSource(CORRUPT, GOOD)) {
             Path target = dir.resolve("Mindustry.jar");
-            MindustryDownloadTask task = task(server.primaryUrl(), target, GOOD.length,
+            Executable run = () -> download(server.primaryUrl(), target, GOOD.length,
                     sha256(GOOD), null);
 
-            IOException failure = assertThrows(IOException.class, task::run);
+            IOException failure = assertThrows(IOException.class, run);
 
             assertTrue(failure.getMessage().contains("hash does not match"),
                     "the error must name the mismatch, but was: " + failure.getMessage());
@@ -134,10 +132,10 @@ public final class MindustryDownloadVerificationTest {
     public void missingHashStillChecksTheSize(@TempDir Path dir) throws Exception {
         try (FakeSource server = new FakeSource(SHORT, GOOD)) {
             Path target = dir.resolve("Mindustry.jar");
-            MindustryDownloadTask task = task(server.primaryUrl(), target, GOOD.length,
+            Executable run = () -> download(server.primaryUrl(), target, GOOD.length,
                     null, null);
 
-            IOException failure = assertThrows(IOException.class, task::run);
+            IOException failure = assertThrows(IOException.class, run);
 
             assertTrue(failure.getMessage().contains("size does not match"),
                     "the error must name the size problem, but was: " + failure.getMessage());
@@ -151,10 +149,10 @@ public final class MindustryDownloadVerificationTest {
         MindustryDownloadSource.setCurrent(MindustryDownloadSource.DOMESTIC_ONLY);
         try (FakeSource server = new FakeSource(SHORT, GOOD)) {
             Path target = dir.resolve("Mindustry.jar");
-            MindustryDownloadTask task = task(server.primaryUrl(), target, GOOD.length,
+            Executable run = () -> download(server.primaryUrl(), target, GOOD.length,
                     sha256(GOOD), server.failoverUrl());
 
-            assertThrows(IOException.class, task::run);
+            assertThrows(IOException.class, run);
 
             assertEquals(0, server.failoverHits(),
                     "domestic-only must never request the GitHub fallback");
@@ -167,11 +165,11 @@ public final class MindustryDownloadVerificationTest {
     public void officialOnlyRejectsAFileStationPrimary(@TempDir Path dir) throws Exception {
         MindustryDownloadSource.setCurrent(MindustryDownloadSource.OFFICIAL_ONLY);
         Path target = dir.resolve("Mindustry.jar");
-        MindustryDownloadTask task = task(
+        Executable run = () -> download(
                 "https://file.mdtbbs.cn/d/Mindustry/Main/Stable/v160.7/desktop/Mindustry.jar",
                 target, GOOD.length, sha256(GOOD), null);
 
-        IOException failure = assertThrows(IOException.class, task::run);
+        IOException failure = assertThrows(IOException.class, run);
 
         assertTrue(failure.getMessage().contains("No download route is allowed"),
                 "an official-only tier must refuse a file-station URL, but said: "
@@ -185,7 +183,7 @@ public final class MindustryDownloadVerificationTest {
         byte[] zip = zipContaining(GOOD);
         try (FakeSource server = new FakeSource(zip, GOOD)) {
             Path target = dir.resolve("Mindustry.jar");
-            task(server.primaryUrl(), target, zip.length, sha256(zip), null, true).run();
+            download(server.primaryUrl(), target, zip.length, sha256(zip), null, true);
 
             assertArrayEquals(GOOD, Files.readAllBytes(target));
             assertNoResidue(dir, "Mindustry.jar");
@@ -199,30 +197,30 @@ public final class MindustryDownloadVerificationTest {
         byte[] corruptZip = zipContaining(CORRUPT);
         try (FakeSource server = new FakeSource(corruptZip, GOOD)) {
             Path target = dir.resolve("Mindustry.jar");
-            MindustryDownloadTask task = task(server.primaryUrl(), target, zip.length,
+            Executable run = () -> download(server.primaryUrl(), target, zip.length,
                     sha256(zip), null, true);
 
-            assertThrows(IOException.class, task::run);
+            assertThrows(IOException.class, run);
 
             assertFalse(Files.exists(target));
             assertNoResidue(dir, "Mindustry.jar");
         }
     }
 
-    /// Builds a task against the fake source.
+    /// Runs the download policy against the fake source.
     ///
     /// @param url          primary URL
     /// @param target       destination file
     /// @param expectedSize expected size in bytes
     /// @param hash         expected SHA-256, or `null`
     /// @param fallbackUrl  failover URL, or `null`
-    /// @return the configured task
-    private static MindustryDownloadTask task(String url, Path target, long expectedSize,
-                                             String hash, String fallbackUrl) {
-        return task(url, target, expectedSize, hash, fallbackUrl, false);
+    /// @throws IOException when every allowed attempt failed
+    private static void download(String url, Path target, long expectedSize,
+                                 String hash, String fallbackUrl) throws IOException {
+        download(url, target, expectedSize, hash, fallbackUrl, false);
     }
 
-    /// Builds a task against the fake source, optionally in archive mode.
+    /// Runs the download policy against the fake source, optionally in archive mode.
     ///
     /// @param url          primary URL
     /// @param target       destination file
@@ -230,14 +228,14 @@ public final class MindustryDownloadVerificationTest {
     /// @param hash         expected SHA-256, or `null`
     /// @param fallbackUrl  failover URL, or `null`
     /// @param archive      whether the URL is a zip
-    /// @return the configured task
-    private static MindustryDownloadTask task(String url, Path target, long expectedSize,
-                                             String hash, String fallbackUrl,
-                                             boolean archive) {
+    /// @throws IOException when every allowed attempt failed
+    private static void download(String url, Path target, long expectedSize,
+                                 String hash, String fallbackUrl,
+                                 boolean archive) throws IOException {
         Path caches = target.getParent();
         if (caches == null) throw new AssertionError("the test target must have a parent");
-        return new MindustryDownloadTask(url, target, expectedSize, caches, archive,
-                fallbackUrl, hash);
+        MindustryDownloadPolicy.download(url, target, expectedSize, caches, archive,
+                fallbackUrl, hash, null, null);
     }
 
     /// Asserts the directory holds neither a partial file nor a metadata sidecar.
