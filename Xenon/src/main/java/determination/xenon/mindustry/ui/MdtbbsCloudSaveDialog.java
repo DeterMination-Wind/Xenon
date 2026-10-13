@@ -18,12 +18,19 @@
 package determination.xenon.mindustry.ui;
 
 import com.jfoenix.controls.JFXButton;
+import com.jfoenix.controls.JFXCheckBox;
 import com.jfoenix.controls.JFXDialogLayout;
+import determination.xenon.mindustry.MindustryImportFlow;
+import determination.xenon.mindustry.MindustryVersion;
 import determination.xenon.mindustry.community.MdtbbsCloudSavesClient;
 import determination.xenon.mindustry.community.MdtbbsCloudSavesClient.Quota;
 import determination.xenon.mindustry.community.MdtbbsCloudSavesClient.Slot;
 import determination.xenon.mindustry.community.MdtbbsCloudSavesClient.SlotPage;
 import determination.xenon.mindustry.community.MdtbbsCloudSavesClient.Snapshot;
+import determination.xenon.mindustry.community.MindustryCloudSaveSync;
+import determination.xenon.mindustry.community.MindustryCloudSaveSync.CloudHead;
+import determination.xenon.mindustry.community.MindustryCloudSaveSync.SaveComparison;
+import determination.xenon.mindustry.community.MindustryCloudSaveSync.SaveIdentity;
 import determination.xenon.mindustry.save.SaveFileReader;
 import determination.xenon.task.Schedulers;
 import determination.xenon.ui.Controllers;
@@ -40,13 +47,18 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.stage.FileChooser;
+import org.jetbrains.annotations.NotNullByDefault;
+import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 
@@ -59,6 +71,11 @@ import static determination.xenon.util.logging.Logger.LOG;
 /// immutable snapshot, and restores a chosen snapshot after backing up the
 /// local file that would be replaced. All network work runs on the IO
 /// scheduler; the dialog body is rebuilt whenever slots change.
+///
+/// It also hosts the instance-level switch for the automatic read-only check
+/// and the simplified conflict prompt: the automatic check never uploads or
+/// downloads, and the prompt only offers explicit choices.
+@NotNullByDefault
 public final class MdtbbsCloudSaveDialog {
     /// Timestamp format for backed-up local saves.
     private static final DateTimeFormatter STAMP =
@@ -69,6 +86,8 @@ public final class MdtbbsCloudSaveDialog {
 
     /// Cloud client shared with the community services.
     private final MdtbbsCloudSavesClient client = CommunityServices.cloudSaves();
+    /// Instance whose local saves this dialog compares and uploads.
+    private final MindustryVersion version;
     /// Local saves directory of the instance.
     private final Path savesDir;
     /// Dialog layout whose body is swapped between slots and snapshots.
@@ -76,16 +95,18 @@ public final class MdtbbsCloudSaveDialog {
 
     /// Opens the cloud-save dialog for one instance.
     ///
-    /// @param dataDir instance data directory; `saves/` is created on demand
-    public static void show(Path dataDir) {
+    /// @param version     installed instance that owns the saves
+    /// @param versionRoot instance directory that resolves its data directory
+    public static void show(MindustryVersion version, Path versionRoot) {
         if (!CommunityServices.community().isLoggedIn()) {
             Controllers.showToast(i18n("xenon.cloud.login"));
             return;
         }
-        new MdtbbsCloudSaveDialog(dataDir).open();
+        new MdtbbsCloudSaveDialog(version, version.resolveDataDir(versionRoot)).open();
     }
 
-    private MdtbbsCloudSaveDialog(Path dataDir) {
+    private MdtbbsCloudSaveDialog(MindustryVersion version, Path dataDir) {
+        this.version = version;
         this.savesDir = dataDir.resolve("saves");
     }
 
@@ -127,6 +148,17 @@ public final class MdtbbsCloudSaveDialog {
         Label quotaLabel = new Label(formatQuota(quota));
         quotaLabel.getStyleClass().add("subtitle-label");
 
+        JFXCheckBox autoCheck = new JFXCheckBox(i18n("xenon.cloud.check.auto"));
+        autoCheck.setSelected(version.isCloudSaveCheckEnabled());
+        autoCheck.selectedProperty().addListener((observable, was, enabled) -> {
+            version.setCloudSaveCheckEnabled(enabled);
+            persistInstanceSwitch();
+        });
+        JFXButton checkNow = FXUtils.newRaisedButton(i18n("xenon.cloud.check.now"));
+        checkNow.setOnAction(e -> checkNow());
+        HBox checks = new HBox(12, autoCheck, checkNow);
+        checks.setAlignment(Pos.CENTER_LEFT);
+
         VBox rows = new VBox(6);
         if (slots.isEmpty()) {
             rows.getChildren().add(new Label(i18n("xenon.cloud.empty")));
@@ -144,9 +176,21 @@ public final class MdtbbsCloudSaveDialog {
         HBox actions = new HBox(create);
         actions.setAlignment(Pos.CENTER_LEFT);
 
-        VBox body = new VBox(8, hint, quotaLabel, scroll, actions);
+        VBox body = new VBox(8, hint, quotaLabel, checks, scroll, actions);
         body.setPadding(new Insets(4, 0, 0, 0));
         layout.setBody(body);
+    }
+
+    /// Persists the instance-level switch so it survives a restart.
+    private void persistInstanceSwitch() {
+        Schedulers.io().execute(() -> {
+            try {
+                MindustryImportFlow.repositoryForVersion(version).save(version);
+            } catch (IOException e) {
+                LOG.warning("Failed to persist the cloud-save check switch for "
+                        + version.getId(), e);
+            }
+        });
     }
 
     /// Builds one slot row with upload, restore and delete actions.
@@ -228,16 +272,36 @@ public final class MdtbbsCloudSaveDialog {
         if (Files.isDirectory(savesDir)) chooser.setInitialDirectory(savesDir.toFile());
         java.io.File file = FXUtils.showOpenDialog(chooser, Controllers.getStage());
         if (file == null) return;
-        Path source = file.toPath();
+        uploadFile(slot, file.toPath());
+    }
 
+    /// Uploads one file into a slot after making room in the storage quota.
+    ///
+    /// The quota check runs first: when the account is full the oldest
+    /// unpinned snapshots are dropped (logged before each request) and the
+    /// upload proceeds only when enough room was actually reclaimed.
+    ///
+    /// @param slot   slot to upload into
+    /// @param source local `.msav` file
+    private void uploadFile(Slot slot, Path source) {
         Schedulers.io().execute(() -> {
             try {
-                String head = null;
+                long size = Files.size(source);
+                MindustryCloudSaveSync.CleanupPlan plan =
+                        MindustryCloudSaveSync.enforceQuota(client, slot.id(), size);
+                if (!plan.sufficient()) {
+                    Platform.runLater(() -> Controllers.dialog(
+                            i18n("xenon.cloud.quota.full", formatSize(size)),
+                            i18n("message.error"), MessageDialogPane.MessageType.ERROR));
+                    return;
+                }
+                @Nullable String head = null;
                 List<Snapshot> snapshots = client.snapshots(slot.id());
                 if (!snapshots.isEmpty()) head = snapshots.get(0).id();
                 client.upload(slot.id(), source, head);
                 Platform.runLater(() -> {
-                    Controllers.showToast(i18n("xenon.cloud.upload.done", source.getFileName().toString()));
+                    Controllers.showToast(i18n("xenon.cloud.upload.done",
+                            source.getFileName().toString()));
                     reloadSlots();
                 });
             } catch (IOException e) {
@@ -363,6 +427,221 @@ public final class MdtbbsCloudSaveDialog {
                 fail(e);
             }
         });
+    }
+
+    // ------------------------------------------------------------------
+    // Read-only comparison
+    // ------------------------------------------------------------------
+
+    /// A cloud head paired with the snapshot it was read from.
+    ///
+    /// The head alone is enough to compare, but acting on the result needs the
+    /// snapshot id, which the comparison intentionally does not carry.
+    ///
+    /// @param head       newest snapshot of one slot, as the comparison sees it
+    /// @param snapshotId id of that snapshot
+    private record HeadRef(CloudHead head, String snapshotId) {
+    }
+
+    /// Runs the read-only comparison and lists the files that need attention.
+    private void checkNow() {
+        layout.setBody(new Label(i18n("xenon.cloud.loading")));
+        Schedulers.io().execute(() -> {
+            try {
+                List<HeadRef> refs = loadHeads();
+                List<CloudHead> heads = new ArrayList<>(refs.size());
+                for (HeadRef ref : refs) heads.add(ref.head());
+                MindustryCloudSaveSync.CheckResult result =
+                        MindustryCloudSaveSync.check(savesDir, () -> heads);
+                Platform.runLater(() -> renderCheck(result, refs));
+            } catch (IOException e) {
+                fail(e);
+            }
+        });
+    }
+
+    /// Reads the newest snapshot of every slot.
+    ///
+    /// @return one reference per slot that has a snapshot
+    /// @throws IOException when the cloud cannot be reached
+    private List<HeadRef> loadHeads() throws IOException {
+        List<HeadRef> refs = new ArrayList<>();
+        SlotPage page = client.slots(null, 50);
+        for (Slot slot : page.slots()) {
+            if (slot.id().isBlank()) continue;
+            List<Snapshot> snapshots = client.snapshots(slot.id());
+            Snapshot newest = snapshots.stream()
+                    .max(Comparator.comparing(Snapshot::createdAt)).orElse(null);
+            if (newest == null) continue;
+            refs.add(new HeadRef(new CloudHead(slot.id(), slot.name(), newest.fileName(),
+                    newest.size(), newest.sha256(), newest.createdAt()), newest.id()));
+        }
+        return refs;
+    }
+
+    /// Renders the comparison result with a resolve action per file.
+    ///
+    /// @param result comparison result
+    /// @param refs   cloud heads, used to act on a file
+    private void renderCheck(MindustryCloudSaveSync.CheckResult result, List<HeadRef> refs) {
+        Label title = new Label(i18n("xenon.cloud.check.title"));
+        title.getStyleClass().add("title-label");
+
+        VBox rows = new VBox(6);
+        if (result.needingAttention().isEmpty()) {
+            rows.getChildren().add(new Label(i18n("xenon.cloud.check.empty")));
+        }
+        for (SaveComparison comparison : result.needingAttention()) {
+            rows.getChildren().add(comparisonRow(comparison, refs));
+        }
+
+        ScrollPane scroll = new ScrollPane(rows);
+        scroll.setFitToWidth(true);
+        scroll.setPrefViewportHeight(280);
+
+        JFXButton back = FXUtils.newRaisedButton(i18n("xenon.cloud.back"));
+        back.setOnAction(e -> reloadSlots());
+        HBox actions = new HBox(back);
+        actions.setAlignment(Pos.CENTER_LEFT);
+
+        VBox body = new VBox(8, title, scroll, actions);
+        body.setPadding(new Insets(4, 0, 0, 0));
+        layout.setBody(body);
+    }
+
+    /// Builds one comparison row: file name, both timestamps and sizes, and a resolve action.
+    ///
+    /// @param comparison one local-vs-cloud comparison
+    /// @param refs       cloud heads available for the actions
+    /// @return the rendered row
+    private Region comparisonRow(SaveComparison comparison, List<HeadRef> refs) {
+        Label name = new Label(comparison.fileName());
+        name.getStyleClass().add("title-label");
+
+        // Only times, sizes and the file name are shown; the cloud slot ids and
+        // snapshot ids stay internal.
+        Label meta = new Label(i18n("xenon.cloud.check.meta",
+                i18n("xenon.cloud.verdict."
+                        + comparison.verdict().name().toLowerCase(Locale.ROOT)),
+                DATE.format(comparison.local().timestamp()),
+                formatSize(comparison.local().size()),
+                DATE.format(comparison.cloud().timestamp()),
+                formatSize(comparison.cloud().size())));
+        meta.getStyleClass().add("subtitle-label");
+        meta.setWrapText(true);
+
+        VBox text = new VBox(2, name, meta);
+        HBox.setHgrow(text, Priority.ALWAYS);
+
+        @Nullable HeadRef ref = findHead(comparison.fileName(), refs);
+        JFXButton resolve = FXUtils.newRaisedButton(i18n("xenon.cloud.check.resolve"));
+        resolve.setDisable(ref == null);
+        if (ref != null) {
+            resolve.setOnAction(e -> showConflict(comparison, ref));
+        }
+
+        HBox actions = new HBox(6, resolve);
+        actions.setAlignment(Pos.CENTER_RIGHT);
+        HBox row = new HBox(8, text, actions);
+        row.setAlignment(Pos.CENTER_LEFT);
+        row.setPadding(new Insets(6));
+        row.getStyleClass().add("community-reply");
+        return row;
+    }
+
+    /// Finds the newest cloud head of one file name.
+    ///
+    /// @param fileName file name to look for
+    /// @param refs     cloud heads to search
+    /// @return the newest matching head, or `null`
+    private static @Nullable HeadRef findHead(String fileName, List<HeadRef> refs) {
+        @Nullable HeadRef best = null;
+        for (HeadRef ref : refs) {
+            if (!ref.head().fileName().equals(fileName)) continue;
+            if (best == null || ref.head().createdAt().isAfter(best.head().createdAt())) {
+                best = ref;
+            }
+        }
+        return best;
+    }
+
+    /// Shows the simplified conflict prompt for one file.
+    ///
+    /// Deliberately small: both timestamps, both sizes, the file name and the
+    /// cloud slot's display name. No internal ids are rendered. The three
+    /// choices are the only ways out — nothing happens without one of them.
+    ///
+    /// @param comparison conflicting pair
+    /// @param ref          cloud head to restore from or upload into
+    private void showConflict(SaveComparison comparison, HeadRef ref) {
+        SaveIdentity local = comparison.local();
+        SaveIdentity cloud = comparison.cloud();
+
+        Label title = new Label(i18n("xenon.cloud.conflict.title", comparison.fileName()));
+        title.getStyleClass().add("title-label");
+        title.setWrapText(true);
+
+        Label cloudSide = new Label(i18n("xenon.cloud.conflict.cloud",
+                ref.head().slotName().isBlank()
+                        ? i18n("xenon.cloud.slot.unnamed") : ref.head().slotName(),
+                DATE.format(cloud.timestamp()), formatSize(cloud.size())));
+        cloudSide.getStyleClass().add("subtitle-label");
+        cloudSide.setWrapText(true);
+
+        Label localSide = new Label(i18n("xenon.cloud.conflict.local",
+                DATE.format(local.timestamp()), formatSize(local.size())));
+        localSide.getStyleClass().add("subtitle-label");
+        localSide.setWrapText(true);
+
+        Label hint = new Label(i18n("xenon.cloud.conflict.hint"));
+        hint.setWrapText(true);
+
+        JFXButton useCloud = FXUtils.newRaisedButton(i18n("xenon.cloud.conflict.use_cloud"));
+        useCloud.setOnAction(e -> useCloud(comparison, ref));
+        JFXButton keepLocal = FXUtils.newRaisedButton(i18n("xenon.cloud.conflict.keep_local"));
+        keepLocal.setOnAction(e -> keepLocal(comparison, ref));
+        JFXButton later = FXUtils.newRaisedButton(i18n("xenon.cloud.conflict.later"));
+        later.setOnAction(e -> checkNow());
+        HBox actions = new HBox(8, useCloud, keepLocal, later);
+        actions.setAlignment(Pos.CENTER_LEFT);
+
+        VBox body = new VBox(8, title, cloudSide, localSide, hint, actions);
+        body.setPadding(new Insets(4, 0, 0, 0));
+        layout.setBody(body);
+    }
+
+    /// Restores the cloud head over the local file, backing the local one up first.
+    ///
+    /// @param comparison conflicting pair
+    /// @param ref          cloud head to restore
+    private void useCloud(SaveComparison comparison, HeadRef ref) {
+        Slot slot = slotOf(ref);
+        Snapshot snapshot = new Snapshot(ref.snapshotId(), ref.head().size(),
+                ref.head().sha256(), comparison.fileName(), false, ref.head().createdAt());
+        restore(slot, snapshot);
+    }
+
+    /// Uploads the local file into the cloud slot, replacing the cloud head.
+    ///
+    /// @param comparison conflicting pair
+    /// @param ref          cloud head whose slot receives the upload
+    private void keepLocal(SaveComparison comparison, HeadRef ref) {
+        Path source = savesDir.resolve(comparison.fileName());
+        if (!Files.isRegularFile(source)) {
+            Controllers.showToast(i18n("xenon.cloud.conflict.missing", comparison.fileName()));
+            checkNow();
+            return;
+        }
+        uploadFile(slotOf(ref), source);
+    }
+
+    /// Rebuilds a slot value from a cloud head so existing actions can be reused.
+    ///
+    /// @param ref cloud head
+    /// @return the slot the head belongs to
+    private static Slot slotOf(HeadRef ref) {
+        return new Slot(ref.head().slotId(), ref.head().slotName(),
+                ref.head().createdAt(), ref.head().size(), 0L);
     }
 
     // ------------------------------------------------------------------

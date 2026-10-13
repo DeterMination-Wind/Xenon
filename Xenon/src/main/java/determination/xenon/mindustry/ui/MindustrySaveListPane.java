@@ -85,7 +85,7 @@ public final class MindustrySaveListPane extends BorderPane {
         JFXButton clearLaunch = FXUtils.newRaisedButton(i18n("xenon.mindustry.save.launch.clear"));
         clearLaunch.setOnAction(e -> setLaunchSave(null));
         JFXButton cloud = FXUtils.newRaisedButton(i18n("xenon.cloud.title"));
-        cloud.setOnAction(e -> MdtbbsCloudSaveDialog.show(version.resolveDataDir(versionRoot)));
+        cloud.setOnAction(e -> MdtbbsCloudSaveDialog.show(version, versionRoot));
 
         HBox toolbar = new HBox(8, refresh, importArchive, cloud, openFolder, clearLaunch);
         toolbar.setAlignment(Pos.CENTER_LEFT);

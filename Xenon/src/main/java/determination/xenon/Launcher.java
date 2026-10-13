@@ -163,6 +163,10 @@ public final class Launcher extends Application {
                 // Tray icon — single-click brings the launcher back when
                 // the window is hidden / minimized / behind other apps.
                 determination.xenon.ui.TrayIconManager.install(primaryStage);
+                // One read-only cloud-save comparison a few seconds later, so a
+                // save changed on another device is noticed without the user
+                // hunting for it. It never uploads, downloads or merges.
+                determination.xenon.mindustry.ui.MindustryCloudSaveCheck.start();
             });
         } catch (Throwable e) {
             CRASH_REPORTER.uncaughtException(Thread.currentThread(), e);

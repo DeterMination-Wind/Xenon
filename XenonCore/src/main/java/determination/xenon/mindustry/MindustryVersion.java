@@ -79,6 +79,15 @@ public final class MindustryVersion {
     private @Nullable String gameArgs = "";
     /** Optional file name under {@code save-archives/} to use as the launch data archive. */
     private @Nullable String launchSaveFile;
+    /**
+     * Whether the launcher may run the read-only cloud-save check for this instance.
+     *
+     * Defaults to {@code true}. Manifests written before this option existed
+     * have no such field, and Gson leaves the initialiser value in place, so
+     * they opt in automatically. The check only reads local files and cloud
+     * metadata; it never uploads, downloads or merges.
+     */
+    private boolean cloudSaveCheckEnabled = true;
 
     /** Runtime-only versions root that owns this instance; Gson never persists it. */
     private transient @Nullable Path repositoryRoot;
@@ -208,6 +217,18 @@ public final class MindustryVersion {
     public @Nullable String getLaunchSaveFile() { return launchSaveFile; }
 
     public void setLaunchSaveFile(@Nullable String launchSaveFile) { this.launchSaveFile = launchSaveFile; }
+
+    /// Whether the launcher may run the read-only cloud-save check for this instance.
+    ///
+    /// @return `true` when the startup check may compare local saves with the cloud
+    public boolean isCloudSaveCheckEnabled() { return cloudSaveCheckEnabled; }
+
+    /// Enables or disables the read-only cloud-save check for this instance.
+    ///
+    /// @param cloudSaveCheckEnabled desired state
+    public void setCloudSaveCheckEnabled(boolean cloudSaveCheckEnabled) {
+        this.cloudSaveCheckEnabled = cloudSaveCheckEnabled;
+    }
 
     /**
      * Returns the runtime-only versions root that loaded or saved this instance.
