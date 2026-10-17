@@ -82,6 +82,8 @@ language-subtag-registry
 /.tmp/
 /.omo/
 /config/logs/
+# local test mod jars; never commit
+/config/mods/
 /config/settings.bin
 /config/settings_backup.bin
 /config/settings_backups/

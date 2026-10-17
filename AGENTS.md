@@ -1,31 +1,78 @@
-# Java Code Style Requirements
+# AGENTS.md — Xenon
 
-These rules apply to all Java code written or modified in this repository.
+Xenon is a Mindustry launcher carved out of an HMCL fork. The HMCL JavaFX shell
+(decorator, sidebar, wizard, animations, themes) is preserved; Minecraft-specific
+backends are replaced by Mindustry code under `determination.xenon.mindustry.*`.
+Per-instance isolation uses `-Dmindustry.data.dir`.
 
-## Repository Usage
+Java 17 bytecode for the launcher; `XenonBoot` main stays Java 8-compatible for
+bootstrap. Group is `determination`; version root comes from
+`config/project.properties` (per-build version in `Xenon/build.gradle.kts`).
+JavaFX classic/modern pins live in `JavaFXPlatform` under `buildSrc`; don't pin
+them by hand.
 
-- Use `C:\Users\华硕\Documents\codex\Xenon-fork` as the local working repository for development, builds, verification, and remote synchronization.
+## Build, run, test
 
-## Nullability
+Run from the repo root with the wrapper (`./gradlew`; Windows `.\gradlew.bat`).
+Always pass `-g .gradle-user-home` (`GRADLE_USER_HOME`) and use a 10-minute
+timeout for `test` tasks.
 
-- Annotate every class with JetBrains Annotations `@NotNullByDefault`.
-- Any type, field, parameter, return value, local variable, or generic type argument that may be `null` must be explicitly annotated with `@Nullable`.
-- Nullability must never be implicit.
+```bash
+./gradlew -g .gradle-user-home :Xenon:compileJava
+./gradlew -g .gradle-user-home :Xenon:run
+./gradlew -g .gradle-user-home :Xenon:packagePortable
+./gradlew -g .gradle-user-home :XenonCore:test
+./gradlew -g .gradle-user-home :Xenon:checkstyle :XenonCore:checkstyle :Xenon:checkTranslations
+```
 
-## Immutability
+`:Xenon:run` builds `shadowJar` and honors `XENON_JAVA_HOME` / `XENON_JAVA_OPTS`.
+`packageAll` adds host-OS jpackage installers; `shadowJar` is the fat jar; task
+definitions live in `Xenon/build.gradle.kts`, root default tasks are `clean build`.
 
-- Immutable arrays and collections must be explicitly annotated with JetBrains Annotations `@Unmodifiable` or `@UnmodifiableView` as appropriate.
-- For arrays, use type-use syntax such as `String @Unmodifiable []`.
+## Java code style
 
-## Documentation
+- Every class: `@NotNullByDefault`; every nullable type/field/parameter/return/local/type argument: `@Nullable`. Nullability is never implicit.
+- Immutable arrays/collections: `@Unmodifiable`/`@UnmodifiableView`; arrays use type-use syntax, e.g. `String @Unmodifiable []`.
+- Every class, field, method: `///` Markdown Javadoc that is accurate about behavior, constraints, and side effects; inline comments only for non-obvious behavior.
+- License header `config/checkstyle/license-header.txt`; checks live in `config/checkstyle/` (license/mechanical only). The build currently sets empty checkstyle source sets, so don't rely on `:Xenon:checkstyle` for Javadoc or annotation rules.
 
-- Every class, field, and method must have documentation.
-- Documentation must use `///` Markdown-style Javadoc comments.
-- Keep documentation accurate and specific to the actual behavior, constraints, and side effects.
-- Add concise implementation comments inside complex logic whenever they materially improve readability or explain non-obvious behavior.
+## Modules
 
-## Gradle
+- `XenonCore/` — backend: versions, downloads, mods, saves, schematics, crashes, servers, UUID; `determination.xenon.mindustry.*`. Read `XenonCore/AGENTS.md`.
+- `Xenon/` — JavaFX UI, HMCL shell, and packaging; the Windows single-file stub is `XenonBootstrap/`. Read `Xenon/AGENTS.md`.
+- `XenonBoot/` — Java-8 bootstrap stub; the packaged jar replaces its `EntryPoint` with `Xenon`'s. Read `XenonBoot/AGENTS.md`.
+- `minecraft/libraries/*` — two Minecraft loader libraries kept compiling; not on the Mindustry path. `buildSrc/` and `gradle/libs.versions.toml` own build logic and dependency pins.
+- `docs/` mixes inherited HMCL docs (Contributing, Localization, PLATFORM, ReleaseSchedule) with Xenon user docs (README, USAGE); it is not the agent entry point. Don't edit it in agent-doc refactors.
 
-- When invoking Gradle in this repository, always set `GRADLE_USER_HOME` to the workspace-local `.gradle-user-home` directory.
-- Prefer commands such as `./gradlew -g .gradle-user-home ...` or the equivalent environment-variable-based configuration.
-- When running Gradle `test` tasks, use a higher timeout of ten minutes.
+## i18n
+
+- UI strings: `Xenon/src/main/resources/assets/lang/I18N*.properties`.
+- Keep these four in lock-step: `I18N.properties`, `I18N_zh_CN.properties`, `I18N_zh.properties`, `I18N_lzh.properties`. Other locales are best-effort.
+- Add each new key to all four; `:Xenon:checkTranslations` checks zh_CN keys against en/zh and lzh spelling. Generated `I18N_en_Qabs` / `LocaleNames` are build output.
+
+## Must-keep traps
+
+- **JavaFX internals:** the `addOpens` list in `Xenon/build.gradle.kts` is authoritative; add a package there before reflecting into it (details: `Xenon/AGENTS.md`).
+- **Win11 shell:** after `show()`, the undecorated stage needs `ensureTaskbarVisible` + `applyDwmRoundedCorners`; AppUserModelID stays unset in dev (details: `Xenon/AGENTS.md`).
+- **HMCL shell:** keep the decorator/sidebar/tab layout and route through `MindustryRoutes`; don't fork the shell (details: `Xenon/AGENTS.md`).
+- **Release/updater:** `Metadata.PUBLISH_URL` / `XENON_UPDATE_URL` are the single source; the updater uses a mirror and `-Dxenon.update_source.override` (details: `Xenon/AGENTS.md`).
+- **JNA:** hand-rolled `Native.load` bindings; `jna-platform` is test-only.
+
+## Diff routing
+
+| If the diff touches... | Read first |
+| --- | --- |
+| `XenonCore/**` | `XenonCore/AGENTS.md` |
+| `Xenon/**/mindustry/**` or `Xenon/**/ui/**` (UI, install, shell, stage, tray) | `Xenon/AGENTS.md` |
+| `Xenon/src/main/java/determination/xenon/{Launcher,Metadata,EntryPoint,upgrade,setting,java}/**` | `Xenon/AGENTS.md` |
+| `*.gradle.kts`, `buildSrc/**`, `gradle/**`, `config/checkstyle/**`, packaging, `XenonBootstrap/**` | root build/style sections + `Xenon/AGENTS.md` |
+| `XenonBoot/**` | `XenonBoot/AGENTS.md` |
+| `**/I18N*.properties` | root i18n + `:Xenon:checkTranslations` |
+| `.github/workflows/**` or release/updater | root traps; inspect CI logs before editing |
+| `minecraft/libraries/**` | leave alone unless the build breaks |
+
+## Commit discipline
+
+- This checkout (`Xenon-fork`) is the source of truth. One logical change per commit; stage only intended files. Don't push, tag, or publish.
+- `config/mods/` contains local test jars and is ignored; never commit them. Build outputs and generated bundles stay ignored.
+- Don't edit the workspace-root `AGENTS.md` outside this repo (`../AGENTS.md`) or sibling repositories.
