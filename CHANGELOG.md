@@ -2,6 +2,19 @@
 
 All notable changes to Xenon will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- Cloud-save uploads show progress: the dialog replaces its body with a percentage bar and the tray menu mirrors the same status line, both cleared once the upload settles.
+- Launching an instance whose selected Java executable no longer exists opens a guidance dialog that names the missing path. Its action jumps to Settings → Java management and opens the runtime download dialog, instead of surfacing the raw `CreateProcess error=2` failure.
+
+### Fixed
+- The Java picker skips registered runtimes whose executable disappeared and silently falls back to a working runtime, so a stale Java pool entry no longer blocks a launch.
+- A cloud-save upload that fails during the PUT or the commit hands its server-side upload session back with a best-effort DELETE instead of leaving it behind; the original error is preserved when the cleanup request also fails.
+
+### Changed
+- The README competitor table was re-verified as of 2026-10-18: Copper's cloud saves and Windows file drag-out, the command line added in GXFQE/mindustry-launcher v1.3, and a new mobile / other-platform launcher list.
+
 ## [1.16.0] — 2026-10-13
 
 ### Added
