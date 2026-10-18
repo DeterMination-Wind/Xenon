@@ -31,6 +31,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import static determination.xenon.util.logging.Logger.LOG;
+
 /// Reader and writer for the MDTBBS cloud-save surface (`/api/v1/game-saves`).
 ///
 /// Uploads use the documented three-step session (create, raw PUT, commit) and
@@ -203,6 +205,25 @@ public final class MdtbbsCloudSavesClient {
     /// @throws IOException when hashing, uploading or committing fails
     public String upload(String slotId, Path saveFile,
                          @Nullable String baseSnapshotId) throws IOException {
+        return upload(slotId, saveFile, baseSnapshotId, null);
+    }
+
+    /// Uploads a local save and reports how many bytes the PUT delivered.
+    ///
+    /// The server creates an upload session before the raw PUT and expects a
+    /// commit afterwards. When the PUT or the commit fails, the abandoned
+    /// session is handed back with a best-effort DELETE so it cannot linger on
+    /// the server; the cleanup never replaces the original failure.
+    ///
+    /// @param slotId         slot id
+    /// @param saveFile       local `.msav` file
+    /// @param baseSnapshotId expected cloud head, or `null` to accept any
+    /// @param progress       optional receiver of cumulative uploaded bytes
+    /// @return the committed snapshot id, or empty when the response omitted it
+    /// @throws IOException when hashing, uploading or committing fails
+    public String upload(String slotId, Path saveFile,
+                         @Nullable String baseSnapshotId,
+                         @Nullable ProgressCallback progress) throws IOException {
         byte[] bytes = Files.readAllBytes(saveFile);
         long size = bytes.length;
         String sha256 = sha256Hex(bytes);
@@ -217,18 +238,43 @@ public final class MdtbbsCloudSavesClient {
         JsonObject created = MdtbbsJson.dataObject(
                 api.post("/game-saves/" + slotId + "/uploads", create));
         String uploadId = MdtbbsJson.stringOf(created, "upload_id");
-        JsonObject upload = MdtbbsJson.objectOf(created, "upload");
-        String uploadUrl = upload == null ? "" : MdtbbsJson.stringOf(upload, "url");
-        if (uploadId.isBlank() || uploadUrl.isBlank()) {
+        if (uploadId.isBlank()) {
             throw new IOException("Cloud save upload session is incomplete");
         }
 
-        api.putFile(uploadUrl, saveFile, "application/octet-stream");
-        JsonObject committed = MdtbbsJson.dataObject(
-                api.post("/game-saves/uploads/" + uploadId + "/commit", new JsonObject()));
-        String snapshotId = MdtbbsJson.stringOf(committed, "snapshot_id");
-        if (snapshotId.isBlank()) snapshotId = MdtbbsJson.stringOf(committed, "id");
-        return snapshotId;
+        try {
+            JsonObject upload = MdtbbsJson.objectOf(created, "upload");
+            String uploadUrl = upload == null ? "" : MdtbbsJson.stringOf(upload, "url");
+            if (uploadUrl.isBlank()) {
+                throw new IOException("Cloud save upload session is incomplete");
+            }
+
+            api.putFile(uploadUrl, saveFile, "application/octet-stream", progress);
+            JsonObject committed = MdtbbsJson.dataObject(
+                    api.post("/game-saves/uploads/" + uploadId + "/commit", new JsonObject()));
+            String snapshotId = MdtbbsJson.stringOf(committed, "snapshot_id");
+            if (snapshotId.isBlank()) snapshotId = MdtbbsJson.stringOf(committed, "id");
+            return snapshotId;
+        } catch (IOException | RuntimeException failure) {
+            releaseUpload(uploadId);
+            throw failure;
+        }
+    }
+
+    /// Best-effort DELETE of an upload session that will never be committed.
+    ///
+    /// Failure is logged and swallowed: the caller rethrows the original upload
+    /// error, which is the one the user needs to see.
+    ///
+    /// @param uploadId abandoned upload session id
+    private void releaseUpload(String uploadId) {
+        try {
+            api.delete("/game-saves/uploads/" + uploadId, null);
+            LOG.info("Released abandoned cloud save upload session " + uploadId);
+        } catch (IOException | RuntimeException cleanupFailure) {
+            LOG.warning("Failed to release abandoned cloud save upload session " + uploadId,
+                    cleanupFailure);
+        }
     }
 
     /// Downloads and verifies a snapshot into the target file.

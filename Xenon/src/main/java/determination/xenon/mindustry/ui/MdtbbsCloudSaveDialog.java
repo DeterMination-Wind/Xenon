@@ -35,12 +35,14 @@ import determination.xenon.mindustry.save.SaveFileReader;
 import determination.xenon.task.Schedulers;
 import determination.xenon.ui.Controllers;
 import determination.xenon.ui.FXUtils;
+import determination.xenon.ui.TrayIconManager;
 import determination.xenon.ui.construct.DialogCloseEvent;
 import determination.xenon.ui.construct.MessageDialogPane;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.Label;
+import javafx.scene.control.ProgressBar;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -91,6 +93,12 @@ public final class MdtbbsCloudSaveDialog {
     private final Path savesDir;
     /// Dialog layout whose body is swapped between slots and snapshots.
     private final JFXDialogLayout layout = new JFXDialogLayout();
+    /// Progress bar shown while a save uploads, or `null` outside an upload.
+    private @Nullable ProgressBar uploadProgressBar;
+    /// Percentage label paired with [#uploadProgressBar].
+    private @Nullable Label uploadProgressLabel;
+    /// Last percentage pushed to the UI, used to drop redundant updates.
+    private int lastUploadPercent = -1;
 
     /// Opens the cloud-save dialog for one instance.
     ///
@@ -280,35 +288,103 @@ public final class MdtbbsCloudSaveDialog {
     /// unpinned snapshots are dropped (logged before each request) and the
     /// upload proceeds only when enough room was actually reclaimed.
     ///
+    /// While the PUT runs, the dialog body and the tray menu show the same
+    /// percentage; both are cleared when the upload settles.
+    ///
     /// @param slot   slot to upload into
     /// @param source local `.msav` file
     private void uploadFile(Slot slot, Path source) {
+        showUploadProgress(source);
         Schedulers.io().execute(() -> {
             try {
                 long size = Files.size(source);
                 MindustryCloudSaveSync.CleanupPlan plan =
                         MindustryCloudSaveSync.enforceQuota(client, slot.id(), size);
                 if (!plan.sufficient()) {
-                    Platform.runLater(() -> Controllers.dialog(
-                            i18n("xenon.cloud.quota.full", formatSize(size)),
-                            i18n("message.error"), MessageDialogPane.MessageType.ERROR));
+                    Platform.runLater(() -> {
+                        Controllers.dialog(
+                                i18n("xenon.cloud.quota.full", formatSize(size)),
+                                i18n("message.error"), MessageDialogPane.MessageType.ERROR);
+                        reloadSlots();
+                    });
                     return;
                 }
                 @Nullable String head = null;
                 List<Snapshot> snapshots = client.snapshots(slot.id());
                 if (!snapshots.isEmpty()) head = snapshots.get(0).id();
-                client.upload(slot.id(), source, head);
+                client.upload(slot.id(), source, head, this::reportUploadProgress);
                 Platform.runLater(() -> {
                     Controllers.showToast(i18n("xenon.cloud.upload.done",
                             source.getFileName().toString()));
                     reloadSlots();
                 });
             } catch (IOException e) {
-                Platform.runLater(() -> Controllers.dialog(
-                        i18n("xenon.cloud.upload.failed", messageOf(e)),
-                        i18n("message.error"), MessageDialogPane.MessageType.ERROR));
+                Platform.runLater(() -> {
+                    Controllers.dialog(
+                            i18n("xenon.cloud.upload.failed", messageOf(e)),
+                            i18n("message.error"), MessageDialogPane.MessageType.ERROR);
+                    // Leave the progress view behind instead of a stuck bar.
+                    reloadSlots();
+                });
+            } finally {
+                // The body was already swapped by reloadSlots() or the error
+                // dialog; only the transient progress state is cleared here.
+                Platform.runLater(this::clearUploadProgress);
             }
         });
+    }
+
+    /// Replaces the dialog body with a progress view for one upload.
+    ///
+    /// @param source local `.msav` file being uploaded
+    private void showUploadProgress(Path source) {
+        Label title = new Label(i18n("xenon.cloud.upload.progress", 0));
+        title.getStyleClass().add("title-label");
+        Label file = new Label(source.getFileName().toString());
+        file.getStyleClass().add("subtitle-label");
+        ProgressBar bar = new ProgressBar(0);
+        bar.setMaxWidth(Double.MAX_VALUE);
+
+        VBox body = new VBox(8, title, file, bar);
+        body.setPadding(new Insets(4, 0, 0, 0));
+        layout.setBody(body);
+
+        uploadProgressLabel = title;
+        uploadProgressBar = bar;
+        lastUploadPercent = 0;
+        TrayIconManager.setStatus(i18n("xenon.cloud.upload.progress", 0));
+    }
+
+    /// Pushes one progress sample to the dialog and the tray menu.
+    ///
+    /// Called on the IO thread once per uploaded buffer; only whole-percent
+    /// changes are forwarded to the JavaFX thread.
+    ///
+    /// @param uploaded bytes delivered so far
+    /// @param total    expected body size, or -1 when unknown
+    private void reportUploadProgress(long uploaded, long total) {
+        if (total <= 0) return;
+        int percent = (int) Math.min(100, Math.max(0, uploaded * 100 / total));
+        if (percent == lastUploadPercent) return;
+        lastUploadPercent = percent;
+        Platform.runLater(() -> {
+            @Nullable ProgressBar bar = uploadProgressBar;
+            @Nullable Label label = uploadProgressLabel;
+            String text = i18n("xenon.cloud.upload.progress", percent);
+            if (bar != null) bar.setProgress(percent / 100.0);
+            if (label != null) label.setText(text);
+            TrayIconManager.setStatus(text);
+        });
+    }
+
+    /// Drops the progress view references and restores the tray tooltip.
+    ///
+    /// Runs on the JavaFX thread. The internal percentage counter is left alone
+    /// because it is owned by the upload thread and reset by the next upload.
+    private void clearUploadProgress() {
+        uploadProgressBar = null;
+        uploadProgressLabel = null;
+        TrayIconManager.setStatus(null);
     }
 
     // ------------------------------------------------------------------

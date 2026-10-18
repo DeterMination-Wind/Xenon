@@ -31,9 +31,14 @@ import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /// Tests cloud-save listing, upload URL resolution and verified downloads.
@@ -63,17 +68,80 @@ public final class MdtbbsCloudSavesClientTest {
     }
 
     /// The upload PUT must target the `/api/v1/...` path returned by the
-    /// server without adding the version prefix twice.
+    /// server without adding the version prefix twice, and it must report
+    /// monotonically increasing progress that ends at the file size.
     @Test
     public void uploadsThroughReturnedApiPath() throws Exception {
         try (CloudServer server = CloudServer.start()) {
             Path file = Files.createTempFile("xenon-cloud-upload", ".msav");
             Files.writeString(file, "save-bytes");
+            long size = Files.size(file);
+            List<long[]> reports = new ArrayList<>();
 
-            String snapshotId = server.client().upload("slot1", file, null);
+            String snapshotId = server.client().upload("slot1", file, null,
+                    (read, total) -> reports.add(new long[]{read, total}));
 
             assertEquals("snap1", snapshotId);
             assertEquals("PUT /api/v1/game-saves/uploads/u1/file", server.lastUpload());
+            assertFalse(reports.isEmpty(), "the upload must report progress");
+            long previous = -1;
+            for (long[] report : reports) {
+                assertTrue(report[0] > previous, "upload progress must increase");
+                previous = report[0];
+                assertEquals(size, report[1]);
+            }
+            assertEquals(size, previous, "the final report must equal the file size");
+            assertEquals("", server.lastRelease(),
+                    "a committed upload must keep its session");
+        }
+    }
+
+    /// A failed PUT hands the created upload session back to the server.
+    @Test
+    public void releasesUploadSessionWhenPutFails() throws Exception {
+        try (CloudServer server = CloudServer.start()) {
+            server.failPut();
+            Path file = Files.createTempFile("xenon-cloud-upload", ".msav");
+            Files.writeString(file, "save-bytes");
+
+            IOException failure = assertThrows(IOException.class,
+                    () -> server.client().upload("slot1", file, null));
+
+            assertEquals("boom", failure.getMessage());
+            assertEquals("DELETE /api/v1/game-saves/uploads/u1", server.lastRelease());
+        }
+    }
+
+    /// A failed commit releases the session the PUT already filled.
+    @Test
+    public void releasesUploadSessionWhenCommitFails() throws Exception {
+        try (CloudServer server = CloudServer.start()) {
+            server.failCommit();
+            Path file = Files.createTempFile("xenon-cloud-upload", ".msav");
+            Files.writeString(file, "save-bytes");
+
+            IOException failure = assertThrows(IOException.class,
+                    () -> server.client().upload("slot1", file, null));
+
+            assertEquals("boom", failure.getMessage());
+            assertEquals("DELETE /api/v1/game-saves/uploads/u1", server.lastRelease());
+        }
+    }
+
+    /// A failing release never replaces the original upload error.
+    @Test
+    public void keepsUploadErrorWhenReleaseFails() throws Exception {
+        try (CloudServer server = CloudServer.start()) {
+            server.failPut();
+            server.failRelease();
+            Path file = Files.createTempFile("xenon-cloud-upload", ".msav");
+            Files.writeString(file, "save-bytes");
+
+            IOException failure = assertThrows(IOException.class,
+                    () -> server.client().upload("slot1", file, null));
+
+            assertEquals("boom", failure.getMessage());
+            assertEquals("DELETE /api/v1/game-saves/uploads/u1", server.lastRelease());
         }
     }
 
@@ -98,6 +166,10 @@ public final class MdtbbsCloudSavesClientTest {
         private final HttpServer server;
         private final AtomicReference<String> lastUpload = new AtomicReference<>("");
         private final AtomicReference<String> lastDownload = new AtomicReference<>("");
+        private final AtomicReference<String> lastRelease = new AtomicReference<>("");
+        private final AtomicInteger putStatus = new AtomicInteger(200);
+        private final AtomicInteger commitStatus = new AtomicInteger(200);
+        private final AtomicInteger releaseStatus = new AtomicInteger(200);
 
         private CloudServer(HttpServer server) {
             this.server = server;
@@ -127,6 +199,22 @@ public final class MdtbbsCloudSavesClientTest {
             return lastDownload.get();
         }
 
+        String lastRelease() {
+            return lastRelease.get();
+        }
+
+        void failPut() {
+            putStatus.set(500);
+        }
+
+        void failCommit() {
+            commitStatus.set(500);
+        }
+
+        void failRelease() {
+            releaseStatus.set(500);
+        }
+
         private void handle(HttpExchange exchange) throws IOException {
             String path = exchange.getRequestURI().getPath();
             String method = exchange.getRequestMethod();
@@ -146,11 +234,16 @@ public final class MdtbbsCloudSavesClientTest {
             }
             if (path.equals("/api/v1/game-saves/uploads/u1/file") && method.equals("PUT")) {
                 lastUpload.set(method + " " + path);
-                respond(exchange, 200, "{}");
+                respond(exchange, putStatus.get(), statusBody(putStatus.get()));
+                return;
+            }
+            if (path.equals("/api/v1/game-saves/uploads/u1") && method.equals("DELETE")) {
+                lastRelease.set(method + " " + path);
+                respond(exchange, releaseStatus.get(), statusBody(releaseStatus.get()));
                 return;
             }
             if (path.equals("/api/v1/game-saves/uploads/u1/commit") && method.equals("POST")) {
-                respond(exchange, 200, "{\"data\":{\"snapshot_id\":\"snap1\"}}");
+                respond(exchange, commitStatus.get(), statusBody(commitStatus.get()));
                 return;
             }
             if (path.equals("/api/v1/game-saves/slot1/snapshots/snap1/download")
@@ -177,6 +270,14 @@ public final class MdtbbsCloudSavesClientTest {
             } finally {
                 exchange.close();
             }
+        }
+
+        /// Success or error payload for the configurable status codes.
+        private static String statusBody(int status) {
+            if (status / 100 == 2) {
+                return "{\"data\":{\"snapshot_id\":\"snap1\"}}";
+            }
+            return "{\"error\":{\"code\":\"INTERNAL\",\"message\":\"boom\"}}";
         }
 
         @Override

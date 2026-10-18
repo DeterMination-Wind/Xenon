@@ -21,6 +21,7 @@ import determination.xenon.Launcher;
 import determination.xenon.Metadata;
 import javafx.application.Platform;
 import javafx.stage.Stage;
+import org.jetbrains.annotations.Nullable;
 
 import java.awt.AWTException;
 import java.awt.Image;
@@ -52,6 +53,7 @@ import static determination.xenon.util.logging.Logger.LOG;
 public final class TrayIconManager {
 
     private static final AtomicReference<TrayIcon> INSTALLED = new AtomicReference<>();
+    private static final AtomicReference<MenuItem> STATUS_ITEM = new AtomicReference<>();
 
     private TrayIconManager() {
     }
@@ -136,6 +138,54 @@ public final class TrayIconManager {
         return INSTALLED.get() != null;
     }
 
+    /**
+     * Show a transient status line in the tray menu, for example upload
+     * progress. Passing {@code null} removes the line and restores the
+     * plain tooltip.
+     *
+     * <p>Safe to call from any thread and a no-op before [#install(Stage)]
+     * ran or when the platform has no tray. AWT menu mutation happens on the
+     * EDT; failures are logged instead of reaching the caller.</p>
+     *
+     * @param status status text to show, or {@code null} to clear it
+     */
+    public static void setStatus(@Nullable String status) {
+        TrayIcon icon = INSTALLED.get();
+        if (icon == null) return;
+        java.awt.EventQueue.invokeLater(() -> {
+            try {
+                applyStatus(icon, status);
+            } catch (Throwable ex) {
+                LOG.warning("Failed to update the tray status", ex);
+            }
+        });
+    }
+
+    /// Applies one status update on the EDT.
+    private static void applyStatus(TrayIcon icon, @Nullable String status) {
+        PopupMenu menu = icon.getPopupMenu();
+        MenuItem item = STATUS_ITEM.get();
+        if (status == null || status.isBlank()) {
+            if (item != null) {
+                menu.remove(item);
+                STATUS_ITEM.set(null);
+            }
+            icon.setToolTip(Metadata.FULL_TITLE);
+            return;
+        }
+        if (item == null) {
+            // Disabled so the line reads as state, not as another action.
+            item = new MenuItem(status);
+            item.setEnabled(false);
+            // Keep it directly below "Show Xenon" so the state is visible at a glance.
+            menu.insert(item, 1);
+            STATUS_ITEM.set(item);
+        } else {
+            item.setLabel(status);
+        }
+        icon.setToolTip(Metadata.FULL_TITLE + " — " + status);
+    }
+
     /// Bring the JavaFX stage back to a visible, focused, non-iconified
     /// state. Always hop to the FX thread; AWT click handlers run on the
     /// EDT and JavaFX stage mutation off-thread will throw.
@@ -148,6 +198,7 @@ public final class TrayIconManager {
     /** Remove the tray icon. Called on application stop. */
     public static void uninstall() {
         TrayIcon icon = INSTALLED.getAndSet(null);
+        STATUS_ITEM.set(null);
         if (icon == null) return;
         java.awt.EventQueue.invokeLater(() -> {
             try {

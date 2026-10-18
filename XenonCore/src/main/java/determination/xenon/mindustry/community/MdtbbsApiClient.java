@@ -13,6 +13,7 @@ import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
+import determination.xenon.mindustry.download.ProgressCallback;
 import org.jetbrains.annotations.NotNullByDefault;
 import org.jetbrains.annotations.Nullable;
 
@@ -248,6 +249,18 @@ public final class MdtbbsApiClient {
     /// @param contentType request `Content-Type`
     /// @throws IOException when the upload fails
     public void putFile(String url, java.nio.file.Path file, String contentType) throws IOException {
+        putFile(url, file, contentType, null);
+    }
+
+    /// Uploads a raw file with a PUT request, reporting byte progress.
+    ///
+    /// @param url         target URL, absolute or API-relative
+    /// @param file        file to upload
+    /// @param contentType request content type
+    /// @param progress    optional receiver of cumulative uploaded bytes
+    /// @throws IOException when the request fails or the API rejects it
+    public void putFile(String url, java.nio.file.Path file, String contentType,
+                        @Nullable ProgressCallback progress) throws IOException {
         String token = tokenProvider.accessToken();
         if (token == null || token.isBlank()) {
             throw new MdtbbsApiException(401, "AUTH_REQUIRED",
@@ -264,9 +277,11 @@ public final class MdtbbsApiClient {
                     .header("User-Agent", "Xenon-Launcher")
                     .header("Authorization", "Bearer " + token);
             if (sameOrigin) applyCsrf(builder);
+            HttpRequest.BodyPublisher body = HttpRequest.BodyPublishers.ofFile(file);
+            if (progress != null) body = new CountingBodyPublisher(body, progress);
             try {
                 HttpResponse<String> response = rawHttp.send(builder
-                                .PUT(HttpRequest.BodyPublishers.ofFile(file)).build(),
+                                .PUT(body).build(),
                         HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
                 captureCookies(response);
                 JsonObject root = parseObject(response.body());
