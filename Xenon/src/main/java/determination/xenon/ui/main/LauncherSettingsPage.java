@@ -105,6 +105,17 @@ public class LauncherSettingsPage extends DecoratorAnimatedPage implements Decor
         downloadTab.getNode().revealGithubToken();
     }
 
+    /// Switches to the Java management tab and opens the runtime download dialog.
+    ///
+    /// Selecting the tab first materializes its lazily built node, so the page
+    /// can be asked to open the dialog immediately. The download action is
+    /// absent on platforms without distribution support, in which case the user
+    /// still lands on the page and can pick a local runtime.
+    public void showJavaManagement() {
+        tab.select(javaManagementTab, false);
+        javaManagementTab.getNode().openDownloadDialog();
+    }
+
     @Override
     public ReadOnlyObjectProperty<State> stateProperty() {
         return state.getReadOnlyProperty();

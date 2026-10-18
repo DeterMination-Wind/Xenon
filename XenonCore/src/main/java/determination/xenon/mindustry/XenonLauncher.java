@@ -58,6 +58,13 @@ public final class XenonLauncher {
     public static MindustryProcess launch(LaunchOptions options,
                                           @Nullable Consumer<String> stdout,
                                           @Nullable Consumer<String> stderr) throws IOException {
+        // Last gate before ProcessBuilder: a stale runtime path would otherwise
+        // surface as "CreateProcess error=2" from the operating system.
+        Path javaExecutable = options.getJavaExecutable();
+        if (!Files.isRegularFile(javaExecutable)) {
+            throw new MindustryJavaMissingException(javaExecutable);
+        }
+
         Files.createDirectories(options.getDataDir());
 
         ProcessBuilder pb = new ProcessBuilder(options.buildCommandLine());

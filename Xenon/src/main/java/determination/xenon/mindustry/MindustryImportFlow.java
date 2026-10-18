@@ -20,6 +20,7 @@ package determination.xenon.mindustry;
 import determination.xenon.Metadata;
 import determination.xenon.mindustry.MindustryInstallationDiscovery.DiscoveredInstallation;
 import determination.xenon.mindustry.modpack.XenonModpackInstaller;
+import determination.xenon.mindustry.ui.MindustryJavaMissingPrompt;
 import determination.xenon.mindustry.ui.MindustryRoutes;
 import determination.xenon.setting.Profile;
 import determination.xenon.setting.Profiles;
@@ -379,10 +380,15 @@ public final class MindustryImportFlow {
                 });
             } catch (Throwable ex) {
                 LOG.warning("Mindustry import/launch failed", ex);
-                Schedulers.javafx().execute(() -> Controllers.dialog(
-                        i18n("xenon.mindustry.launch.failed") + "\n\n" + ex.getMessage(),
-                        i18n("message.error"),
-                        MessageDialogPane.MessageType.ERROR));
+                Schedulers.javafx().execute(() -> {
+                    if (MindustryJavaMissingPrompt.showIfMissing(ex)) {
+                        return;
+                    }
+                    Controllers.dialog(
+                            i18n("xenon.mindustry.launch.failed") + "\n\n" + ex.getMessage(),
+                            i18n("message.error"),
+                            MessageDialogPane.MessageType.ERROR);
+                });
             }
         });
     }

@@ -129,6 +129,17 @@ public final class JavaManagementPage extends ListPageBase<JavaRuntime> {
         Controllers.navigateForward(new JavaRestorePage(ConfigHolder.globalConfig().getDisabledJava()));
     }
 
+    /// Opens the same runtime download dialog as the toolbar's download button.
+    ///
+    /// Used by the missing-Java guidance prompt. The action is `null` on
+    /// platforms where neither game Java versions nor a supported distribution
+    /// is available, so the call then does nothing.
+    public void openDownloadDialog() {
+        if (onInstallJava != null) {
+            onInstallJava.run();
+        }
+    }
+
     private void onAddJavaBinary(Path file) {
         JavaManager.getAddJavaTask(file).whenComplete(Schedulers.javafx(), exception -> {
             if (exception != null) {

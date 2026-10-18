@@ -413,9 +413,14 @@ public final class MindustryRoutes {
                 spawnClient(repo, version, versionRoot);
             } catch (Throwable ex) {
                 LOG.warning("Mindustry launch failed", ex);
-                Platform.runLater(() -> Controllers.dialog(
-                        i18n("xenon.mindustry.launch.failed") + "\n\n" + ex.getMessage(),
-                        i18n("message.error"), MessageDialogPane.MessageType.ERROR));
+                Platform.runLater(() -> {
+                    if (MindustryJavaMissingPrompt.showIfMissing(ex)) {
+                        return;
+                    }
+                    Controllers.dialog(
+                            i18n("xenon.mindustry.launch.failed") + "\n\n" + ex.getMessage(),
+                            i18n("message.error"), MessageDialogPane.MessageType.ERROR);
+                });
             }
         });
     }
@@ -490,9 +495,14 @@ public final class MindustryRoutes {
                         i18n("xenon.mindustry.modlist.crash.safe.done")));
             } catch (Throwable ex) {
                 LOG.warning("Mindustry crash-recovery safe mode failed", ex);
-                Platform.runLater(() -> Controllers.dialog(
-                        i18n("xenon.mindustry.modlist.crash.safe.failed") + "\n\n" + ex.getMessage(),
-                        i18n("message.error"), MessageDialogPane.MessageType.ERROR));
+                Platform.runLater(() -> {
+                    if (MindustryJavaMissingPrompt.showIfMissing(ex)) {
+                        return;
+                    }
+                    Controllers.dialog(
+                            i18n("xenon.mindustry.modlist.crash.safe.failed") + "\n\n" + ex.getMessage(),
+                            i18n("message.error"), MessageDialogPane.MessageType.ERROR);
+                });
             }
         });
     }
@@ -511,9 +521,14 @@ public final class MindustryRoutes {
                 startClientProcess(version, versionRoot, opts);
             } catch (Throwable ex) {
                 LOG.warning("Mindustry launch failed", ex);
-                Platform.runLater(() -> Controllers.dialog(
-                        i18n("xenon.mindustry.launch.failed") + "\n\n" + ex.getMessage(),
-                        i18n("message.error"), MessageDialogPane.MessageType.ERROR));
+                Platform.runLater(() -> {
+                    if (MindustryJavaMissingPrompt.showIfMissing(ex)) {
+                        return;
+                    }
+                    Controllers.dialog(
+                            i18n("xenon.mindustry.launch.failed") + "\n\n" + ex.getMessage(),
+                            i18n("message.error"), MessageDialogPane.MessageType.ERROR);
+                });
             }
         });
     }
