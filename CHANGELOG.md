@@ -2,7 +2,7 @@
 
 All notable changes to Xenon will be documented in this file.
 
-## [Unreleased]
+## [1.17.0] — 2026-10-19
 
 ### Added
 - Cloud-save uploads show progress: the dialog replaces its body with a percentage bar and the tray menu mirrors the same status line, both cleared once the upload settles.
@@ -14,6 +14,8 @@ All notable changes to Xenon will be documented in this file.
 
 ### Changed
 - The README competitor table was re-verified as of 2026-10-18: Copper's cloud saves and Windows file drag-out, the command line added in GXFQE/mindustry-launcher v1.3, and a new mobile / other-platform launcher list.
+
+See the [bilingual release notes](release-notes/v1.17.0.md) for details.
 
 ## [1.16.0] — 2026-10-13
 
