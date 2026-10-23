@@ -89,6 +89,39 @@ public final class MindustryVersion {
      */
     private boolean cloudSaveCheckEnabled = true;
 
+    /// How the instance uses MDTBBS cloud saves.
+    public enum CloudMode {
+        /// Upload one save file into a slot (the historical behaviour).
+        SINGLE_SAVE,
+        /// Upload and restore the whole instance data directory.
+        INSTANCE_ARCHIVE
+    }
+
+    /// Cloud mode of this instance; older manifests default to single-save.
+    private CloudMode cloudMode = CloudMode.SINGLE_SAVE;
+    /// Whether the instance automatically pulls before launch and pushes after exit.
+    private boolean cloudAutoSync;
+    /// Cloud slot used by the archive mode, or empty.
+    private String cloudArchiveSlotId = "";
+    /// Single-level user group, or empty.
+    private String group = "";
+    /// Whether a finished session creates an automatic save backup.
+    private boolean autoBackupEnabled = true;
+    /// Minimum session length before an automatic backup runs.
+    private int autoBackupMinMinutes = 20;
+    /// Number of automatic backups kept per instance.
+    private int autoBackupKeep = 20;
+    /// Development project directory, or empty.
+    private String devProjectDir = "";
+    /// Shell command used to build the development project.
+    private String devBuildCommand = "";
+    /// Glob selecting the build artifact, relative to the project directory.
+    private String devArtifactGlob = "";
+    /// Whether source changes trigger a rebuild.
+    private boolean devAutoRebuild;
+    /// Whether a successful build restarts the game.
+    private boolean devAutoRestart;
+
     /** Runtime-only versions root that owns this instance; Gson never persists it. */
     private transient @Nullable Path repositoryRoot;
 
@@ -228,6 +261,150 @@ public final class MindustryVersion {
     /// @param cloudSaveCheckEnabled desired state
     public void setCloudSaveCheckEnabled(boolean cloudSaveCheckEnabled) {
         this.cloudSaveCheckEnabled = cloudSaveCheckEnabled;
+    }
+
+    /// Cloud mode of this instance.
+    ///
+    /// @return the configured mode, never `null`
+    public CloudMode getCloudMode() {
+        return cloudMode == null ? CloudMode.SINGLE_SAVE : cloudMode;
+    }
+
+    /// Sets the cloud mode.
+    ///
+    /// @param cloudMode desired mode, or `null` to restore single-save
+    public void setCloudMode(@Nullable CloudMode cloudMode) {
+        this.cloudMode = cloudMode == null ? CloudMode.SINGLE_SAVE : cloudMode;
+    }
+
+    /// Whether automatic cloud sync is enabled for this instance.
+    ///
+    /// @return whether the launcher pulls before launch and pushes after exit
+    public boolean isCloudAutoSync() { return cloudAutoSync; }
+
+    /// Enables or disables automatic cloud sync.
+    ///
+    /// @param cloudAutoSync desired state
+    public void setCloudAutoSync(boolean cloudAutoSync) { this.cloudAutoSync = cloudAutoSync; }
+
+    /// Cloud slot used by archive mode, or empty.
+    ///
+    /// @return the slot id, or an empty string
+    public String getCloudArchiveSlotId() {
+        return cloudArchiveSlotId == null ? "" : cloudArchiveSlotId;
+    }
+
+    /// Sets the archive-mode cloud slot.
+    ///
+    /// @param cloudArchiveSlotId slot id, or `null` to clear
+    public void setCloudArchiveSlotId(@Nullable String cloudArchiveSlotId) {
+        this.cloudArchiveSlotId = cloudArchiveSlotId == null ? "" : cloudArchiveSlotId;
+    }
+
+    /// Single-level user group, or empty.
+    ///
+    /// @return the group name, or an empty string
+    public String getGroup() { return group == null ? "" : group; }
+
+    /// Sets the user group.
+    ///
+    /// @param group group name, or `null` to clear
+    public void setGroup(@Nullable String group) { this.group = group == null ? "" : group; }
+
+    /// Whether a finished session creates an automatic backup.
+    ///
+    /// @return whether automatic backups are enabled
+    public boolean isAutoBackupEnabled() { return autoBackupEnabled; }
+
+    /// Enables or disables automatic backups.
+    ///
+    /// @param autoBackupEnabled desired state
+    public void setAutoBackupEnabled(boolean autoBackupEnabled) {
+        this.autoBackupEnabled = autoBackupEnabled;
+    }
+
+    /// Minimum session length before an automatic backup runs.
+    ///
+    /// @return minutes, at least 1
+    public int getAutoBackupMinMinutes() { return Math.max(1, autoBackupMinMinutes); }
+
+    /// Sets the automatic-backup threshold.
+    ///
+    /// @param autoBackupMinMinutes minutes, clamped to at least 1
+    public void setAutoBackupMinMinutes(int autoBackupMinMinutes) {
+        this.autoBackupMinMinutes = Math.max(1, autoBackupMinMinutes);
+    }
+
+    /// Number of automatic backups kept.
+    ///
+    /// @return the retention count, at least 1
+    public int getAutoBackupKeep() { return Math.max(1, autoBackupKeep); }
+
+    /// Sets the automatic-backup retention count.
+    ///
+    /// @param autoBackupKeep count, clamped to at least 1
+    public void setAutoBackupKeep(int autoBackupKeep) {
+        this.autoBackupKeep = Math.max(1, autoBackupKeep);
+    }
+
+    /// Development project directory, or empty.
+    ///
+    /// @return the configured directory, or an empty string
+    public String getDevProjectDir() { return devProjectDir == null ? "" : devProjectDir; }
+
+    /// Sets the development project directory.
+    ///
+    /// @param devProjectDir directory, or `null` to clear
+    public void setDevProjectDir(@Nullable String devProjectDir) {
+        this.devProjectDir = devProjectDir == null ? "" : devProjectDir;
+    }
+
+    /// Shell command used to build the development project.
+    ///
+    /// @return the command, or an empty string
+    public String getDevBuildCommand() { return devBuildCommand == null ? "" : devBuildCommand; }
+
+    /// Sets the development build command.
+    ///
+    /// @param devBuildCommand command, or `null` to clear
+    public void setDevBuildCommand(@Nullable String devBuildCommand) {
+        this.devBuildCommand = devBuildCommand == null ? "" : devBuildCommand;
+    }
+
+    /// Glob selecting the build artifact.
+    ///
+    /// @return the glob, relative to the project directory
+    public String getDevArtifactGlob() { return devArtifactGlob == null ? "" : devArtifactGlob; }
+
+    /// Sets the artifact glob.
+    ///
+    /// @param devArtifactGlob glob, or `null` to clear
+    public void setDevArtifactGlob(@Nullable String devArtifactGlob) {
+        this.devArtifactGlob = devArtifactGlob == null ? "" : devArtifactGlob;
+    }
+
+    /// Whether source changes trigger a rebuild.
+    ///
+    /// @return whether automatic rebuilds are enabled
+    public boolean isDevAutoRebuild() { return devAutoRebuild; }
+
+    /// Enables or disables automatic rebuilds.
+    ///
+    /// @param devAutoRebuild desired state
+    public void setDevAutoRebuild(boolean devAutoRebuild) {
+        this.devAutoRebuild = devAutoRebuild;
+    }
+
+    /// Whether a successful build restarts the game.
+    ///
+    /// @return whether automatic restarts are enabled
+    public boolean isDevAutoRestart() { return devAutoRestart; }
+
+    /// Enables or disables automatic restarts.
+    ///
+    /// @param devAutoRestart desired state
+    public void setDevAutoRestart(boolean devAutoRestart) {
+        this.devAutoRestart = devAutoRestart;
     }
 
     /**

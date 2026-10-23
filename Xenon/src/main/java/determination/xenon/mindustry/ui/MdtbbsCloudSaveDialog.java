@@ -98,6 +98,8 @@ public final class MdtbbsCloudSaveDialog {
     private final Path savesDir;
     /// Instance data directory holding `mods/` and `settings.bin`.
     private final Path dataDir;
+    /// Instance root directory that owns `cloud-sync.json`.
+    private final Path versionRoot;
     /// Dialog layout whose body is swapped between slots and snapshots.
     private final JFXDialogLayout layout = new JFXDialogLayout();
     /// Progress bar shown while a save uploads, or `null` outside an upload.
@@ -116,11 +118,13 @@ public final class MdtbbsCloudSaveDialog {
             Controllers.showToast(i18n("xenon.cloud.login"));
             return;
         }
-        new MdtbbsCloudSaveDialog(version, version.resolveDataDir(versionRoot)).open();
+        new MdtbbsCloudSaveDialog(version, versionRoot,
+                version.resolveDataDir(versionRoot)).open();
     }
 
-    private MdtbbsCloudSaveDialog(MindustryVersion version, Path dataDir) {
+    private MdtbbsCloudSaveDialog(MindustryVersion version, Path versionRoot, Path dataDir) {
         this.version = version;
+        this.versionRoot = versionRoot;
         this.dataDir = dataDir;
         this.savesDir = dataDir.resolve("saves");
     }
@@ -174,6 +178,27 @@ public final class MdtbbsCloudSaveDialog {
         HBox checks = new HBox(12, autoCheck, checkNow);
         checks.setAlignment(Pos.CENTER_LEFT);
 
+        javafx.scene.control.ComboBox<String> mode = new javafx.scene.control.ComboBox<>();
+        mode.getItems().setAll(i18n("xenon.cloud.mode.single"),
+                i18n("xenon.cloud.mode.instance"));
+        mode.getSelectionModel().select(
+                version.getCloudMode() == MindustryVersion.CloudMode.INSTANCE_ARCHIVE ? 1 : 0);
+        mode.valueProperty().addListener((observable, was, next) -> {
+            boolean archive = mode.getSelectionModel().getSelectedIndex() == 1;
+            version.setCloudMode(archive ? MindustryVersion.CloudMode.INSTANCE_ARCHIVE
+                    : MindustryVersion.CloudMode.SINGLE_SAVE);
+            persistInstanceSwitch();
+            reloadSlots();
+        });
+        FXUtils.setLimitWidth(mode, 220);
+        HBox modeRow = new HBox(8, new Label(i18n("xenon.cloud.mode.label")), mode);
+        modeRow.setAlignment(Pos.CENTER_LEFT);
+
+        if (version.getCloudMode() == MindustryVersion.CloudMode.INSTANCE_ARCHIVE) {
+            layout.setBody(archiveBody(quota, modeRow));
+            return;
+        }
+
         VBox rows = new VBox(6);
         if (slots.isEmpty()) {
             rows.getChildren().add(new Label(i18n("xenon.cloud.empty")));
@@ -191,9 +216,117 @@ public final class MdtbbsCloudSaveDialog {
         HBox actions = new HBox(create);
         actions.setAlignment(Pos.CENTER_LEFT);
 
-        VBox body = new VBox(8, hint, quotaLabel, checks, scroll, actions);
+        VBox body = new VBox(8, hint, quotaLabel, modeRow, checks, scroll, actions);
         body.setPadding(new Insets(4, 0, 0, 0));
         layout.setBody(body);
+    }
+
+    /// Builds the whole-instance archive section.
+    private VBox archiveBody(Quota quota, HBox modeRow) {
+        Label hint = new Label(i18n("xenon.cloud.archive.hint"));
+        hint.getStyleClass().add("subtitle-label");
+        hint.setWrapText(true);
+        Label status = new Label(i18n("xenon.cloud.loading"));
+        status.setWrapText(true);
+        JFXCheckBox auto = new JFXCheckBox(i18n("xenon.cloud.archive.auto"));
+        auto.setSelected(version.isCloudAutoSync());
+        auto.setDisable(!MindustryCloudArchiveService.supportsArchive(version));
+        auto.selectedProperty().addListener((observable, was, enabled) -> {
+            version.setCloudAutoSync(enabled);
+            persistInstanceSwitch();
+        });
+        JFXButton upload = FXUtils.newRaisedButton(i18n("xenon.cloud.archive.upload"));
+        upload.setOnAction(e -> uploadArchive());
+        JFXButton restore = FXUtils.newRaisedButton(i18n("xenon.cloud.archive.restore"));
+        restore.setOnAction(e -> restoreArchive());
+        JFXButton refresh = FXUtils.newRaisedButton(i18n("button.refresh"));
+        refresh.setOnAction(e -> reloadSlots());
+        HBox actions = new HBox(8, upload, restore, refresh);
+        actions.setAlignment(Pos.CENTER_LEFT);
+
+        Schedulers.io().execute(() -> {
+            try {
+                var service = new MindustryCloudArchiveService(client, version, versionRoot);
+                var latest = service.latestSnapshot();
+                Platform.runLater(() -> status.setText(latest == null
+                        ? i18n("xenon.cloud.archive.none")
+                        : i18n("xenon.cloud.archive.latest",
+                                DATE.format(latest.createdAt()), formatSize(latest.size()))));
+            } catch (IOException e) {
+                Platform.runLater(() -> status.setText(
+                        i18n("xenon.cloud.archive.failed", messageOf(e))));
+            }
+        });
+
+        Label quotaLabel = new Label(formatQuota(quota));
+        quotaLabel.getStyleClass().add("subtitle-label");
+        Label disabled = new Label(i18n("xenon.cloud.archive.disabled"));
+        disabled.getStyleClass().add("subtitle-label");
+        disabled.setWrapText(true);
+        disabled.setVisible(!MindustryCloudArchiveService.supportsArchive(version));
+        disabled.setManaged(disabled.isVisible());
+
+        VBox body = new VBox(8, hint, quotaLabel, modeRow, auto, status, actions);
+        if (disabled.isManaged()) {
+            body.getChildren().add(disabled);
+        }
+        body.setPadding(new Insets(4, 0, 0, 0));
+        return body;
+    }
+
+    /// Uploads the whole instance from the dialog.
+    private void uploadArchive() {
+        layout.setBody(new Label(i18n("xenon.cloud.archive.uploading")));
+        Schedulers.io().execute(() -> {
+            try {
+                var result = new MindustryCloudArchiveService(client, version, versionRoot)
+                        .uploadNow("manual");
+                Platform.runLater(() -> {
+                    if (result.outcome() == MindustryCloudArchiveService.Outcome.CONFLICT) {
+                        Controllers.showToast(i18n("xenon.cloud.archive.conflict"));
+                    } else {
+                        Controllers.showToast(i18n("xenon.cloud.archive.uploaded"));
+                    }
+                    reloadSlots();
+                });
+            } catch (IOException e) {
+                Platform.runLater(() -> {
+                    Controllers.dialog(i18n("xenon.cloud.archive.failed", messageOf(e)),
+                            i18n("message.error"), MessageDialogPane.MessageType.ERROR);
+                    reloadSlots();
+                });
+            }
+        });
+    }
+
+    /// Restores the whole instance after confirmation.
+    private void restoreArchive() {
+        Controllers.confirm(i18n("xenon.cloud.archive.restore.confirm"),
+                i18n("xenon.cloud.title"), () -> Schedulers.io().execute(() -> {
+                    try {
+                        var result = new MindustryCloudArchiveService(client, version, versionRoot)
+                                .restoreNow();
+                        Platform.runLater(() -> {
+                            if (result.missingMods().isEmpty()) {
+                                Controllers.showToast(i18n("xenon.cloud.archive.restored"));
+                            } else {
+                                Controllers.dialog(i18n("xenon.cloud.archive.missing",
+                                                String.join(", ", result.missingMods())),
+                                        i18n("xenon.cloud.title"),
+                                        MessageDialogPane.MessageType.WARNING);
+                            }
+                            reloadSlots();
+                        });
+                    } catch (IOException e) {
+                        Platform.runLater(() -> {
+                            Controllers.dialog(
+                                    i18n("xenon.cloud.archive.failed", messageOf(e)),
+                                    i18n("message.error"),
+                                    MessageDialogPane.MessageType.ERROR);
+                            reloadSlots();
+                        });
+                    }
+                }), null);
     }
 
     /// Persists the instance-level switch so it survives a restart.

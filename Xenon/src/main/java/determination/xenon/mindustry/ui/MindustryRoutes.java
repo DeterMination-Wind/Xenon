@@ -31,6 +31,7 @@ import determination.xenon.mindustry.mod.MindustryCrashRecovery;
 import determination.xenon.mindustry.modpack.XenonModpackPacker;
 import determination.xenon.mindustry.playtime.MindustryPlaytimeStore;
 import determination.xenon.mindustry.save.MindustryLaunchSaveService;
+import determination.xenon.mindustry.ui.MindustryCloudArchiveService.Outcome;
 import determination.xenon.setting.ConfigHolder;
 import determination.xenon.setting.Profile;
 import determination.xenon.setting.Profiles;
@@ -401,6 +402,7 @@ public final class MindustryRoutes {
                 Path versionRoot = repo.getVersionRoot(version);
                 Path effectiveDataDir = MindustryLaunchSaveService.resolveLaunchDataDir(versionRoot,
                         version.resolveDataDir(versionRoot), version.getLaunchSaveFile());
+                syncCloudArchiveBeforeLaunch(version, versionRoot);
                 if (MindustryCrashRecovery.pending(effectiveDataDir)) {
                     // The previous run died before mod init completed; let the
                     // user decide between launcher-side safe mode and the raw
@@ -421,6 +423,58 @@ public final class MindustryRoutes {
                             i18n("xenon.mindustry.launch.failed") + "\n\n" + ex.getMessage(),
                             i18n("message.error"), MessageDialogPane.MessageType.ERROR);
                 });
+            }
+        });
+    }
+
+    /// Pulls a newer cloud archive before the game starts.
+    ///
+    /// Runs on the launch IO thread, so a failure never blocks the game: the
+    /// error is reported as a toast and the local instance starts unchanged.
+    private static void syncCloudArchiveBeforeLaunch(MindustryVersion version, Path versionRoot) {
+        if (!version.isCloudAutoSync()) {
+            return;
+        }
+        try {
+            MindustryCloudArchiveService service = new MindustryCloudArchiveService(
+                    CommunityServices.cloudSaves(), version, versionRoot);
+            var result = service.preLaunch();
+            if (result.outcome() == Outcome.RESTORED) {
+                Platform.runLater(() -> Controllers.showToast(
+                        i18n("xenon.cloud.archive.restored")));
+            } else if (result.outcome() == Outcome.CONFLICT) {
+                Platform.runLater(() -> Controllers.showToast(
+                        i18n("xenon.cloud.archive.conflict")));
+            }
+        } catch (IOException e) {
+            LOG.warning("Cloud archive pre-launch sync failed", e);
+            Platform.runLater(() -> Controllers.showToast(
+                    i18n("xenon.cloud.archive.failed", MdtbbsMessages.describe(e))));
+        }
+    }
+
+    /// Uploads the instance archive after a normal exit.
+    private static void syncCloudArchiveAfterExit(String id, Path versionRoot) {
+        MindustryVersion version = get(id).orElse(null);
+        if (version == null || !version.isCloudAutoSync()) {
+            return;
+        }
+        Schedulers.io().execute(() -> {
+            try {
+                MindustryCloudArchiveService service = new MindustryCloudArchiveService(
+                        CommunityServices.cloudSaves(), version, versionRoot);
+                var result = service.postExit();
+                if (result.outcome() == Outcome.UPLOADED) {
+                    Platform.runLater(() -> Controllers.showToast(
+                            i18n("xenon.cloud.archive.uploaded")));
+                } else if (result.outcome() == Outcome.CONFLICT) {
+                    Platform.runLater(() -> Controllers.showToast(
+                            i18n("xenon.cloud.archive.conflict")));
+                }
+            } catch (IOException e) {
+                LOG.warning("Cloud archive post-exit sync failed", e);
+                Platform.runLater(() -> Controllers.showToast(
+                        i18n("xenon.cloud.archive.failed", MdtbbsMessages.describe(e))));
             }
         });
     }
@@ -551,6 +605,7 @@ public final class MindustryRoutes {
                 // Mindustry restarts itself after mod changes; the session stays
                 // open until the replacement process exits for good.
                 closePlaytimeSession(versionRoot, exited.id());
+                syncCloudArchiveAfterExit(exited.id(), versionRoot);
             }
             CommunityServices.presence().clearPlaying();
             refreshOpenModPanes(exited.id());
