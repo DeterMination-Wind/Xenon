@@ -200,6 +200,11 @@ public class GameListPage extends DecoratorAnimatedPage implements DecoratorPage
                 } catch (PatternSyntaxException e) {
                     return item -> false;
                 }
+            } else if (searchText.startsWith("group:")) {
+                // Mindustry-only filter: `group:<name>` matches the instance
+                // group, and `group:` (empty) lists ungrouped instances.
+                String group = searchText.substring("group:".length()).trim();
+                return item -> item.mindustryGroup().equalsIgnoreCase(group);
             } else {
                 return item -> item.id.toLowerCase(Locale.ROOT).contains(searchText.toLowerCase(Locale.ROOT));
             }

@@ -42,6 +42,18 @@ public class GameListItem extends GameItem {
         return isMindustry;
     }
 
+    /// User group of this Mindustry instance, or empty for other entries.
+    ///
+    /// @return the group name, or an empty string
+    public String mindustryGroup() {
+        if (!isMindustry) {
+            return "";
+        }
+        return MindustryRoutes.get(profile, id)
+                .map(determination.xenon.mindustry.MindustryVersion::getGroup)
+                .orElse("");
+    }
+
     public ReadOnlyBooleanProperty selectedProperty() {
         return selected;
     }

@@ -22,6 +22,7 @@ import determination.xenon.mindustry.MindustryVersion;
 import determination.xenon.mindustry.XenonGameRepository;
 import determination.xenon.mindustry.save.MindustryLaunchSaveService;
 import determination.xenon.mindustry.save.MindustrySaveArchive;
+import determination.xenon.mindustry.trash.MindustryTrashService;
 import determination.xenon.task.Schedulers;
 import determination.xenon.ui.Controllers;
 import determination.xenon.ui.FXUtils;
@@ -200,7 +201,11 @@ public final class MindustrySaveListPane extends BorderPane {
                     version.setLaunchSaveFile(null);
                     repository.save(version);
                 }
-                MindustryLaunchSaveService.deleteArchive(versionRoot, fileName);
+                Path archive = versionRoot.resolve(MindustryLaunchSaveService.ARCHIVES_DIR)
+                        .resolve(fileName);
+                if (java.nio.file.Files.exists(archive)) {
+                    new MindustryTrashService(versionRoot).trash(archive, "save");
+                }
                 Platform.runLater(this::reload);
             } catch (IOException ex) {
                 Platform.runLater(() -> showError(ex));

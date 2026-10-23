@@ -23,6 +23,7 @@ import determination.xenon.mindustry.MindustryVersion;
 import determination.xenon.mindustry.MindustryLaunchScriptWriter;
 import determination.xenon.mindustry.MindustryLaunchService;
 import determination.xenon.mindustry.XenonGameRepository;
+import determination.xenon.mindustry.trash.MindustryTrashService;
 import determination.xenon.mindustry.save.MindustryLaunchSaveService;
 import determination.xenon.task.Schedulers;
 import determination.xenon.ui.Controllers;
@@ -41,6 +42,7 @@ import javafx.beans.property.ReadOnlyObjectWrapper;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 
+import java.io.IOException;
 import java.nio.file.Path;
 
 import static determination.xenon.util.i18n.I18n.i18n;
@@ -124,14 +126,19 @@ public final class MindustryVersionPage extends DecoratorAnimatedPage implements
                 .addNavigationDrawerItem(i18n("version.manage.duplicate"), SVG.CONTENT_COPY, this::duplicateVersion)
                 .addNavigationDrawerItem(i18n("modpack.export"), SVG.OUTPUT, () -> MindustryRoutes.exportModpack(version))
                 .addNavigationDrawerItem(i18n("xenon.dev.export_script"), SVG.SCRIPT, this::exportLaunchScript)
+                .addNavigationDrawerItem(i18n("xenon.trash.title"), SVG.DELETE, this::openTrash)
+                .addNavigationDrawerItem(i18n("xenon.group.title"), SVG.FOLDER_OPEN, this::editGroup)
                 .addNavigationDrawerItem(i18n("version.manage.remove"), SVG.DELETE, this::deleteVersion);
         toolbar.getStyleClass().add("advanced-list-box-clear-padding");
-        FXUtils.setLimitHeight(toolbar, 40 * 7 + 12 * 2);
+        FXUtils.setLimitHeight(toolbar, 40 * 9 + 12 * 2);
 
         setLeft(sideBar, toolbar);
         setCenter(transitionPane);
 
-        state.set(State.fromTitle(i18n("version.manage.manage.title", version.getName()), -1));
+        String title = version.getGroup().isBlank()
+                ? version.getName()
+                : version.getName() + " · " + version.getGroup();
+        state.set(State.fromTitle(i18n("version.manage.manage.title", title), -1));
     }
 
     @Override
@@ -169,6 +176,33 @@ public final class MindustryVersionPage extends DecoratorAnimatedPage implements
         if (modTab.isInitialized()) {
             modTab.getNode().refreshFromDisk();
         }
+    }
+
+    /// Prompts for the single-level instance group.
+    private void editGroup() {
+        Controllers.prompt(i18n("xenon.group.prompt"),
+                (input, handler) -> {
+                    String group = input == null ? "" : input.trim();
+                    version.setGroup(group);
+                    Schedulers.io().execute(() -> {
+                        try {
+                            MindustryImportFlow.repositoryForVersion(version).save(version);
+                            Platform.runLater(() -> {
+                                handler.resolve();
+                                Controllers.showToast(i18n("xenon.group.saved",
+                                        group.isBlank() ? i18n("xenon.group.none") : group));
+                            });
+                        } catch (IOException e) {
+                            Platform.runLater(() -> handler.reject(e.getMessage()));
+                        }
+                    });
+                }, version.getGroup());
+    }
+
+    /// Opens the local recycle bin for deleted instances.
+    private void openTrash() {
+        MindustryTrashDialog.show(MindustryImportFlow.repositoryForVersion(version)
+                .getVersionsRoot().getParent());
     }
 
     /// Exports a standalone launch script for this instance.
@@ -210,7 +244,11 @@ public final class MindustryVersionPage extends DecoratorAnimatedPage implements
         confirm.getStyleClass().add("dialog-error");
         confirm.setOnAction(e -> Schedulers.io().execute(() -> {
             try {
-                MindustryImportFlow.repositoryForVersion(version).delete(version.getId());
+                XenonGameRepository repository = MindustryImportFlow.repositoryForVersion(version);
+                Path root = repository.getVersionRoot(version);
+                new MindustryTrashService(repository.getVersionsRoot().getParent())
+                        .trash(root, "instance");
+                repository.refresh();
                 Platform.runLater(() -> {
                     Controllers.showToast(i18n("message.success"));
                     fireEvent(new determination.xenon.ui.construct.PageCloseEvent());

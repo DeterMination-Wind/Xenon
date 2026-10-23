@@ -31,6 +31,9 @@ import determination.xenon.mindustry.mod.MindustryCrashRecovery;
 import determination.xenon.mindustry.modpack.XenonModpackPacker;
 import determination.xenon.mindustry.playtime.MindustryPlaytimeStore;
 import determination.xenon.mindustry.save.MindustryLaunchSaveService;
+import determination.xenon.mindustry.save.SaveBackupService;
+import determination.xenon.mindustry.save.SaveFileReader;
+import determination.xenon.mindustry.save.SaveSummary;
 import determination.xenon.mindustry.ui.MindustryCloudArchiveService.Outcome;
 import determination.xenon.setting.ConfigHolder;
 import determination.xenon.setting.Profile;
@@ -84,6 +87,10 @@ public final class MindustryRoutes {
     /// and valued by the pid that started the session. Reload relaunches keep
     /// the original pid so the recorded session spans the whole play run.
     private static final Map<String, Long> ACTIVE_SESSIONS = new ConcurrentHashMap<>();
+
+    /// Start time of each live instance, used by the automatic save backup.
+    private static final Map<String, java.time.Instant> LAUNCH_STARTED =
+            new ConcurrentHashMap<>();
 
     /// Instance ids whose current process is being restarted by the dev workflow.
     private static final java.util.Set<String> DEV_RESTARTS =
@@ -469,6 +476,75 @@ public final class MindustryRoutes {
         return id != null && DEV_RESTARTS.contains(id);
     }
 
+    /// Creates an automatic save backup when the session was long enough.
+    ///
+    /// The threshold and retention count are per instance. Only live `.msav`
+    /// files are backed up; the `backups/` directory itself is never copied and
+    /// old automatic copies beyond the retention count are pruned.
+    private static void autoBackupAfterExit(String id, Path versionRoot, Path dataDir) {
+        java.time.Instant startedAt = LAUNCH_STARTED.remove(id);
+        MindustryVersion version = get(id).orElse(null);
+        if (version == null || !version.isAutoBackupEnabled() || startedAt == null) {
+            return;
+        }
+        long minutes = java.time.Duration.between(startedAt, java.time.Instant.now()).toMinutes();
+        if (minutes < version.getAutoBackupMinMinutes()) {
+            return;
+        }
+        Schedulers.io().execute(() -> {
+            try {
+                Path saves = dataDir.resolve("saves");
+                if (!java.nio.file.Files.isDirectory(saves)) {
+                    return;
+                }
+                SaveBackupService service = new SaveBackupService(saves);
+                try (var stream = java.nio.file.Files.list(saves)) {
+                    for (Path save : stream.filter(path -> path.getFileName().toString()
+                            .toLowerCase(java.util.Locale.ROOT).endsWith(".msav")).toList()) {
+                        try {
+                            SaveSummary summary = SaveFileReader.readHeaderLenient(save);
+                            service.backup(summary);
+                        } catch (IOException e) {
+                            LOG.info("Auto backup skipped for " + save.getFileName()
+                                    + ": " + e.getMessage());
+                        }
+                    }
+                }
+                pruneAutoBackups(saves.resolve(SaveBackupService.BACKUPS_SUBDIR),
+                        version.getAutoBackupKeep());
+                LOG.info("Automatic save backup completed for " + id);
+            } catch (IOException e) {
+                LOG.warning("Automatic save backup failed for " + id, e);
+            }
+        });
+    }
+
+    /// Keeps only the newest automatic copies of each base save name.
+    private static void pruneAutoBackups(Path backups, int keep) throws IOException {
+        if (!java.nio.file.Files.isDirectory(backups)) {
+            return;
+        }
+        Map<String, java.util.List<Path>> byBase = new java.util.HashMap<>();
+        try (var stream = java.nio.file.Files.list(backups)) {
+            for (Path path : stream.filter(java.nio.file.Files::isRegularFile).toList()) {
+                String name = path.getFileName().toString();
+                String base = name.replaceFirst("-\\d{8}-\\d{6}\\.msav$", "");
+                byBase.computeIfAbsent(base, ignored -> new java.util.ArrayList<>()).add(path);
+            }
+        }
+        for (java.util.List<Path> copies : byBase.values()) {
+            copies.sort(java.util.Comparator.comparing(
+                    path -> path.getFileName().toString(), java.util.Comparator.reverseOrder()));
+            for (int index = keep; index < copies.size(); index++) {
+                try {
+                    java.nio.file.Files.deleteIfExists(copies.get(index));
+                } catch (IOException e) {
+                    LOG.info("Cannot prune backup " + copies.get(index) + ": " + e.getMessage());
+                }
+            }
+        }
+    }
+
     /// Pulls a newer cloud archive before the game starts.
     ///
     /// Runs on the launch IO thread, so a failure never blocks the game: the
@@ -634,6 +710,7 @@ public final class MindustryRoutes {
             LOG.info("Mindustry process started: id=" + started.id() + ", pid=" + started.pid());
             CommunityServices.presence().publishPlaying(started.id(), null, null);
             if (ACTIVE_SESSIONS.putIfAbsent(started.id(), started.pid()) == null) {
+                LAUNCH_STARTED.putIfAbsent(started.id(), java.time.Instant.now());
                 openPlaytimeSession(versionRoot, started.id(), started.pid());
             }
         } else if (event instanceof MindustryClientRuntimeRegistry.AlreadyRunning alreadyRunning) {
@@ -644,6 +721,7 @@ public final class MindustryRoutes {
             LOG.info("Mindustry process exited: id=" + exited.id() + ", pid=" + exited.pid()
                     + ", code=" + exited.exitCode());
             if (DEV_RESTARTS.remove(exited.id())) {
+                LAUNCH_STARTED.remove(exited.id());
                 // A development rebuild asked for this exit: keep the playtime
                 // session and presence alive, skip cloud/backup processing, and
                 // spawn the replacement without user-facing error dialogs.
@@ -665,6 +743,7 @@ public final class MindustryRoutes {
                 // Mindustry restarts itself after mod changes; the session stays
                 // open until the replacement process exits for good.
                 closePlaytimeSession(versionRoot, exited.id());
+                autoBackupAfterExit(exited.id(), versionRoot, exited.dataDir());
                 syncCloudArchiveAfterExit(exited.id(), versionRoot);
             }
             CommunityServices.presence().clearPlaying();
