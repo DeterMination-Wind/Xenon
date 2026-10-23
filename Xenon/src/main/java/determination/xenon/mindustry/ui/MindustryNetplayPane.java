@@ -34,6 +34,7 @@ import determination.xenon.ui.construct.MessageDialogPane;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
@@ -78,7 +79,9 @@ public final class MindustryNetplayPane extends BorderPane {
 
     /// Shared MDTBBS multiplayer session manager.
     private final MdtbbsNetplayManager mdtbbs = CommunityServices.netplay();
-    private final ComboBox<String> mdtbbsMode = new ComboBox<>();
+    private final ComboBox<Choice> mdtbbsVisibility = new ComboBox<>();
+    private final ComboBox<Choice> mdtbbsJoinPolicy = new ComboBox<>();
+    private final CheckBox mdtbbsApproval = new CheckBox();
     private final Label mdtbbsStatus = new Label();
     private final Label mdtbbsAddress = new Label();
     private final TextField mdtbbsCodeField = new TextField();
@@ -139,20 +142,46 @@ public final class MindustryNetplayPane extends BorderPane {
         refreshMdtbbs();
     }
 
+    /// One localized choice carrying the wire value.
+    ///
+    /// @param value wire value sent to MDTBBS
+    /// @param label localized label shown in the combo box
+    private record Choice(String value, String label) {
+        @Override
+        public String toString() {
+            return label;
+        }
+    }
+
     /// Builds the MDTBBS session control block.
     private VBox mdtbbsControls() {
         Label title = new Label(i18n("xenon.netplay.mdtbbs.title"));
         title.setStyle("-fx-font-weight: BOLD;");
 
-        mdtbbsMode.getItems().setAll(
-                i18n("xenon.netplay.mdtbbs.mode.friends"),
-                i18n("xenon.netplay.mdtbbs.mode.invite"),
-                i18n("xenon.netplay.mdtbbs.mode.code"));
-        mdtbbsMode.getSelectionModel().selectFirst();
-        FXUtils.setLimitWidth(mdtbbsMode, 260);
+        mdtbbsVisibility.getItems().setAll(
+                new Choice("private", i18n("xenon.netplay.mdtbbs.visibility.private")),
+                new Choice("friends", i18n("xenon.netplay.mdtbbs.visibility.friends")),
+                new Choice("public", i18n("xenon.netplay.mdtbbs.visibility.public")));
+        mdtbbsVisibility.getSelectionModel().select(1);
+        FXUtils.setLimitWidth(mdtbbsVisibility, 260);
+        mdtbbsVisibility.setPromptText(i18n("xenon.netplay.mdtbbs.visibility"));
+
+        mdtbbsJoinPolicy.getItems().setAll(
+                new Choice("invite_only", i18n("xenon.netplay.mdtbbs.join.invite_only")),
+                new Choice("friends", i18n("xenon.netplay.mdtbbs.join.friends")),
+                new Choice("public", i18n("xenon.netplay.mdtbbs.join.public")));
+        mdtbbsJoinPolicy.getSelectionModel().select(1);
+        FXUtils.setLimitWidth(mdtbbsJoinPolicy, 240);
+        mdtbbsJoinPolicy.setPromptText(i18n("xenon.netplay.mdtbbs.join_policy"));
+
+        mdtbbsApproval.setText(i18n("xenon.netplay.mdtbbs.approval"));
+        mdtbbsJoinPolicy.valueProperty().addListener((observable, old, next) ->
+                mdtbbsApproval.setDisable(next != null && "invite_only".equals(next.value())));
 
         JFXButton create = mdtbbsCreate;
-        create.setOnAction(e -> createMdtbbsRoom());
+        create.setOnAction(e -> createMdtbbsRoom(false));
+        JFXButton codeRoom = FXUtils.newRaisedButton(i18n("xenon.netplay.mdtbbs.code_room"));
+        codeRoom.setOnAction(e -> createMdtbbsRoom(true));
         JFXButton invite = mdtbbsInvite;
         invite.setOnAction(e -> openInviteDialog());
         JFXButton leave = mdtbbsLeave;
@@ -163,7 +192,9 @@ public final class MindustryNetplayPane extends BorderPane {
                 FXUtils.copyText(code);
             }
         });
-        HBox createRow = new HBox(8, mdtbbsMode, create, invite, mdtbbsCopyCode, leave);
+        HBox axisRow = new HBox(8, mdtbbsVisibility, mdtbbsJoinPolicy, mdtbbsApproval);
+        axisRow.setAlignment(Pos.CENTER_LEFT);
+        HBox createRow = new HBox(8, create, codeRoom, invite, mdtbbsCopyCode, leave);
         createRow.setAlignment(Pos.CENTER_LEFT);
 
         mdtbbsCodeField.setPromptText(i18n("xenon.netplay.mdtbbs.code.prompt"));
@@ -190,17 +221,25 @@ public final class MindustryNetplayPane extends BorderPane {
         mdtbbsStatus.setWrapText(true);
         mdtbbsAddress.setWrapText(true);
 
-        return new VBox(6, title, createRow, joinRow, mdtbbsStatus, mdtbbsAddress, hint);
+        return new VBox(6, title, axisRow, createRow, joinRow, mdtbbsStatus, mdtbbsAddress, hint);
     }
 
-    /// Creates a room with the selected visibility/join-policy preset.
-    private void createMdtbbsRoom() {
+    /// Creates a room from the two orthogonal choices.
+    ///
+    /// @param codeRoom whether to force the old "join code" preset, which
+    ///                 migrates to `private + public`
+    private void createMdtbbsRoom(boolean codeRoom) {
         String version = selectedGameVersion();
-        switch (mdtbbsMode.getSelectionModel().getSelectedIndex()) {
-            case 1 -> mdtbbs.createRoom("friends", "invite_only", version);
-            case 2 -> mdtbbs.createRoom("unlisted", "open", version);
-            default -> mdtbbs.createRoom("friends", "friends", version);
+        if (codeRoom) {
+            mdtbbs.createRoom("private", "public", false, version);
+            return;
         }
+        Choice visibility = mdtbbsVisibility.getSelectionModel().getSelectedItem();
+        Choice joinPolicy = mdtbbsJoinPolicy.getSelectionModel().getSelectedItem();
+        boolean approval = mdtbbsApproval.isSelected()
+                && !(joinPolicy != null && "invite_only".equals(joinPolicy.value()));
+        mdtbbs.createRoom(visibility == null ? "private" : visibility.value(),
+                joinPolicy == null ? "friends" : joinPolicy.value(), approval, version);
     }
 
     /// Refreshes the MDTBBS status block from the session manager.
@@ -242,14 +281,18 @@ public final class MindustryNetplayPane extends BorderPane {
     private static String mdtbbsErrorText(@Nullable String code, @Nullable String detail) {
         String key = switch (code == null ? "" : code) {
             case "AUTH_REQUIRED", "TOKEN_INVALID", "TOKEN_EXPIRED" -> "xenon.netplay.mdtbbs.error.auth";
-            case "CLIENT_CAPABILITY_NOT_APPROVED", "SESSIONS_DISABLED" -> "xenon.netplay.mdtbbs.error.capability";
+            case "CLIENT_CAPABILITY_NOT_APPROVED", "SESSIONS_DISABLED", "FEATURE_DISABLED" -> "xenon.netplay.mdtbbs.error.capability";
+            case "INSUFFICIENT_SCOPE", "SCOPE_REQUIRED" -> "xenon.netplay.mdtbbs.error.scope";
+            case "RATE_LIMITED" -> "xenon.netplay.mdtbbs.error.rate";
+            case "JOIN_CODE_INVALID" -> "xenon.netplay.mdtbbs.error.code";
+            case "JOIN_REQUEST_REQUIRED" -> "xenon.netplay.mdtbbs.error.approval";
             case "SESSION_FULL" -> "xenon.netplay.mdtbbs.error.full";
             case "SESSION_NOT_FOUND", "SESSION_EXPIRED", "SESSION_CLOSED" -> "xenon.netplay.mdtbbs.error.missing";
             case "SESSION_NOT_JOINABLE", "PRIVACY_DENIED", "FRIEND_REQUIRED" -> "xenon.netplay.mdtbbs.error.closed";
             case "RELAY_UNAVAILABLE", "RELAY_LIMIT_REACHED", "RELAY_ERROR" -> "xenon.netplay.mdtbbs.error.relay";
             case "JOIN_INTENT_CLIENT_MISMATCH" -> "xenon.netplay.mdtbbs.error.client";
             case "JOIN_INTENT_EXPIRED", "JOIN_INTENT_RECOVERY_EXPIRED", "JOIN_INTENT_INVALID" -> "xenon.netplay.mdtbbs.error.intent";
-            case "PEER_EXPIRED" -> "xenon.netplay.mdtbbs.error.peer";
+            case "PEER_EXPIRED", "PEER_RESUME_INVALID", "PEER_UNAVAILABLE" -> "xenon.netplay.mdtbbs.error.peer";
             case "AUTH_INVALID" -> "xenon.netplay.mdtbbs.error.credential";
             case "AUTH_EXPIRED" -> "xenon.netplay.mdtbbs.error.expired";
             default -> "xenon.netplay.mdtbbs.error.generic";

@@ -25,6 +25,7 @@ import determination.xenon.mindustry.community.MdtbbsMultiplayerClient.Joined;
 import determination.xenon.mindustry.community.MdtbbsMultiplayerClient.Peer;
 import determination.xenon.mindustry.community.MdtbbsMultiplayerClient.RelayAllocation;
 import determination.xenon.mindustry.community.MdtbbsMultiplayerClient.Session;
+import determination.xenon.mindustry.community.MdtbbsMultiplayerClient.SessionPage;
 import org.jetbrains.annotations.NotNullByDefault;
 import org.junit.jupiter.api.Test;
 
@@ -56,6 +57,58 @@ public final class MdtbbsMultiplayerClientTest {
             assertTrue(capabilities.relayV1());
             assertTrue(capabilities.thirdParty());
             assertEquals(120, capabilities.relayCredentialTtlSeconds());
+            assertEquals(List.of("private", "friends", "public"), capabilities.visibility());
+            assertEquals(List.of("invite_only", "friends", "public"), capabilities.joinPolicies());
+            assertTrue(capabilities.requireApprovalSupported());
+            assertEquals(9, capabilities.combinations().size());
+            assertTrue(capabilities.combinations().contains("private+public"));
+        }
+    }
+
+    /// Old capability responses without the 1.7.0 enum lists keep working.
+    @Test
+    public void capabilitiesFallBackToDocumentedDefaults() throws Exception {
+        try (Fixture server = Fixture.start()) {
+            server.legacyCapabilities = true;
+            Capabilities capabilities = server.client().capabilities();
+            assertEquals(List.of("private", "friends", "public"), capabilities.visibility());
+            assertEquals(List.of("invite_only", "friends", "public"), capabilities.joinPolicies());
+            assertTrue(capabilities.requireApprovalSupported());
+            assertEquals(9, capabilities.combinations().size());
+        }
+    }
+
+    /// Session creation sends `require_approval` and echoes it back.
+    @Test
+    public void createsSessionWithApproval() throws Exception {
+        try (Fixture server = Fixture.start()) {
+            Joined joined = server.client().createSession("private", "public", 8,
+                    "Mindustry", "build 160", true);
+
+            assertEquals("ses_1", joined.session().id());
+            assertTrue(joined.session().requireApproval());
+            assertEquals("A1B2C3D4E5", joined.joinCode());
+
+            String body = server.lastBody();
+            assertTrue(body.contains("\"visibility\":\"private\""));
+            assertTrue(body.contains("\"join_policy\":\"public\""));
+            assertTrue(body.contains("\"require_approval\":true"));
+        }
+    }
+
+    /// The public lobby exposes paging metadata and session approval state.
+    @Test
+    public void listsLobbySessions() throws Exception {
+        try (Fixture server = Fixture.start()) {
+            SessionPage page = server.client().sessions(2, 10);
+            assertEquals(1, page.sessions().size());
+            assertEquals("ses_1", page.sessions().get(0).id());
+            assertTrue(page.sessions().get(0).requireApproval());
+            assertEquals(2, page.page());
+            assertEquals(10, page.limit());
+            assertTrue(page.hasMore());
+            assertTrue(server.sawQuery("page=2"), () -> "query was " + server.lastQuery());
+            assertTrue(server.sawQuery("limit=10"));
         }
     }
 
@@ -63,7 +116,7 @@ public final class MdtbbsMultiplayerClientTest {
     @Test
     public void createsSession() throws Exception {
         try (Fixture server = Fixture.start()) {
-            Joined joined = server.client().createSession("unlisted", "open", 8, "Mindustry", "build 160");
+            Joined joined = server.client().createSession("private", "public", 8, "Mindustry", "build 160");
 
             assertEquals("ses_1", joined.session().id());
             assertEquals(1, joined.session().currentPlayers());
@@ -73,9 +126,10 @@ public final class MdtbbsMultiplayerClientTest {
             assertEquals("A1B2C3D4E5", joined.joinCode());
 
             String body = server.lastBody();
-            assertTrue(body.contains("\"visibility\":\"unlisted\""));
-            assertTrue(body.contains("\"join_policy\":\"open\""));
+            assertTrue(body.contains("\"visibility\":\"private\""));
+            assertTrue(body.contains("\"join_policy\":\"public\""));
             assertTrue(body.contains("\"max_players\":8"));
+            assertTrue(body.contains("\"require_approval\":false"));
         }
     }
 
@@ -145,7 +199,9 @@ public final class MdtbbsMultiplayerClientTest {
     private static final class Fixture implements AutoCloseable {
         private final HttpServer server;
         private final AtomicReference<String> lastBody = new AtomicReference<>("");
+        private final AtomicReference<String> lastQuery = new AtomicReference<>("");
         private final List<String> paths = Collections.synchronizedList(new ArrayList<>());
+        private volatile boolean legacyCapabilities;
 
         private Fixture(HttpServer server) {
             this.server = server;
@@ -171,6 +227,14 @@ public final class MdtbbsMultiplayerClientTest {
             return lastBody.get();
         }
 
+        String lastQuery() {
+            return lastQuery.get();
+        }
+
+        boolean sawQuery(String fragment) {
+            return lastQuery.get().contains(fragment);
+        }
+
         boolean sawPath(String suffix) {
             return paths.stream().anyMatch(path -> path.endsWith(suffix));
         }
@@ -181,10 +245,14 @@ public final class MdtbbsMultiplayerClientTest {
             byte[] request = exchange.getRequestBody().readAllBytes();
             paths.add(path);
             lastBody.set(new String(request, StandardCharsets.UTF_8));
+            lastQuery.set(exchange.getRequestURI().getRawQuery() == null
+                    ? "" : exchange.getRequestURI().getRawQuery());
 
             String response = switch (path) {
-                case "/api/v1/multiplayer/capabilities" -> capabilitiesJson();
-                case "/api/v1/multiplayer/sessions" -> createdSessionJson();
+                case "/api/v1/multiplayer/capabilities" ->
+                        legacyCapabilities ? legacyCapabilitiesJson() : capabilitiesJson();
+                case "/api/v1/multiplayer/sessions" -> "GET".equals(method)
+                        ? lobbyJson() : createdSessionJson();
                 case "/api/v1/multiplayer/join-intents/intent_1/consume" -> consumedIntentJson();
                 case "/api/v1/multiplayer/sessions/resolve-code" -> resolvedSessionJson();
                 case "/api/v1/multiplayer/sessions/ses_1/join" -> joinedMemberJson();
@@ -203,10 +271,34 @@ public final class MdtbbsMultiplayerClientTest {
             }
         }
 
-        /// Capability response fixture.
+        /// Capability response fixture for the 1.7.0 contract.
         private static String capabilitiesJson() {
             return "{\"data\":{\"sessions_v1\":true,\"invites_v1\":true,\"relay_v1\":true,"
+                    + "\"third_party_multiplayer\":true,\"relay_credential_ttl_seconds\":120,"
+                    + "\"visibility\":[\"private\",\"friends\",\"public\"],"
+                    + "\"join_policies\":[\"invite_only\",\"friends\",\"public\"],"
+                    + "\"visibility_join_policy_combinations\":["
+                    + "\"private+invite_only\",\"private+friends\",\"private+public\","
+                    + "\"friends+invite_only\",\"friends+friends\",\"friends+public\","
+                    + "\"public+invite_only\",\"public+friends\",\"public+public\"],"
+                    + "\"require_approval\":true,\"transports\":[\"udp\",\"tcp\",\"quic\",\"custom\"]}}";
+        }
+
+        /// Capability response fixture of an older deployment.
+        private static String legacyCapabilitiesJson() {
+            return "{\"data\":{\"sessions_v1\":true,\"invites_v1\":true,\"relay_v1\":true,"
                     + "\"third_party_multiplayer\":true,\"relay_credential_ttl_seconds\":120}}";
+        }
+
+        /// Public lobby response fixture.
+        private static String lobbyJson() {
+            return "{\"data\":[{\"id\":\"ses_1\",\"owner_user_id\":7,\"visibility\":\"public\","
+                    + "\"join_policy\":\"public\",\"require_approval\":true,"
+                    + "\"game\":{\"id\":\"mindustry\",\"version\":\"build 160\"},"
+                    + "\"activity_name\":\"Mindustry\",\"current_players\":2,\"max_players\":8,"
+                    + "\"status\":\"active\"}],"
+                    + "\"meta\":{\"pagination\":{\"page\":2,\"limit\":10,\"total\":11,"
+                    + "\"total_pages\":2,\"has_more\":true}}}";
         }
 
         /// Session creation response fixture.
@@ -262,6 +354,7 @@ public final class MdtbbsMultiplayerClientTest {
 
         private static String sessionJson() {
             return "{\"id\":\"ses_1\",\"owner_user_id\":7,\"visibility\":\"friends\",\"join_policy\":\"friends\","
+                    + "\"require_approval\":true,"
                     + "\"game\":{\"id\":\"mindustry\",\"version\":\"build 160\"},\"activity_name\":\"Mindustry\","
                     + "\"current_players\":1,\"max_players\":8,\"status\":\"active\"}";
         }

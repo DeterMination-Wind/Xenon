@@ -63,6 +63,8 @@ public final class MdtbbsNetplayManagerTest {
         assertTrue(await(5000, () -> manager.phase() == MdtbbsNetplayManager.Phase.HOSTING));
         assertEquals("ses_1", manager.sessionId());
         assertTrue(manager.hosting());
+        assertEquals("friends", manager.visibility());
+        assertEquals("friends", manager.joinPolicy());
         assertNotNull(tunnels.lastConfig);
         assertTrue(tunnels.lastConfig.owner());
         assertEquals(MdtbbsNetplayManager.MINDUSTRY_PORT, tunnels.lastConfig.gamePort());
@@ -72,6 +74,55 @@ public final class MdtbbsNetplayManagerTest {
         manager.leave();
         assertTrue(await(5000, () -> manager.phase() == MdtbbsNetplayManager.Phase.IDLE));
         assertTrue(await(5000, () -> fake.left.contains("ses_1")));
+    }
+
+    /// Deprecated enum values are normalised instead of being sent to the server.
+    @Test
+    public void createRoomNormalisesDeprecatedValues() throws Exception {
+        FakeMultiplayer fake = new FakeMultiplayer();
+        fake.created = ownerJoined();
+        FakeTunnels tunnels = new FakeTunnels();
+        MdtbbsNetplayManager manager = new MdtbbsNetplayManager(() -> true, fake, tunnels, 30);
+
+        manager.createRoom("unlisted", "open", "");
+
+        assertTrue(await(5000, () -> manager.phase() == MdtbbsNetplayManager.Phase.HOSTING));
+        assertEquals("private", fake.createdVisibility);
+        assertEquals("public", fake.createdJoinPolicy);
+        assertFalse(fake.createdRequireApproval);
+        manager.leave();
+    }
+
+    /// `invite_only` can never carry the approval flag.
+    @Test
+    public void inviteOnlyClearsApproval() throws Exception {
+        FakeMultiplayer fake = new FakeMultiplayer();
+        fake.created = ownerJoined();
+        FakeTunnels tunnels = new FakeTunnels();
+        MdtbbsNetplayManager manager = new MdtbbsNetplayManager(() -> true, fake, tunnels, 30);
+
+        manager.createRoom("friends", "invite_only", true, "");
+
+        assertTrue(await(5000, () -> manager.phase() == MdtbbsNetplayManager.Phase.HOSTING));
+        assertEquals("friends", fake.createdVisibility);
+        assertEquals("invite_only", fake.createdJoinPolicy);
+        assertFalse(fake.createdRequireApproval);
+        manager.leave();
+    }
+
+    /// The first peer heartbeat is sent immediately after attach.
+    @Test
+    public void firstHeartbeatIsImmediate() throws Exception {
+        FakeMultiplayer fake = new FakeMultiplayer();
+        fake.created = ownerJoined();
+        FakeTunnels tunnels = new FakeTunnels();
+        MdtbbsNetplayManager manager = new MdtbbsNetplayManager(() -> true, fake, tunnels, 60);
+
+        manager.createRoom("friends", "friends", "");
+
+        assertTrue(await(3000, () -> !fake.heartbeatCalls.isEmpty()),
+                "the first heartbeat must not wait a whole interval");
+        manager.leave();
     }
 
     /// The capability gate rejects clients without third-party multiplayer.
@@ -340,6 +391,10 @@ public final class MdtbbsNetplayManagerTest {
         @Nullable CountDownLatch allocateGate;
         final CountDownLatch allocateStarted = new CountDownLatch(1);
         final CountDownLatch resumeCalled = new CountDownLatch(1);
+        final CopyOnWriteArrayList<String> heartbeatCalls = new CopyOnWriteArrayList<>();
+        volatile String createdVisibility = "";
+        volatile String createdJoinPolicy = "";
+        volatile boolean createdRequireApproval;
         final List<String> left = new CopyOnWriteArrayList<>();
         final List<String> invited = new CopyOnWriteArrayList<>();
         final List<String> calls = new CopyOnWriteArrayList<>();
@@ -351,8 +406,12 @@ public final class MdtbbsNetplayManagerTest {
 
         @Override
         public Joined createSession(String visibility, String joinPolicy, int maxPlayers,
-                                    String activityName, String gameVersion) throws IOException {
+                                    String activityName, String gameVersion,
+                                    boolean requireApproval) throws IOException {
             calls.add("create");
+            createdVisibility = visibility;
+            createdJoinPolicy = joinPolicy;
+            createdRequireApproval = requireApproval;
             createStarted.countDown();
             CountDownLatch gate = createGate;
             if (gate != null) {
@@ -407,6 +466,7 @@ public final class MdtbbsNetplayManagerTest {
 
         @Override
         public void peerHeartbeat(String sessionId, String peerId) throws IOException {
+            heartbeatCalls.add(sessionId + ":" + peerId);
             IOException error = heartbeatError;
             if (error != null) {
                 heartbeatError = null;

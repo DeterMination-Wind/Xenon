@@ -274,7 +274,9 @@ public final class MindustryCloudSaveSyncTest {
             Files.writeString(probe, "probe");
             Files.deleteIfExists(probe);
             return false;
-        } catch (IOException e) {
+        } catch (IOException | RuntimeException e) {
+            // A read-only zip file system reports `ReadOnlyFileSystemException`,
+            // an `UnsupportedOperationException` rather than an `IOException`.
             return true;
         }
     }

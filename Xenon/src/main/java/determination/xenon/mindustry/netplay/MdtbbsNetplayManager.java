@@ -34,6 +34,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.Executors;
@@ -141,6 +142,9 @@ public final class MdtbbsNetplayManager {
     private volatile String peerId = "";
     private volatile String resumeToken = "";
     private volatile boolean hosting;
+    private volatile String visibility = "";
+    private volatile String joinPolicy = "";
+    private volatile boolean requireApproval;
     private volatile int playerCount;
     private volatile int maxPlayers;
     private volatile @Nullable Capabilities capabilities;
@@ -220,6 +224,21 @@ public final class MdtbbsNetplayManager {
         return hosting;
     }
 
+    /// Visibility of the current session, or empty.
+    public String visibility() {
+        return visibility;
+    }
+
+    /// Join policy of the current session, or empty.
+    public String joinPolicy() {
+        return joinPolicy;
+    }
+
+    /// Whether the current session requires host approval.
+    public boolean requireApproval() {
+        return requireApproval;
+    }
+
     /// Occupied player count of the current session.
     public int playerCount() {
         return playerCount;
@@ -247,13 +266,23 @@ public final class MdtbbsNetplayManager {
 
     /// Creates a hosted session and starts the owner relay bridge.
     ///
-    /// @param visibility `private`, `friends` or `unlisted`
-    /// @param joinPolicy `open`, `friends`, `request` or `invite_only`
-    /// @param gameVersion version text shown to friends, or empty
-    public void createRoom(String visibility, String joinPolicy, String gameVersion) {
+    /// Deprecated enum values are normalised instead of being sent to the
+    /// server: `unlisted` becomes `private`, `open` becomes `public` and
+    /// `request` becomes `friends` plus host approval. `invite_only` always
+    /// clears the approval flag because it has no request path.
+    ///
+    /// @param visibility      `private`, `friends` or `public`
+    /// @param joinPolicy      `invite_only`, `friends` or `public`
+    /// @param requireApproval whether the host must approve join requests
+    /// @param gameVersion     version text shown to friends, or empty
+    public void createRoom(String visibility, String joinPolicy, boolean requireApproval,
+                           String gameVersion) {
         if (phase == Phase.WORKING) {
             return;
         }
+        String requestedJoin = normalizeJoinPolicy(joinPolicy, requireApproval);
+        String requestedVisibility = normalizeVisibility(visibility);
+        boolean approval = normalizeApproval(requestedJoin, requireApproval);
         long token = generation.incrementAndGet();
         String previous = detachLocalSession();
         setPhase(Phase.WORKING, null, null);
@@ -262,8 +291,8 @@ public final class MdtbbsNetplayManager {
                 awaitCleanup();
                 leaveQuietly(previous);
                 requireCapabilities();
-                Joined joined = multiplayer.createSession(visibility, joinPolicy, 8,
-                        "Mindustry", gameVersion);
+                Joined joined = multiplayer.createSession(requestedVisibility, requestedJoin, 8,
+                        "Mindustry", gameVersion, approval);
                 if (isStale(token)) {
                     // The user left while the session was being created; do not
                     // leave an orphan session behind.
@@ -276,6 +305,45 @@ public final class MdtbbsNetplayManager {
                 fail(token, e);
             }
         });
+    }
+
+    /// Creates a hosted session without an approval step.
+    ///
+    /// @param visibility  `private`, `friends` or `public`
+    /// @param joinPolicy  `invite_only`, `friends` or `public`
+    /// @param gameVersion version text shown to friends, or empty
+    public void createRoom(String visibility, String joinPolicy, String gameVersion) {
+        createRoom(visibility, joinPolicy, false, gameVersion);
+    }
+
+    /// Normalises a visibility value to the 1.7.0 enum.
+    private static String normalizeVisibility(@Nullable String value) {
+        String text = value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+        return switch (text) {
+            case "friends" -> "friends";
+            case "public" -> "public";
+            // `unlisted` was the old "hidden but code-joinable" value; its
+            // migration target is `private`, and the join policy carries the
+            // old code semantics.
+            default -> "private";
+        };
+    }
+
+    /// Normalises a join-policy value to the 1.7.0 enum.
+    private static String normalizeJoinPolicy(@Nullable String value, boolean requireApproval) {
+        String text = value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+        return switch (text) {
+            case "invite_only" -> "invite_only";
+            case "public", "open" -> "public";
+            case "friends" -> "friends";
+            // The removed `request` value meant "friends plus approval".
+            default -> requireApproval ? "friends" : "friends";
+        };
+    }
+
+    /// Clears approval for `invite_only`, which has no request path.
+    private static boolean normalizeApproval(String joinPolicy, boolean requireApproval) {
+        return requireApproval && !"invite_only".equals(joinPolicy);
     }
 
     /// Resolves a join code (or session id) and joins as a guest.
@@ -294,9 +362,17 @@ public final class MdtbbsNetplayManager {
                 leaveQuietly(previous);
                 requireCapabilities();
                 String text = codeOrId == null ? "" : codeOrId.trim();
+                if (text.isEmpty()) {
+                    throw new MdtbbsApiException(400, "JOIN_CODE_INVALID",
+                            "a join code or session id is required", false);
+                }
                 String id = text;
                 String code = null;
                 if (!text.startsWith("ses_")) {
+                    if (!text.matches("[0-9A-Fa-f]{10}")) {
+                        throw new MdtbbsApiException(400, "JOIN_CODE_INVALID",
+                                "MDTBBS join codes are 10 hexadecimal characters", false);
+                    }
                     Session resolved = multiplayer.resolveCode(text);
                     id = resolved.id();
                     code = text;
@@ -402,6 +478,9 @@ public final class MdtbbsNetplayManager {
         peerId = "";
         resumeToken = "";
         hosting = false;
+        visibility = "";
+        joinPolicy = "";
+        requireApproval = false;
         playerCount = 0;
         maxPlayers = 0;
         return previous;
@@ -479,6 +558,9 @@ public final class MdtbbsNetplayManager {
         resumeToken = joined.resumeToken();
         joinCode = joined.joinCode();
         hosting = owner;
+        visibility = joined.session().visibility();
+        joinPolicy = joined.session().joinPolicy();
+        requireApproval = joined.session().requireApproval();
         localAddress = "";
         playerCount = joined.session().currentPlayers();
         maxPlayers = joined.session().maxPlayers();
@@ -568,13 +650,17 @@ public final class MdtbbsNetplayManager {
     }
 
     /// Starts the peer heartbeat loop.
+    ///
+    /// The first heartbeat is sent immediately: a fresh peer otherwise has a
+    /// full interval to publish its presence, and relay allocation can race
+    /// that window and fail with `PEER_UNAVAILABLE`.
     private void startHeartbeat() {
         stopHeartbeat();
         if (sessionId.isEmpty() || peerId.isEmpty()) {
             return;
         }
         heartbeat = scheduler.scheduleAtFixedRate(this::sendHeartbeat,
-                heartbeatSeconds, heartbeatSeconds, TimeUnit.SECONDS);
+                0L, heartbeatSeconds, TimeUnit.SECONDS);
     }
 
     /// Stops the peer heartbeat loop.
@@ -622,7 +708,7 @@ public final class MdtbbsNetplayManager {
             resumeToken = resumed.resumeToken();
             Logger.LOG.info("MDTBBS peer resumed in session " + id);
         } catch (IOException e) {
-            setPhase(Phase.ERROR, "PEER_EXPIRED", e.getMessage());
+            setPhase(Phase.ERROR, "PEER_RESUME_INVALID", e.getMessage());
         }
     }
 

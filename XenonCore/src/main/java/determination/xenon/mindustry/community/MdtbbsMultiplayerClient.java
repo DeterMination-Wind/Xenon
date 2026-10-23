@@ -24,9 +24,12 @@ import org.jetbrains.annotations.NotNullByDefault;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.List;
+import java.util.Map;
 
 /// MDTBBS multiplayer session, candidate and relay API surface.
 ///
@@ -48,29 +51,161 @@ public final class MdtbbsMultiplayerClient implements MdtbbsMultiplayerApi {
 
     /// Server multiplayer capabilities for the authenticated client.
     ///
-    /// @param sessionsV1        whether session APIs are enabled
-    /// @param invitesV1         whether invites are enabled
-    /// @param relayV1           whether the official relay is enabled
-    /// @param thirdParty        whether this OAuth client is approved for third-party multiplayer
+    /// The enum lists and the approval flag come from the 1.7.0 contract. When
+    /// an older deployment omits them the documented 1.7.0 defaults are used so
+    /// the UI always has a complete choice set.
+    ///
+    /// @param sessionsV1            whether session APIs are enabled
+    /// @param invitesV1             whether invites are enabled
+    /// @param relayV1               whether the official relay is enabled
+    /// @param thirdParty            whether this OAuth client is approved for third-party multiplayer
     /// @param relayCredentialTtlSeconds advertised relay credential lifetime
+    /// @param visibility            allowed `visibility` values
+    /// @param joinPolicies          allowed `join_policy` values
+    /// @param requireApprovalSupported whether the server accepts `require_approval`
+    /// @param combinations          all legal `visibility+join_policy` pairs
+    /// @param transports            supported candidate transports
     public record Capabilities(boolean sessionsV1, boolean invitesV1, boolean relayV1,
-                               boolean thirdParty, long relayCredentialTtlSeconds) {
+                               boolean thirdParty, long relayCredentialTtlSeconds,
+                               List<String> visibility, List<String> joinPolicies,
+                               boolean requireApprovalSupported, List<String> combinations,
+                               List<String> transports) {
+
+        /// Documented 1.7.0 visibility values.
+        public static final List<String> DEFAULT_VISIBILITY = List.of("private", "friends", "public");
+
+        /// Documented 1.7.0 join-policy values.
+        public static final List<String> DEFAULT_JOIN_POLICIES =
+                List.of("invite_only", "friends", "public");
+
+        /// Documented 1.7.0 candidate transports.
+        public static final List<String> DEFAULT_TRANSPORTS = List.of("udp", "tcp", "quic", "custom");
+
+        /// The nine legal visibility/join-policy pairs.
+        public static final List<String> DEFAULT_COMBINATIONS = combinationsOf(
+                DEFAULT_VISIBILITY, DEFAULT_JOIN_POLICIES);
+
+        /// Copies the enum lists defensively and fills empty lists with defaults.
+        public Capabilities {
+            visibility = List.copyOf(visibility.isEmpty() ? DEFAULT_VISIBILITY : visibility);
+            joinPolicies = List.copyOf(joinPolicies.isEmpty() ? DEFAULT_JOIN_POLICIES : joinPolicies);
+            combinations = List.copyOf(combinations.isEmpty()
+                    ? combinationsOf(visibility, joinPolicies) : combinations);
+            transports = List.copyOf(transports.isEmpty() ? DEFAULT_TRANSPORTS : transports);
+        }
+
+        /// Builds capabilities from the pre-1.7.0 response shape.
+        ///
+        /// @param sessionsV1            whether session APIs are enabled
+        /// @param invitesV1             whether invites are enabled
+        /// @param relayV1               whether the official relay is enabled
+        /// @param thirdParty            whether this OAuth client is approved
+        /// @param relayCredentialTtlSeconds advertised relay credential lifetime
+        public Capabilities(boolean sessionsV1, boolean invitesV1, boolean relayV1,
+                            boolean thirdParty, long relayCredentialTtlSeconds) {
+            this(sessionsV1, invitesV1, relayV1, thirdParty, relayCredentialTtlSeconds,
+                    List.of(), List.of(), true, List.of(), List.of());
+        }
+
+        /// Whether the given visibility/join-policy pair is advertised as legal.
+        ///
+        /// @param visibility desired visibility
+        /// @param joinPolicy desired join policy
+        /// @return whether the pair is legal
+        public boolean allows(String visibility, String joinPolicy) {
+            return combinations.contains(visibility + "+" + joinPolicy);
+        }
+
+        /// Builds the cartesian product of two value lists.
+        private static List<String> combinationsOf(List<String> visibility, List<String> joinPolicies) {
+            List<String> result = new ArrayList<>(visibility.size() * joinPolicies.size());
+            for (String visible : visibility) {
+                for (String join : joinPolicies) {
+                    result.add(visible + "+" + join);
+                }
+            }
+            return List.copyOf(result);
+        }
     }
 
     /// One multiplayer session.
     ///
     /// @param id             opaque session id
     /// @param ownerUserId    id of the owning user
-    /// @param visibility     `private`, `friends` or `unlisted`
-    /// @param joinPolicy     `open`, `friends`, `request` or `invite_only`
+    /// @param visibility     `private`, `friends` or `public`
+    /// @param joinPolicy     `invite_only`, `friends` or `public`
     /// @param gameVersion    game version recorded by the host, or empty
     /// @param activityName   activity text shown to friends
     /// @param currentPlayers occupied player count
     /// @param maxPlayers     player limit
     /// @param status         server status such as `active`
+    /// @param requireApproval whether the host must approve join requests
+    /// @param expiresAt      hard session expiry, or {`Instant#EPOCH`} when omitted
     public record Session(String id, long ownerUserId, String visibility, String joinPolicy,
                           String gameVersion, String activityName,
-                          int currentPlayers, int maxPlayers, String status) {
+                          int currentPlayers, int maxPlayers, String status,
+                          boolean requireApproval, Instant expiresAt) {
+
+        /// Builds a session from the pre-1.7.0 response shape.
+        ///
+        /// @param id             opaque session id
+        /// @param ownerUserId    id of the owning user
+        /// @param visibility     visibility value
+        /// @param joinPolicy     join-policy value
+        /// @param gameVersion    game version recorded by the host, or empty
+        /// @param activityName   activity text
+        /// @param currentPlayers occupied player count
+        /// @param maxPlayers     player limit
+        /// @param status         server status
+        public Session(String id, long ownerUserId, String visibility, String joinPolicy,
+                       String gameVersion, String activityName,
+                       int currentPlayers, int maxPlayers, String status) {
+            this(id, ownerUserId, visibility, joinPolicy, gameVersion, activityName,
+                    currentPlayers, maxPlayers, status, false, Instant.EPOCH);
+        }
+
+        /// Builds a session without a known expiry.
+        ///
+        /// @param id             opaque session id
+        /// @param ownerUserId    id of the owning user
+        /// @param visibility     visibility value
+        /// @param joinPolicy     join-policy value
+        /// @param gameVersion    game version recorded by the host, or empty
+        /// @param activityName   activity text
+        /// @param currentPlayers occupied player count
+        /// @param maxPlayers     player limit
+        /// @param status         server status
+        /// @param requireApproval whether the host must approve join requests
+        public Session(String id, long ownerUserId, String visibility, String joinPolicy,
+                       String gameVersion, String activityName,
+                       int currentPlayers, int maxPlayers, String status,
+                       boolean requireApproval) {
+            this(id, ownerUserId, visibility, joinPolicy, gameVersion, activityName,
+                    currentPlayers, maxPlayers, status, requireApproval, Instant.EPOCH);
+        }
+
+        /// Whether the session currently accepts new peers without an approval step.
+        ///
+        /// @return whether a direct join is possible
+        public boolean joinableDirectly() {
+            return "active".equals(status) && !requireApproval;
+        }
+    }
+
+    /// One page of discoverable lobby sessions.
+    ///
+    /// @param sessions   sessions on this page
+    /// @param page       1-based page number
+    /// @param limit      requested page size
+    /// @param total      total session count, or `-1` when omitted
+    /// @param totalPages total page count, or `-1` when omitted
+    /// @param hasMore    whether another page exists
+    public record SessionPage(List<Session> sessions, int page, int limit, int total,
+                              int totalPages, boolean hasMore) {
+        /// Copies the session list defensively.
+        public SessionPage {
+            sessions = List.copyOf(sessions);
+        }
     }
 
     /// One session peer.
@@ -121,6 +256,9 @@ public final class MdtbbsMultiplayerClient implements MdtbbsMultiplayerApi {
 
     /// Reads the multiplayer capability switches.
     ///
+    /// The response may be flat (documented) or nested under `multiplayer`
+    /// (older gateways); both are accepted. Unknown fields are ignored.
+    ///
     /// @return parsed capabilities
     /// @throws IOException when the request fails
     public Capabilities capabilities() throws IOException {
@@ -132,20 +270,27 @@ public final class MdtbbsMultiplayerClient implements MdtbbsMultiplayerApi {
                 MdtbbsJson.boolOf(source, "invites_v1", false),
                 MdtbbsJson.boolOf(source, "relay_v1", false),
                 MdtbbsJson.boolOf(source, "third_party_multiplayer", false),
-                MdtbbsJson.longOf(source, "relay_credential_ttl_seconds", 120));
+                MdtbbsJson.longOf(source, "relay_credential_ttl_seconds", 120),
+                MdtbbsJson.stringListOf(source, "visibility"),
+                MdtbbsJson.stringListOf(source, "join_policies"),
+                MdtbbsJson.boolOf(source, "require_approval", true),
+                MdtbbsJson.stringListOf(source, "visibility_join_policy_combinations"),
+                MdtbbsJson.stringListOf(source, "transports"));
     }
 
     /// Creates a session owned by this client.
     ///
-    /// @param visibility   `private`, `friends` or `unlisted`
-    /// @param joinPolicy   `open`, `friends`, `request` or `invite_only`
-    /// @param maxPlayers   player limit, clamped to 2..64
-    /// @param activityName activity text shown to friends
-    /// @param gameVersion  game version shown to friends, or empty
+    /// @param visibility      `private`, `friends` or `public`
+    /// @param joinPolicy      `invite_only`, `friends` or `public`
+    /// @param maxPlayers      player limit, clamped to 2..64
+    /// @param activityName    activity text shown to friends
+    /// @param gameVersion     game version shown to friends, or empty
+    /// @param requireApproval whether the host must approve join requests
     /// @return the created session, owner peer and optional join code
     /// @throws IOException when the request fails
     public Joined createSession(String visibility, String joinPolicy, int maxPlayers,
-                                String activityName, String gameVersion) throws IOException {
+                                String activityName, String gameVersion,
+                                boolean requireApproval) throws IOException {
         JsonObject body = new JsonObject();
         body.addProperty("game_id", "mindustry");
         if (gameVersion != null && !gameVersion.isBlank()) {
@@ -156,19 +301,83 @@ public final class MdtbbsMultiplayerClient implements MdtbbsMultiplayerApi {
         }
         body.addProperty("visibility", visibility);
         body.addProperty("join_policy", joinPolicy);
+        // `invite_only` has no approval path, so never send a contradictory flag.
+        body.addProperty("require_approval", requireApproval && !"invite_only".equals(joinPolicy));
         body.addProperty("max_players", Math.max(2, Math.min(64, maxPlayers)));
         JsonObject data = MdtbbsJson.dataObject(api.post("/multiplayer/sessions", body));
         return parseJoined(data, sessionFrom(data));
     }
 
-    /// Resolves an unlisted join code to its session.
+    /// Creates a session without an approval step.
+    ///
+    /// @param visibility      `private`, `friends` or `public`
+    /// @param joinPolicy      `invite_only`, `friends` or `public`
+    /// @param maxPlayers      player limit, clamped to 2..64
+    /// @param activityName    activity text shown to friends
+    /// @param gameVersion     game version shown to friends, or empty
+    /// @return the created session, owner peer and optional join code
+    /// @throws IOException when the request fails
+    public Joined createSession(String visibility, String joinPolicy, int maxPlayers,
+                                String activityName, String gameVersion) throws IOException {
+        return createSession(visibility, joinPolicy, maxPlayers, activityName, gameVersion, false);
+    }
+
+    /// Lists the sessions the caller may discover.
+    ///
+    /// Only `public` sessions, `friends` sessions owned by a friend and
+    /// sessions the caller already occupies are returned; `private` sessions
+    /// never appear.
+    ///
+    /// @param page  1-based page number
+    /// @param limit page size, clamped to 1..50
+    /// @return one page of discoverable sessions
+    /// @throws IOException when the request fails
+    public SessionPage sessions(int page, int limit) throws IOException {
+        int safePage = Math.max(1, page);
+        int safeLimit = Math.max(1, Math.min(50, limit));
+        Map<String, String> parameters = new LinkedHashMap<>();
+        parameters.put("page", Integer.toString(safePage));
+        parameters.put("limit", Integer.toString(safeLimit));
+        JsonObject root = api.getAuth("/multiplayer/sessions", parameters);
+        JsonArray array = MdtbbsJson.dataArray(root);
+        if (array.isEmpty()) {
+            array = MdtbbsJson.arrayOf(MdtbbsJson.dataObject(root), "sessions");
+        }
+        List<Session> sessions = new ArrayList<>();
+        for (JsonElement element : array) {
+            JsonObject object = MdtbbsJson.asObject(element);
+            Session session = object == null ? null : sessionFrom(object);
+            if (session != null) sessions.add(session);
+        }
+        JsonObject pagination = MdtbbsJson.objectOf(root, "meta");
+        pagination = pagination == null ? null : MdtbbsJson.objectOf(pagination, "pagination");
+        if (pagination == null) {
+            pagination = MdtbbsJson.objectOf(MdtbbsJson.dataObject(root), "pagination");
+        }
+        int total = pagination == null ? -1 : (int) MdtbbsJson.longOf(pagination, "total", -1);
+        int totalPages = pagination == null ? -1 : (int) MdtbbsJson.longOf(pagination, "total_pages", -1);
+        if (pagination != null && totalPages < 0) {
+            totalPages = (int) MdtbbsJson.longOf(pagination, "totalPages", -1);
+        }
+        boolean hasMore = pagination != null && MdtbbsJson.boolOf(pagination, "has_more", false);
+        if (pagination != null && !hasMore && totalPages > 0) {
+            hasMore = safePage < totalPages;
+        }
+        return new SessionPage(sessions, safePage, safeLimit, total, totalPages, hasMore);
+    }
+
+    /// Resolves a public join code to its session.
     ///
     /// @param code ten-character join code, case-insensitive
     /// @return the resolved session
     /// @throws IOException when the code is invalid or expired
     public Session resolveCode(String code) throws IOException {
+        String normalized = code == null ? "" : code.trim().toUpperCase(Locale.ROOT);
+        if (!normalized.matches("[0-9A-F]{10}")) {
+            throw new IllegalArgumentException("MDTBBS join codes are 10 hexadecimal characters");
+        }
         JsonObject body = new JsonObject();
-        body.addProperty("code", code == null ? "" : code.trim().toUpperCase(Locale.ROOT));
+        body.addProperty("code", normalized);
         JsonObject data = MdtbbsJson.dataObject(api.post("/multiplayer/sessions/resolve-code", body));
         Session session = sessionFrom(data);
         if (session == null) {
@@ -454,7 +663,9 @@ public final class MdtbbsMultiplayerClient implements MdtbbsMultiplayerApi {
                 MdtbbsJson.stringOf(source, "activity_name"),
                 (int) MdtbbsJson.longOf(source, "current_players", 0),
                 (int) MdtbbsJson.longOf(source, "max_players", 0),
-                MdtbbsJson.stringOf(source, "status"));
+                MdtbbsJson.stringOf(source, "status"),
+                MdtbbsJson.boolOf(source, "require_approval", false),
+                MdtbbsJson.instantOf(source, "expires_at"));
     }
 
     /// Parses one peer object.

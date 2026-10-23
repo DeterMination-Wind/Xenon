@@ -45,17 +45,19 @@ public interface MdtbbsMultiplayerApi {
 
     /// Creates a session owned by this client.
     ///
-    /// @param visibility   `private`, `friends` or `unlisted`
-    /// @param joinPolicy   `open`, `friends`, `request` or `invite_only`
-    /// @param maxPlayers   player limit
-    /// @param activityName activity text shown to friends
-    /// @param gameVersion  game version shown to friends, or empty
+    /// @param visibility      `private`, `friends` or `public`
+    /// @param joinPolicy      `invite_only`, `friends` or `public`
+    /// @param maxPlayers      player limit
+    /// @param activityName    activity text shown to friends
+    /// @param gameVersion     game version shown to friends, or empty
+    /// @param requireApproval whether the host must approve join requests
     /// @return the created session, owner peer and optional join code
     /// @throws IOException when the request fails
     Joined createSession(String visibility, String joinPolicy, int maxPlayers,
-                         String activityName, String gameVersion) throws IOException;
+                         String activityName, String gameVersion,
+                         boolean requireApproval) throws IOException;
 
-    /// Resolves an unlisted join code to its session.
+    /// Resolves a public join code to its session.
     ///
     /// @param code join code
     /// @return the resolved session
