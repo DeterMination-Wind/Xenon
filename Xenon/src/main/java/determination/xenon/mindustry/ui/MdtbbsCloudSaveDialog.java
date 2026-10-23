@@ -22,8 +22,13 @@ import com.jfoenix.controls.JFXCheckBox;
 import com.jfoenix.controls.JFXDialogLayout;
 import determination.xenon.mindustry.MindustryImportFlow;
 import determination.xenon.mindustry.MindustryVersion;
+import determination.xenon.mindustry.community.MdtbbsApiException;
+import determination.xenon.mindustry.community.MdtbbsApiException;
 import determination.xenon.mindustry.community.MdtbbsCloudSavesClient;
 import determination.xenon.mindustry.community.MdtbbsCloudSavesClient.Quota;
+import determination.xenon.mindustry.community.MdtbbsCloudSavesClient.UploadOptions;
+import determination.xenon.mindustry.community.MindustryCloudSaveMetadata;
+import determination.xenon.setting.ConfigHolder;
 import determination.xenon.mindustry.community.MdtbbsCloudSavesClient.Slot;
 import determination.xenon.mindustry.community.MdtbbsCloudSavesClient.SlotPage;
 import determination.xenon.mindustry.community.MdtbbsCloudSavesClient.Snapshot;
@@ -91,6 +96,8 @@ public final class MdtbbsCloudSaveDialog {
     private final MindustryVersion version;
     /// Local saves directory of the instance.
     private final Path savesDir;
+    /// Instance data directory holding `mods/` and `settings.bin`.
+    private final Path dataDir;
     /// Dialog layout whose body is swapped between slots and snapshots.
     private final JFXDialogLayout layout = new JFXDialogLayout();
     /// Progress bar shown while a save uploads, or `null` outside an upload.
@@ -114,6 +121,7 @@ public final class MdtbbsCloudSaveDialog {
 
     private MdtbbsCloudSaveDialog(MindustryVersion version, Path dataDir) {
         this.version = version;
+        this.dataDir = dataDir;
         this.savesDir = dataDir.resolve("saves");
     }
 
@@ -216,10 +224,12 @@ public final class MdtbbsCloudSaveDialog {
         upload.setOnAction(e -> upload(slot));
         JFXButton restore = FXUtils.newRaisedButton(i18n("xenon.cloud.restore"));
         restore.setOnAction(e -> openSnapshots(slot));
+        JFXButton rename = FXUtils.newRaisedButton(i18n("xenon.cloud.rename"));
+        rename.setOnAction(e -> renameSlot(slot));
         JFXButton delete = FXUtils.newRaisedButton(i18n("xenon.cloud.delete"));
         delete.setOnAction(e -> confirmDelete(slot));
 
-        HBox actions = new HBox(6, upload, restore, delete);
+        HBox actions = new HBox(6, upload, restore, rename, delete);
         actions.setAlignment(Pos.CENTER_RIGHT);
         HBox row = new HBox(8, text, actions);
         row.setAlignment(Pos.CENTER_LEFT);
@@ -239,6 +249,28 @@ public final class MdtbbsCloudSaveDialog {
             Schedulers.io().execute(() -> {
                 try {
                     client.createSlot(name);
+                    Platform.runLater(() -> {
+                        handler.resolve();
+                        reloadSlots();
+                    });
+                } catch (IOException e) {
+                    Platform.runLater(() -> handler.reject(messageOf(e)));
+                }
+            });
+        });
+    }
+
+    /// Renames a slot after prompting for a new name.
+    private void renameSlot(Slot slot) {
+        Controllers.prompt(i18n("xenon.cloud.rename.prompt"), (input, handler) -> {
+            String name = input == null ? "" : input.trim();
+            if (name.isBlank()) {
+                handler.reject(i18n("xenon.cloud.create.required"));
+                return;
+            }
+            Schedulers.io().execute(() -> {
+                try {
+                    client.renameSlot(slot.id(), name);
                     Platform.runLater(() -> {
                         handler.resolve();
                         reloadSlots();
@@ -294,6 +326,27 @@ public final class MdtbbsCloudSaveDialog {
     /// @param slot   slot to upload into
     /// @param source local `.msav` file
     private void uploadFile(Slot slot, Path source) {
+        String reason = "manual";
+        @Nullable String head = null;
+        try {
+            List<Snapshot> snapshots = client.snapshots(slot.id());
+            if (!snapshots.isEmpty()) head = snapshots.get(0).id();
+        } catch (IOException e) {
+            // The upload itself reports the real failure.
+        }
+        uploadFile(slot, source, optionsFor(source, head, reason, "normal", null));
+    }
+
+    /// Builds upload options with collected metadata.
+    private UploadOptions optionsFor(Path source, @Nullable String head, String reason,
+                                     String resolution, @Nullable String confirmHead) {
+        var metadata = MindustryCloudSaveMetadata.collect(source, version, dataDir,
+                ConfigHolder.globalConfig().getOrCreateCloudDeviceId());
+        return new UploadOptions(reason, head, resolution, confirmHead, metadata);
+    }
+
+    /// Uploads one file with explicit conflict options.
+    private void uploadFile(Slot slot, Path source, UploadOptions options) {
         showUploadProgress(source);
         Schedulers.io().execute(() -> {
             try {
@@ -309,13 +362,21 @@ public final class MdtbbsCloudSaveDialog {
                     });
                     return;
                 }
-                @Nullable String head = null;
-                List<Snapshot> snapshots = client.snapshots(slot.id());
-                if (!snapshots.isEmpty()) head = snapshots.get(0).id();
-                client.upload(slot.id(), source, head, this::reportUploadProgress);
+                client.uploadDetailed(slot.id(), source, options, this::reportUploadProgress);
                 Platform.runLater(() -> {
                     Controllers.showToast(i18n("xenon.cloud.upload.done",
                             source.getFileName().toString()));
+                    reloadSlots();
+                });
+            } catch (MdtbbsApiException e) {
+                if ("SAVE_CONFLICT".equals(e.getErrorCode())) {
+                    Platform.runLater(() -> showServerConflict(slot, source, options, e));
+                    return;
+                }
+                Platform.runLater(() -> {
+                    Controllers.dialog(
+                            i18n("xenon.cloud.upload.failed", messageOf(e)),
+                            i18n("message.error"), MessageDialogPane.MessageType.ERROR);
                     reloadSlots();
                 });
             } catch (IOException e) {
@@ -332,6 +393,28 @@ public final class MdtbbsCloudSaveDialog {
                 Platform.runLater(this::clearUploadProgress);
             }
         });
+    }
+
+    /// Explains a server-side conflict and offers the suggested copy strategy.
+    private void showServerConflict(Slot slot, Path source, UploadOptions options,
+                                    MdtbbsApiException error) {
+        clearUploadProgress();
+        Label title = new Label(i18n("xenon.cloud.conflict.server.title"));
+        title.getStyleClass().add("title-label");
+        Label hint = new Label(i18n("xenon.cloud.conflict.server.hint",
+                error.suggestedResolution().isBlank()
+                        ? "create_conflict_copy" : error.suggestedResolution()));
+        hint.setWrapText(true);
+        JFXButton keepBoth = FXUtils.newRaisedButton(i18n("xenon.cloud.conflict.keep_both"));
+        keepBoth.setOnAction(e -> uploadFile(slot, source,
+                options.withConflict("create_conflict_copy", null)));
+        JFXButton cancel = FXUtils.newRaisedButton(i18n("xenon.cloud.conflict.later"));
+        cancel.setOnAction(e -> reloadSlots());
+        HBox actions = new HBox(8, keepBoth, cancel);
+        actions.setAlignment(Pos.CENTER_LEFT);
+        VBox body = new VBox(8, title, hint, actions);
+        body.setPadding(new Insets(4, 0, 0, 0));
+        layout.setBody(body);
     }
 
     /// Replaces the dialog body with a progress view for one upload.
@@ -437,7 +520,8 @@ public final class MdtbbsCloudSaveDialog {
         name.getStyleClass().add("title-label");
         Label meta = new Label(i18n("xenon.cloud.snapshot.meta",
                 DATE.format(snapshot.createdAt()), formatSize(snapshot.size()),
-                snapshot.pinned() ? i18n("xenon.cloud.pinned") : ""));
+                snapshot.pinned() ? i18n("xenon.cloud.pinned") : "")
+                + snapshotDisplay(snapshot));
         meta.getStyleClass().add("subtitle-label");
 
         VBox text = new VBox(2, name, meta);
@@ -448,8 +532,10 @@ public final class MdtbbsCloudSaveDialog {
         JFXButton pin = FXUtils.newRaisedButton(snapshot.pinned()
                 ? i18n("xenon.cloud.unpin") : i18n("xenon.cloud.pin"));
         pin.setOnAction(e -> setPinned(slot, snapshot, !snapshot.pinned()));
+        JFXButton remove = FXUtils.newRaisedButton(i18n("xenon.cloud.snapshot.delete"));
+        remove.setOnAction(e -> confirmDeleteSnapshot(slot, snapshot));
 
-        HBox actions = new HBox(6, download, pin);
+        HBox actions = new HBox(6, download, pin, remove);
         actions.setAlignment(Pos.CENTER_RIGHT);
         HBox row = new HBox(8, text, actions);
         row.setAlignment(Pos.CENTER_LEFT);
@@ -490,6 +576,38 @@ public final class MdtbbsCloudSaveDialog {
                         i18n("message.error"), MessageDialogPane.MessageType.ERROR));
             }
         });
+    }
+
+    /// Deletes one snapshot after confirmation.
+    private void confirmDeleteSnapshot(Slot slot, Snapshot snapshot) {
+        String name = snapshot.fileName().isBlank() ? snapshot.id() : snapshot.fileName();
+        Controllers.confirm(i18n("xenon.cloud.snapshot.delete.confirm", name),
+                i18n("xenon.cloud.title"), () -> Schedulers.io().execute(() -> {
+                    try {
+                        client.deleteSnapshot(slot.id(), snapshot.id());
+                        Platform.runLater(() -> {
+                            Controllers.showToast(i18n("xenon.cloud.snapshot.delete.done"));
+                            openSnapshots(slot);
+                        });
+                    } catch (IOException e) {
+                        fail(e);
+                    }
+                }), null);
+    }
+
+    /// Formats the map, wave and Mod count recorded at upload.
+    private static String snapshotDisplay(Snapshot snapshot) {
+        StringBuilder text = new StringBuilder();
+        if (!snapshot.mapName().isBlank()) {
+            text.append("  ·  ").append(snapshot.mapName());
+        }
+        if (snapshot.wave() > 0) {
+            text.append("  ·  ").append(i18n("xenon.cloud.snapshot.wave", snapshot.wave()));
+        }
+        if (snapshot.modCount() > 0) {
+            text.append("  ·  ").append(i18n("xenon.cloud.snapshot.mods", snapshot.modCount()));
+        }
+        return text.toString();
     }
 
     /// Toggles the pinned flag of a snapshot.
@@ -675,9 +793,11 @@ public final class MdtbbsCloudSaveDialog {
         useCloud.setOnAction(e -> useCloud(comparison, ref));
         JFXButton keepLocal = FXUtils.newRaisedButton(i18n("xenon.cloud.conflict.keep_local"));
         keepLocal.setOnAction(e -> keepLocal(comparison, ref));
+        JFXButton keepBoth = FXUtils.newRaisedButton(i18n("xenon.cloud.conflict.keep_both"));
+        keepBoth.setOnAction(e -> keepBoth(comparison, ref));
         JFXButton later = FXUtils.newRaisedButton(i18n("xenon.cloud.conflict.later"));
         later.setOnAction(e -> checkNow());
-        HBox actions = new HBox(8, useCloud, keepLocal, later);
+        HBox actions = new HBox(8, useCloud, keepLocal, keepBoth, later);
         actions.setAlignment(Pos.CENTER_LEFT);
 
         VBox body = new VBox(8, title, cloudSide, localSide, hint, actions);
@@ -707,7 +827,36 @@ public final class MdtbbsCloudSaveDialog {
             checkNow();
             return;
         }
-        uploadFile(slotOf(ref), source);
+        Slot slot = slotOf(ref);
+        Schedulers.io().execute(() -> {
+            try {
+                // Preserve the cloud head locally before force-replacing it.
+                Path backups = savesDir.resolve("backups");
+                Files.createDirectories(backups);
+                Path backup = backups.resolve(stripExtension(comparison.fileName())
+                        + "-cloud-" + STAMP.format(java.time.Instant.now()) + ".msav");
+                client.download(slot.id(), ref.snapshotId(), backup, null);
+                Platform.runLater(() -> uploadFile(slot, source,
+                        optionsFor(source, ref.snapshotId(), "conflict",
+                                "force_replace_head", ref.snapshotId())));
+            } catch (IOException e) {
+                Platform.runLater(() -> Controllers.dialog(
+                        i18n("xenon.cloud.upload.failed", messageOf(e)),
+                        i18n("message.error"), MessageDialogPane.MessageType.ERROR));
+            }
+        });
+    }
+
+    /// Uploads the local file as a separate conflict copy.
+    private void keepBoth(SaveComparison comparison, HeadRef ref) {
+        Path source = savesDir.resolve(comparison.fileName());
+        if (!Files.isRegularFile(source)) {
+            Controllers.showToast(i18n("xenon.cloud.conflict.missing", comparison.fileName()));
+            checkNow();
+            return;
+        }
+        uploadFile(slotOf(ref), source, optionsFor(source, ref.snapshotId(), "conflict",
+                "create_conflict_copy", null));
     }
 
     /// Rebuilds a slot value from a cloud head so existing actions can be reused.
@@ -716,7 +865,7 @@ public final class MdtbbsCloudSaveDialog {
     /// @return the slot the head belongs to
     private static Slot slotOf(HeadRef ref) {
         return new Slot(ref.head().slotId(), ref.head().slotName(),
-                ref.head().createdAt(), ref.head().size(), 0L);
+                ref.head().createdAt(), ref.head().size(), 0L, ref.snapshotId());
     }
 
     // ------------------------------------------------------------------

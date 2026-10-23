@@ -290,6 +290,30 @@ public final class GlobalConfig extends ObservableSetting {
         mindustryLanDiscovery.set(enabled);
     }
 
+    @SerializedName("mindustryCloudDeviceId")
+    private final StringProperty mindustryCloudDeviceId = new SimpleStringProperty("");
+
+    /// Stable opaque device id used in cloud-save upload metadata.
+    ///
+    /// The id is generated lazily and never contains account or hardware
+    /// identifiers. It is only sent as the optional `device_id` upload field.
+    public StringProperty mindustryCloudDeviceIdProperty() {
+        return mindustryCloudDeviceId;
+    }
+
+    /// Returns the cloud device id, generating one on first use.
+    ///
+    /// @return a stable non-blank device id
+    public String getOrCreateCloudDeviceId() {
+        String current = mindustryCloudDeviceId.get();
+        if (current != null && !current.isBlank()) {
+            return current;
+        }
+        String created = "xenon-" + java.util.UUID.randomUUID();
+        mindustryCloudDeviceId.set(created);
+        return created;
+    }
+
     @SerializedName("disabledJava")
     private final ObservableSet<String> disabledJava = FXCollections.observableSet(new LinkedHashSet<>());
 

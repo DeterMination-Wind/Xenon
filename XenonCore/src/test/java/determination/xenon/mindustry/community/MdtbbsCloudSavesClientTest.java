@@ -21,6 +21,14 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import determination.xenon.mindustry.community.MdtbbsCloudSavesClient.Slot;
 import determination.xenon.mindustry.community.MdtbbsCloudSavesClient.SlotPage;
+import determination.xenon.mindustry.community.MdtbbsCloudSavesClient.DownloadResult;
+import determination.xenon.mindustry.community.MdtbbsCloudSavesClient.GameInfo;
+import determination.xenon.mindustry.community.MdtbbsCloudSavesClient.ModInfo;
+import determination.xenon.mindustry.community.MdtbbsCloudSavesClient.Quota;
+import determination.xenon.mindustry.community.MdtbbsCloudSavesClient.SaveInfo;
+import determination.xenon.mindustry.community.MdtbbsCloudSavesClient.UploadMetadata;
+import determination.xenon.mindustry.community.MdtbbsCloudSavesClient.UploadOptions;
+import determination.xenon.mindustry.community.MdtbbsCloudSavesClient.UploadResult;
 import org.jetbrains.annotations.NotNullByDefault;
 import org.junit.jupiter.api.Test;
 
@@ -161,6 +169,110 @@ public final class MdtbbsCloudSavesClientTest {
         }
     }
 
+    /// Uploads send the documented conflict and metadata fields.
+    @Test
+    public void uploadsConflictAndMetadataFields() throws Exception {
+        try (CloudServer server = CloudServer.start()) {
+            Path file = Files.createTempFile("xenon-cloud-upload", ".msav");
+            Files.writeString(file, "save-bytes");
+            UploadMetadata metadata = new UploadMetadata(
+                    new GameInfo("v157", 157),
+                    new SaveInfo("Salt Flats", 42, 3600),
+                    List.of(new ModInfo("example-mod", "Example", "1.2.0", "a".repeat(64))),
+                    "device-1");
+            UploadOptions options = new UploadOptions("after_exit", "snap0", "normal",
+                    null, metadata);
+
+            UploadResult result = server.client().uploadDetailed("slot1", file, options, null);
+
+            assertEquals("snap1", result.snapshotId());
+            assertFalse(result.noUploadRequired());
+            String body = server.lastUploadBody();
+            assertTrue(body.contains("\"reason\":\"after_exit\""));
+            assertTrue(body.contains("\"conflict_resolution\":\"normal\""));
+            assertTrue(body.contains("\"base_snapshot_id\":\"snap0\""));
+            assertTrue(body.contains("\"map_name\":\"Salt Flats\""));
+            assertTrue(body.contains("\"playtime_seconds\":3600"));
+            assertTrue(body.contains("\"id\":\"example-mod\""));
+            assertTrue(body.contains("\"device_id\":\"device-1\""));
+        }
+    }
+
+    /// A `no_upload_required` response skips the PUT and commit.
+    @Test
+    public void skipsUploadWhenServerAlreadyHasContent() throws Exception {
+        try (CloudServer server = CloudServer.start()) {
+            server.noUploadRequired = true;
+            Path file = Files.createTempFile("xenon-cloud-upload", ".msav");
+            Files.writeString(file, "save-bytes");
+
+            UploadResult result = server.client().uploadDetailed("slot1", file,
+                    UploadOptions.normal(null), null);
+
+            assertTrue(result.noUploadRequired());
+            assertEquals("snap-current", result.snapshotId());
+            assertEquals("", server.lastUpload());
+        }
+    }
+
+    /// Quota parses the documented slot and retention limits.
+    @Test
+    public void parsesQuotaLimits() throws Exception {
+        try (CloudServer server = CloudServer.start()) {
+            Quota quota = server.client().quota();
+            assertEquals(1000, quota.usedBytes());
+            assertEquals(10_000, quota.quotaBytes());
+            assertEquals(2048, quota.maxFileBytes());
+            assertEquals(20, quota.slotLimit());
+            assertEquals(3, quota.slotCount());
+            assertEquals(10, quota.retentionVersions());
+            assertEquals(30, quota.retentionDays());
+        }
+    }
+
+    /// A conflict exposes the suggested resolution and current head.
+    @Test
+    public void exposesConflictDetails() throws Exception {
+        try (CloudServer server = CloudServer.start()) {
+            server.conflict = true;
+            Path file = Files.createTempFile("xenon-cloud-upload", ".msav");
+            Files.writeString(file, "save-bytes");
+
+            MdtbbsApiException failure = assertThrows(MdtbbsApiException.class,
+                    () -> server.client().uploadDetailed("slot1", file,
+                            UploadOptions.normal("snap0"), null));
+
+            assertEquals("SAVE_CONFLICT", failure.getErrorCode());
+            assertEquals("create_conflict_copy", failure.suggestedResolution());
+            assertEquals("snap-head", failure.currentSnapshotId());
+        }
+    }
+
+    /// Downloads expose the ETag and Last-Modified validators.
+    @Test
+    public void capturesDownloadValidators() throws Exception {
+        try (CloudServer server = CloudServer.start()) {
+            Path target = Files.createTempFile("xenon-cloud-download", ".msav");
+            DownloadResult result = server.client().downloadDetailed("slot1", "snap1", target, null);
+            assertEquals("\"sha256-abc\"", result.etag());
+            assertEquals("Wed, 01 Oct 2026 12:00:00 GMT", result.lastModified());
+            assertEquals(16, result.size());
+        }
+    }
+
+    /// Slot metadata parses the current head and snapshot display fields.
+    @Test
+    public void parsesHeadAndSnapshotMetadata() throws Exception {
+        try (CloudServer server = CloudServer.start()) {
+            Slot slot = server.client().slot("slot1");
+            assertEquals("snap-head", slot.currentSnapshotId());
+            var snapshots = server.client().snapshots("slot1");
+            assertEquals("Salt Flats", snapshots.get(0).mapName());
+            assertEquals(12, snapshots.get(0).wave());
+            assertEquals(2, snapshots.get(0).modCount());
+        }
+    }
+
     /// Local fixture server serving the cloud-save routes.
     private static final class CloudServer implements AutoCloseable {
         private final HttpServer server;
@@ -170,6 +282,10 @@ public final class MdtbbsCloudSavesClientTest {
         private final AtomicInteger putStatus = new AtomicInteger(200);
         private final AtomicInteger commitStatus = new AtomicInteger(200);
         private final AtomicInteger releaseStatus = new AtomicInteger(200);
+        private final AtomicReference<String> lastUploadBody = new AtomicReference<>("");
+        private final AtomicReference<String> lastPatchBody = new AtomicReference<>("");
+        volatile boolean noUploadRequired;
+        volatile boolean conflict;
 
         private CloudServer(HttpServer server) {
             this.server = server;
@@ -203,6 +319,10 @@ public final class MdtbbsCloudSavesClientTest {
             return lastRelease.get();
         }
 
+        String lastUploadBody() {
+            return lastUploadBody.get();
+        }
+
         void failPut() {
             putStatus.set(500);
         }
@@ -218,10 +338,14 @@ public final class MdtbbsCloudSavesClientTest {
         private void handle(HttpExchange exchange) throws IOException {
             String path = exchange.getRequestURI().getPath();
             String method = exchange.getRequestMethod();
-            exchange.getRequestBody().readAllBytes();
+            byte[] request = exchange.getRequestBody().readAllBytes();
             if (path.equals("/api/v1/capabilities") && method.equals("GET")) {
                 exchange.getResponseHeaders().add("Set-Cookie", "csrf_token=cookie-1; Path=/");
                 respond(exchange, 200, "{\"data\":{}}");
+                return;
+            }
+            if (path.equals("/api/v1/game-saves/quota") && method.equals("GET")) {
+                respond(exchange, 200, QUOTA_JSON);
                 return;
             }
             if (path.equals("/api/v1/game-saves") && method.equals("GET")) {
@@ -229,7 +353,27 @@ public final class MdtbbsCloudSavesClientTest {
                 return;
             }
             if (path.equals("/api/v1/game-saves/slot1/uploads") && method.equals("POST")) {
-                respond(exchange, 200, UPLOAD_JSON);
+                lastUploadBody.set(new String(request, StandardCharsets.UTF_8));
+                if (conflict) {
+                    respond(exchange, 409, CONFLICT_JSON);
+                } else if (noUploadRequired) {
+                    respond(exchange, 200, NO_UPLOAD_JSON);
+                } else {
+                    respond(exchange, 200, UPLOAD_JSON);
+                }
+                return;
+            }
+            if (path.equals("/api/v1/game-saves/slot1") && method.equals("GET")) {
+                respond(exchange, 200, SLOT_JSON);
+                return;
+            }
+            if (path.equals("/api/v1/game-saves/slot1") && method.equals("PATCH")) {
+                lastPatchBody.set(new String(request, StandardCharsets.UTF_8));
+                respond(exchange, 200, SLOT_JSON);
+                return;
+            }
+            if (path.equals("/api/v1/game-saves/slot1/snapshots") && method.equals("GET")) {
+                respond(exchange, 200, SNAPSHOTS_JSON);
                 return;
             }
             if (path.equals("/api/v1/game-saves/uploads/u1/file") && method.equals("PUT")) {
@@ -254,7 +398,17 @@ public final class MdtbbsCloudSavesClientTest {
             if (path.equals("/api/v1/game-saves/slot1/snapshots/snap1/file")
                     && method.equals("GET")) {
                 lastDownload.set(method + " " + path);
-                respond(exchange, 200, SAVE_CONTENT);
+                byte[] bytes = SAVE_CONTENT.getBytes(StandardCharsets.UTF_8);
+                exchange.getResponseHeaders().add("Content-Type", "application/octet-stream");
+                exchange.getResponseHeaders().add("ETag", "\"sha256-abc\"");
+                exchange.getResponseHeaders().add("Last-Modified",
+                        "Wed, 01 Oct 2026 12:00:00 GMT");
+                exchange.sendResponseHeaders(200, bytes.length);
+                try (OutputStream out = exchange.getResponseBody()) {
+                    out.write(bytes);
+                } finally {
+                    exchange.close();
+                }
                 return;
             }
             respond(exchange, 404, "{\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"missing\"}}");
@@ -310,4 +464,33 @@ public final class MdtbbsCloudSavesClientTest {
             """;
 
     private static final String SAVE_CONTENT = "cloud-save-bytes";
+
+    private static final String QUOTA_JSON = """
+            {"data":{"used_bytes":1000,"limit_bytes":10000,
+              "max_file_size_bytes":2048,
+              "slots":{"used":3,"limit":20},
+              "retention":{"max_unpinned_versions_per_slot":10,"max_unpinned_age_days":30}}}
+            """;
+
+    private static final String NO_UPLOAD_JSON = """
+            {"data":{"upload_id":"u1","no_upload_required":true,"snapshot_id":"snap-current"}}
+            """;
+
+    private static final String CONFLICT_JSON = """
+            {"error":{"code":"SAVE_CONFLICT","message":"conflict","retryable":false,
+              "details":[{"current_snapshot_id":"snap-head",
+                          "suggested_resolution":"create_conflict_copy"}]}}
+            """;
+
+    private static final String SLOT_JSON = """
+            {"data":{"id":"slot1","name":"My save","updated_at":"2026-09-30T12:00:00Z",
+              "current_snapshot":{"id":"snap-head","size":2048,"revision":4}}}
+            """;
+
+    private static final String SNAPSHOTS_JSON = """
+            {"data":[{"id":"snap1","size":2048,"sha256":"abc","file_name":"a.msav",
+              "created_at":"2026-09-30T12:00:00Z","revision":4,
+              "save":{"map_name":"Salt Flats","wave":12},
+              "mods":[{"id":"a"},{"id":"b"}]}]}
+            """;
 }

@@ -10,6 +10,7 @@
 package determination.xenon.mindustry.community;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
@@ -457,8 +458,10 @@ public final class MdtbbsApiClient {
         }
         boolean retryable = error != null && error.has("retryable")
                 && error.get("retryable").getAsBoolean();
+        JsonArray details = error == null ? null : MdtbbsJson.arrayOf(error, "details");
         return new MdtbbsApiException(status, code,
-                message == null ? "MDTBBS API returned HTTP " + status : message, retryable);
+                message == null ? "MDTBBS API returned HTTP " + status : message, retryable,
+                details == null || details.isEmpty() ? null : details);
     }
 
     /// Captures the `csrf_token` cookie from a response.
