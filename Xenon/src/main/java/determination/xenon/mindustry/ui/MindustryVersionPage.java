@@ -63,6 +63,7 @@ public final class MindustryVersionPage extends DecoratorAnimatedPage implements
     private final TabHeader.Tab<MindustryHealthPane> healthTab = new TabHeader.Tab<>("healthTab");
     private final TabHeader.Tab<MindustrySettingsEditorPane> settingsTab =
             new TabHeader.Tab<>("settingsTab");
+    private final TabHeader.Tab<MindustryDevPane> devTab = new TabHeader.Tab<>("devTab");
 
     private final MindustryVersion version;
     private final Path versionRoot;
@@ -97,8 +98,10 @@ public final class MindustryVersionPage extends DecoratorAnimatedPage implements
         boolean archiveRuntime = launchSaveFile != null && !launchSaveFile.isBlank();
         settingsTab.setNodeSupplier(() ->
                 new MindustrySettingsEditorPane(launchDataDir, version.getId(), archiveRuntime));
+        devTab.setNodeSupplier(() -> new MindustryDevPane(version, launchDataDir));
 
-        tab = new TabHeader(transitionPane, modTab, saveTab, schematicTab, crashTab, healthTab, settingsTab);
+        tab = new TabHeader(transitionPane, modTab, saveTab, schematicTab, crashTab, healthTab,
+                settingsTab, devTab);
         tab.select(modTab);
 
         AdvancedListBox sideBar = new AdvancedListBox()
@@ -108,7 +111,8 @@ public final class MindustryVersionPage extends DecoratorAnimatedPage implements
                 .addNavigationDrawerTab(tab, schematicTab, i18n("xenon.mindustry.schematic.title"), SVG.SCHEMA, SVG.SCHEMA_FILL)
                 .addNavigationDrawerTab(tab, crashTab, i18n("xenon.mindustry.logs.title"), SVG.SCRIPT)
                 .addNavigationDrawerTab(tab, healthTab, i18n("xenon.mindustry.health.title"), SVG.CHECK, SVG.CHECK_CIRCLE)
-                .addNavigationDrawerTab(tab, settingsTab, i18n("xenon.mindustry.settings.title"), SVG.SETTINGS, SVG.SETTINGS_FILL);
+                .addNavigationDrawerTab(tab, settingsTab, i18n("xenon.mindustry.settings.title"), SVG.SETTINGS, SVG.SETTINGS_FILL)
+                .addNavigationDrawerTab(tab, devTab, i18n("xenon.dev.title"), SVG.SCRIPT);
         VBox.setVgrow(sideBar, Priority.ALWAYS);
 
         AdvancedListBox toolbar = new AdvancedListBox()

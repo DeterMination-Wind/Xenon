@@ -271,6 +271,14 @@ public final class MindustryClientRuntimeRegistry {
             return local == null ? -1L : local.getProcess().pid();
         }
 
+        /// Requests process termination for a controlled restart.
+        public void destroy() {
+            XenonLauncher.MindustryProcess local = process;
+            if (local != null) {
+                local.destroy();
+            }
+        }
+
         /// Whether the underlying JVM process is still alive.
         public boolean isAlive() {
             XenonLauncher.MindustryProcess local = process;

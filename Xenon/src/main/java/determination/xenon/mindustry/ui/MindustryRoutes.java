@@ -85,6 +85,10 @@ public final class MindustryRoutes {
     /// the original pid so the recorded session spans the whole play run.
     private static final Map<String, Long> ACTIVE_SESSIONS = new ConcurrentHashMap<>();
 
+    /// Instance ids whose current process is being restarted by the dev workflow.
+    private static final java.util.Set<String> DEV_RESTARTS =
+            java.util.concurrent.ConcurrentHashMap.newKeySet();
+
     private MindustryRoutes() {}
 
     /**
@@ -427,12 +431,50 @@ public final class MindustryRoutes {
         });
     }
 
+    /// Restarts an instance for the development workflow.
+    ///
+    /// A live process is destroyed and relaunched on exit; a stopped instance
+    /// is spawned directly. The relaunch skips cloud sync, automatic backups and
+    /// abnormal-exit dialogs, and the playtime session keeps spanning the run.
+    ///
+    /// @param version instance to restart
+    public static void restartForDevelopment(MindustryVersion version) {
+        String id = version.getId();
+        if (id == null || id.isBlank()) {
+            return;
+        }
+        MindustryClientRuntimeRegistry.RuntimeHandle handle =
+                MindustryClientRuntimeRegistry.shared().snapshot().get(id);
+        if (handle != null && handle.isAlive()) {
+            DEV_RESTARTS.add(id);
+            handle.destroy();
+            return;
+        }
+        Schedulers.io().execute(() -> {
+            try {
+                XenonGameRepository repo = MindustryImportFlow.repositoryForVersion(version);
+                Path versionRoot = repo.getVersionRoot(version);
+                spawnClient(repo, version, versionRoot);
+            } catch (Throwable ex) {
+                LOG.warning("Development restart failed", ex);
+            }
+        });
+    }
+
+    /// Whether an instance is currently being restarted by the dev workflow.
+    ///
+    /// @param id instance id
+    /// @return whether the next exit belongs to a development restart
+    public static boolean isDevRestarting(String id) {
+        return id != null && DEV_RESTARTS.contains(id);
+    }
+
     /// Pulls a newer cloud archive before the game starts.
     ///
     /// Runs on the launch IO thread, so a failure never blocks the game: the
     /// error is reported as a toast and the local instance starts unchanged.
     private static void syncCloudArchiveBeforeLaunch(MindustryVersion version, Path versionRoot) {
-        if (!version.isCloudAutoSync()) {
+        if (!version.isCloudAutoSync() || isDevRestarting(version.getId())) {
             return;
         }
         try {
@@ -601,6 +643,24 @@ public final class MindustryRoutes {
         } else if (event instanceof MindustryClientRuntimeRegistry.Exited exited) {
             LOG.info("Mindustry process exited: id=" + exited.id() + ", pid=" + exited.pid()
                     + ", code=" + exited.exitCode());
+            if (DEV_RESTARTS.remove(exited.id())) {
+                // A development rebuild asked for this exit: keep the playtime
+                // session and presence alive, skip cloud/backup processing, and
+                // spawn the replacement without user-facing error dialogs.
+                MindustryVersion version = get(exited.id()).orElse(null);
+                if (version != null) {
+                    Schedulers.io().execute(() -> {
+                        try {
+                            XenonGameRepository repo =
+                                    MindustryImportFlow.repositoryForVersion(version);
+                            spawnClient(repo, version, repo.getVersionRoot(version));
+                        } catch (Throwable ex) {
+                            LOG.warning("Development restart failed", ex);
+                        }
+                    });
+                }
+                return;
+            }
             if (!exited.reloadExit()) {
                 // Mindustry restarts itself after mod changes; the session stays
                 // open until the replacement process exits for good.
