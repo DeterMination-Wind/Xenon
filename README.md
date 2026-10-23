@@ -62,7 +62,7 @@ Mod、地图、蓝图和存档都可以围绕具体实例整理、备份和导�
 
 ### 与竞品的比较
 
-> 官方发行版与 Steam 版不提供启动器，Java、数据目录和 Mod/存档整理都需要手动完成。下表按各项目公开文档整理（截至 2026-10-18），竞品能力可能随版本变化，请以各自项目为准。
+> 官方发行版与 Steam 版不提供启动器，Java、数据目录和 Mod/存档整理都需要手动完成。下表按各项目公开文档整理（截至 2026-10-23），竞品能力可能随版本变化，请以各自项目为准。
 
 | 能力 | Xenon | [BookMdtLauncher](https://github.com/ch-BookBanana/BookMdtLauncher) | [Copper Launcher](https://github.com/MDTCopper/launcher) | [MDL](https://github.com/colorgarden/mindustry_launcherMDL) | [MindustryLauncher](https://github.com/BalaM314/MindustryLauncher) |
 | --- | --- | --- | --- | --- | --- |
@@ -74,10 +74,13 @@ Mod、地图、蓝图和存档都可以围绕具体实例整理、备份和导�
 | Mod 管理 | ✅ 社区索引、GitHub 直装、启停、依赖补齐 | ❌ | ✅ 浏览、启停、搜索与分类筛选 | ✅ 浏览、搜索、安装卸载 | ⚠️ 面向 Mod 开发 |
 | Mod 批量操作 / 拖拽导入 | ✅ 多选与 Shift/Ctrl 连选，批量启停 / 删除，拖入文件或文件夹导入（双层压缩包自动拆包） | ❌ | ✅ 多选与拖动连选，拖入文件导入，Windows 另支持拖出文件 | ❌ | ❌ |
 | 地图 / 蓝图 | ✅ mindustry.top 浏览安装，.msch 与分享码导入导出 | ❌ | ⚠️ 资源导入导出；蓝图浏览页因缺少数据源尚未开放 | ✅ 社区蓝图下载 | ❌ |
-| 存档 | ✅ 备份 / 导出，云存档只读检查与冲突处理 | ❌ | ⚠️ 资源导入导出与云存档（上传 / 恢复 / 缺口补全，开发阶段） | ✅ 扫描 / 解析 / 删除 | ❌ |
+| 存档 | ✅ 备份 / 导出，删除进入本地回收站，启动前/退出后自动备份 | ❌ | ⚠️ 资源导入导出与云存档（上传 / 恢复 / 缺口补全，开发阶段） | ✅ 扫描 / 解析 / 删除 | ❌ |
+| 云存档 | ✅ 单存档快照 + 冲突保留两份 + ETag 校验；整实例归档（存档/地图/蓝图/settings/Mod 清单）与按实例自动同步 | ❌ | ⚠️ 整包清单、自动同步、冲突副本（开发阶段，尚未发版） | ❌ | ❌ |
 | 游戏内设置编辑（settings.bin） | ✅ 表格化全量编辑、搜索、自动备份（保留 10 份）与一键恢复 | ❌ | ⚠️ 启动时覆盖游戏内设置与多人用户名 | ✅ 表格化编辑、搜索、自动备份 | ❌ |
-| 社区与联机 | ✅ MDTBBS 社区、好友与联机邀请 | ❌ | ❌ | ✅ EasyTier P2P 联机大厅 | ❌ |
-| Mod 开发工作流（源码编译 / 改动自动重启） | ❌ | ❌ | ❌ | ❌ | ✅ 编译源码、构建 Mod，文件变动自动重启 |
+| 社区与联机 | ✅ MDTBBS 1.7.0：公开大厅、审批加入、实时事件、伪局域网自动发现、好友动作 | ❌ | ⚠️ 官方中继本地代理与伪局域网（开发阶段，尚未发版） | ✅ EasyTier P2P 联机大厅 | ❌ |
+| Mod 开发工作流（源码编译 / 改动自动重启） | ✅ 工程目录 + 构建命令 + 产物 glob，源码监听、自动部署并重启 | ❌ | ❌ | ❌ | ✅ 编译源码、构建 Mod，文件变动自动重启 |
+| 回收站 / 实例分组 | ✅ 实例与存档归档回收站（恢复 / 永久删除 / 保留期），Mindustry 实例单层分组与 `group:` 筛选 | ❌ | ❌ | ❌ | ❌ |
+| 命令行 / 深链 / 启动脚本 | ✅ 无窗口 `--list/--launch/--export/--get/--set`，`.bat`/`.sh` 导出，`xenon://join|launch|open` | ❌ | ❌ | ❌ | ✅ 命令行（Node.js） |
 | 国内下载 | ✅ 多镜像自动回退，支持 GitHub CLI 自动认证 | ⚠️ JDK 走清华镜像，游戏本体依赖 GitHub 网络 | ✅ github / raw / api 分类测速切换，支持自定义节点 | ✅ 内置 6 种 GitHub 代理 | ❌ |
 | 下载来源策略 | ✅ 四档：优先国内源 / 优先官方源 / 仅国内源 / 仅官方源，与版本列表和变体入口联动 | ⚠️ 多来源 Release 与测速选优，无档位开关 | ✅ 三档：直连优先 / 镜像优先 / 仅官方 | ❌ | ❌ |
 | 下载限速 | ✅ 全局令牌桶限速（不限速 / 1 / 2 / 5 MB/s / 自定义，下限 32 KB/s） | ❌ | ✅ | ❌ | ❌ |
@@ -213,10 +216,13 @@ Every instance has its own logs and crash records. When a game exits or a mod ca
 | Mod management | ✅ Community index, GitHub install, enable/disable, dependency resolution | ❌ | ✅ Browse, toggle, search and category filters | ✅ Browse, search, install/uninstall | ⚠️ Mod development focused |
 | Batch mod actions / drag-and-drop import | ✅ Multi-select with Shift/Ctrl range, batch enable/disable/delete, drag files or folders in to import (nested archives are unpacked) | ❌ | ✅ Multi-select and drag-select, drag files in to import, file drag-out on Windows | ❌ | ❌ |
 | Maps / schematics | ✅ Browse and install from mindustry.top, .msch and share-code import/export | ❌ | ⚠️ Resource import/export; schematic browser paused for lack of a data source | ✅ Community schematic downloads | ❌ |
-| Saves | ✅ Backup/export plus read-only cloud-save checking and conflict handling | ❌ | ⚠️ Resource import/export plus cloud saves (upload / restore / gap fill, in development) | ✅ Scan / parse / delete | ❌ |
+| Saves | ✅ Backup/export, deleted archives go to a local recycle bin, automatic backups before launch and after exit | ❌ | ⚠️ Resource import/export plus cloud saves (upload / restore / gap fill, in development) | ✅ Scan / parse / delete | ❌ |
+| Cloud saves | ✅ Single-save snapshots with keep-both conflicts and ETag verification; whole-instance archives (saves/maps/schematics/settings/Mod manifest) with per-instance automatic sync | ❌ | ⚠️ Whole-instance manifests, automatic sync and conflict copies (in development, unreleased) | ❌ | ❌ |
 | In-game settings editing (settings.bin) | ✅ Full table editor, search, automatic backup (latest 10 kept) and one-click restore | ❌ | ⚠️ Overrides in-game settings and the multiplayer username at launch | ✅ Table editor, search, automatic backup | ❌ |
-| Community & multiplayer | ✅ MDTBBS community, friends and invites | ❌ | ❌ | ✅ EasyTier P2P lobby | ❌ |
-| Mod development workflow (source compile / restart on change) | ❌ | ❌ | ❌ | ❌ | ✅ Compiles sources, builds mods, restarts on file changes |
+| Community & multiplayer | ✅ MDTBBS 1.7.0: public lobby, approval joins, realtime events, pseudo-LAN discovery and friend actions | ❌ | ⚠️ Official relay local proxy and pseudo-LAN (in development, unreleased) | ✅ EasyTier P2P lobby | ❌ |
+| Mod development workflow (source compile / restart on change) | ✅ Project directory + build command + artifact glob, source watching, automatic deploy and restart | ❌ | ❌ | ❌ | ✅ Compiles sources, builds mods, restarts on file changes |
+| Recycle bin / instance groups | ✅ Recycle bin for instances and save archives (restore / permanent delete / retention), single-level Mindustry groups with a `group:` filter | ❌ | ❌ | ❌ | ❌ |
+| CLI / deep links / launch scripts | ✅ Headless `--list/--launch/--export/--get/--set`, `.bat`/`.sh` export, `xenon://join|launch|open` | ❌ | ❌ | ❌ | ✅ CLI (Node.js) |
 | China-friendly downloads | ✅ Automatic mirror fallback, optional GitHub CLI authentication | ⚠️ Tsinghua mirror for the JDK; game downloads depend on GitHub | ✅ Speed-tested mirrors per github/raw/api category, custom nodes supported | ✅ Six built-in GitHub proxies | ❌ |
 | Download source policy | ✅ Four tiers: prefer domestic / prefer official / domestic only / official only, wired to the version list and variant entries | ⚠️ Multiple Release sources with speed-based selection, no tier switch | ✅ Three tiers: direct first / mirror first / official only | ❌ | ❌ |
 | Download rate limiting | ✅ Global token bucket (unlimited / 1 / 2 / 5 MB/s / custom, 32 KB/s floor) | ❌ | ✅ | ❌ | ❌ |

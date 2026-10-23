@@ -201,7 +201,7 @@ public final class MindustryNetplayPane extends BorderPane {
                 ClientApp target = null;
                 for (ClientApp client : preferences.clients()) {
                     String haystack = (client.clientId() + " " + client.name() + " "
-                            + client.launchUriTemplate()).toLowerCase();
+                            + client.launchUriTemplate()).toLowerCase(java.util.Locale.ROOT);
                     if (haystack.contains("xenon")) {
                         target = client;
                         break;

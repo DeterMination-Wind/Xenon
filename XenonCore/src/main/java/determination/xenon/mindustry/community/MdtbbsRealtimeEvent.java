@@ -21,8 +21,6 @@ import com.google.gson.JsonObject;
 import org.jetbrains.annotations.NotNullByDefault;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.LinkedHashSet;
-import java.util.Set;
 
 /// One realtime event delivered by MDTBBS `/realtime/v1`.
 ///
@@ -30,6 +28,7 @@ import java.util.Set;
 /// @param event     event name such as `multiplayer.join_request.created`
 /// @param timestamp server timestamp in milliseconds
 /// @param data      event payload
+@NotNullByDefault
 public record MdtbbsRealtimeEvent(String id, String event, long timestamp, JsonObject data) {
 
     /// Parses one `event` frame.
@@ -91,48 +90,5 @@ public record MdtbbsRealtimeEvent(String id, String event, long timestamp, JsonO
                 || event.startsWith("candidate.")
                 || event.startsWith("relay.")
                 || !sessionId().isBlank();
-    }
-}
-
-/// Bounded de-duplicator for realtime event ids.
-///
-/// Events can be replayed after a resume, and the same id must be delivered
-/// once. The set keeps the newest [#CAPACITY] ids; older ids are evicted so a
-/// long session cannot grow without bound.
-@NotNullByDefault
-final class MdtbbsRealtimeDeduper {
-
-    /// Number of event ids remembered.
-    public static final int CAPACITY = 512;
-
-    private final Set<String> seen = new LinkedHashSet<>();
-
-    /// Records one event id.
-    ///
-    /// @param id event id
-    /// @return `true` when the id is new and should be delivered
-    public synchronized boolean accept(String id) {
-        if (id == null || id.isBlank() || !seen.add(id)) {
-            return false;
-        }
-        while (seen.size() > CAPACITY) {
-            var iterator = seen.iterator();
-            if (!iterator.hasNext()) {
-                break;
-            }
-            iterator.next();
-            iterator.remove();
-        }
-        return true;
-    }
-
-    /// Forgets every remembered id; used after `resume_failed`.
-    public synchronized void reset() {
-        seen.clear();
-    }
-
-    /// Number of remembered ids.
-    public synchronized int size() {
-        return seen.size();
     }
 }

@@ -25,7 +25,6 @@ import determination.xenon.mindustry.dev.MindustryDevBuilder;
 import determination.xenon.mindustry.dev.MindustryDevWatcher;
 import determination.xenon.mindustry.mod.MindustryModManager;
 import determination.xenon.task.Schedulers;
-import determination.xenon.ui.Controllers;
 import determination.xenon.ui.FXUtils;
 import javafx.application.Platform;
 import javafx.geometry.Insets;

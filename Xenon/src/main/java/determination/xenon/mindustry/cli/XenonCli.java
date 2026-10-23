@@ -192,7 +192,7 @@ public final class XenonCli {
             case "download.source" -> {
                 try {
                     ConfigHolder.globalConfig().setMindustryDownloadSource(
-                            MindustryDownloadSource.valueOf(args[2].toUpperCase()));
+                            MindustryDownloadSource.valueOf(args[2].toUpperCase(java.util.Locale.ROOT)));
                 } catch (IllegalArgumentException e) {
                     System.err.println("xenon: valid sources are "
                             + java.util.Arrays.toString(MindustryDownloadSource.values()));

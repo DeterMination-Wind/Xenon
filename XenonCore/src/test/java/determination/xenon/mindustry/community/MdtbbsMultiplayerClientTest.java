@@ -265,9 +265,9 @@ public final class MdtbbsMultiplayerClientTest {
 
             String response = switch (path) {
                 case "/api/v1/multiplayer/capabilities" ->
-                        legacyCapabilities ? legacyCapabilitiesJson() : capabilitiesJson();
+                    legacyCapabilities ? legacyCapabilitiesJson() : capabilitiesJson();
                 case "/api/v1/multiplayer/sessions" -> "GET".equals(method)
-                        ? lobbyJson() : createdSessionJson();
+                    ? lobbyJson() : createdSessionJson();
                 case "/api/v1/multiplayer/preferences" -> preferencesJson();
                 case "/api/v1/multiplayer/join-intents/intent_1/consume" -> consumedIntentJson();
                 case "/api/v1/multiplayer/sessions/resolve-code" -> resolvedSessionJson();

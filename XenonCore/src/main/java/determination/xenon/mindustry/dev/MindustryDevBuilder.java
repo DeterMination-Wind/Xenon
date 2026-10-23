@@ -85,7 +85,7 @@ public final class MindustryDevBuilder {
         }
         String command = options.command() == null || options.command().isBlank()
                 ? defaultCommand() : options.command();
-        boolean windows = System.getProperty("os.name", "").toLowerCase().contains("win");
+        boolean windows = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).contains("win");
         List<String> invocation = windows
                 ? List.of("cmd.exe", "/c", command)
                 : List.of("sh", "-c", command);
@@ -176,7 +176,7 @@ public final class MindustryDevBuilder {
 
     /// Default command for the current platform.
     private static String defaultCommand() {
-        boolean windows = System.getProperty("os.name", "").toLowerCase().contains("win");
+        boolean windows = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).contains("win");
         return windows ? "gradlew.bat build" : "./gradlew build";
     }
 
