@@ -21,8 +21,13 @@ import com.jfoenix.controls.JFXButton;
 import com.jfoenix.controls.JFXDialogLayout;
 import determination.xenon.Metadata;
 import determination.xenon.mindustry.MindustryVersion;
+import determination.xenon.mindustry.community.MdtbbsMultiplayerClient.ClientApp;
+import determination.xenon.mindustry.community.MdtbbsMultiplayerClient.Preferences;
+import determination.xenon.mindustry.community.MdtbbsMultiplayerClient.Session;
+import determination.xenon.mindustry.community.MdtbbsMultiplayerClient.SessionPage;
 import determination.xenon.mindustry.community.MdtbbsSocialClient;
 import determination.xenon.mindustry.netplay.MdtbbsNetplayManager;
+import determination.xenon.mindustry.netplay.MdtbbsNetplayManager.JoinRequest;
 import determination.xenon.netplay.EasyTierRuntime;
 import determination.xenon.netplay.PublicServerCatalog;
 import determination.xenon.setting.Profiles;
@@ -84,6 +89,11 @@ public final class MindustryNetplayPane extends BorderPane {
     private final CheckBox mdtbbsApproval = new CheckBox();
     private final Label mdtbbsStatus = new Label();
     private final Label mdtbbsAddress = new Label();
+    private final VBox mdtbbsLobbyBox = new VBox(2);
+    private final Label mdtbbsLobbyStatus = new Label();
+    private final VBox mdtbbsApprovalBox = new VBox(2);
+    private final JFXButton mdtbbsDefaultClient = FXUtils.newRaisedButton(i18n("xenon.netplay.mdtbbs.default_client"));
+    private boolean lobbyLoaded;
     private final TextField mdtbbsCodeField = new TextField();
     private final JFXButton mdtbbsCreate = FXUtils.newRaisedButton(i18n("xenon.netplay.mdtbbs.create"));
     private final JFXButton mdtbbsInvite = FXUtils.newRaisedButton(i18n("xenon.netplay.mdtbbs.invite"));
@@ -91,6 +101,7 @@ public final class MindustryNetplayPane extends BorderPane {
     private final JFXButton mdtbbsJoin = FXUtils.newRaisedButton(i18n("xenon.netplay.mdtbbs.join"));
     private final JFXButton mdtbbsCopyAddress = FXUtils.newRaisedButton(i18n("xenon.netplay.mdtbbs.copy_address"));
     private final JFXButton mdtbbsCopyCode = FXUtils.newRaisedButton(i18n("xenon.netplay.mdtbbs.copy_code"));
+    private final JFXButton mdtbbsLobbyRefresh = FXUtils.newRaisedButton(i18n("button.refresh"));
 
     /// Returns the process-wide EasyTier runtime, installing the shutdown
     /// hook that stops the room when the launcher exits.
@@ -124,6 +135,8 @@ public final class MindustryNetplayPane extends BorderPane {
         VBox root = new VBox(10,
                 title, hint,
                 mdtbbsControls(),
+                mdtbbsApprovalSection(),
+                mdtbbsLobbySection(),
                 toolbar, serverStatus,
                 section(i18n("xenon.netplay.servers.title"), serverBox, 240),
                 roomControls(),
@@ -140,6 +153,161 @@ public final class MindustryNetplayPane extends BorderPane {
         refreshServers();
         updateRoomStatus();
         refreshMdtbbs();
+        refreshMdtbbsLobby();
+    }
+
+    /// Builds the host-side join-request block.
+    private VBox mdtbbsApprovalSection() {
+        Label title = new Label(i18n("xenon.netplay.mdtbbs.approval.title"));
+        title.setStyle("-fx-font-weight: BOLD;");
+        ScrollPane scroll = new ScrollPane(mdtbbsApprovalBox);
+        scroll.setFitToWidth(true);
+        scroll.setPrefHeight(120);
+        scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        FXUtils.smoothScrolling(scroll);
+        return new VBox(4, title, scroll);
+    }
+
+    /// Renders the pending join requests of the hosted room.
+    private void refreshApprovals() {
+        mdtbbsApprovalBox.getChildren().clear();
+        List<JoinRequest> requests = mdtbbs.joinRequests();
+        if (requests.isEmpty()) {
+            mdtbbsApprovalBox.getChildren().add(
+                    new Label(i18n("xenon.netplay.mdtbbs.approval.empty")));
+            return;
+        }
+        for (JoinRequest request : requests) {
+            AdvancedListItem item = new AdvancedListItem();
+            item.setTitle(request.username().isBlank()
+                    ? "#" + request.userId() : request.username());
+            item.setSubtitle(request.sessionId());
+            JFXButton accept = FXUtils.newRaisedButton(i18n("xenon.netplay.mdtbbs.approval.accept"));
+            accept.setOnAction(e -> mdtbbs.approveJoinRequest(request.id()));
+            JFXButton reject = FXUtils.newRaisedButton(i18n("xenon.netplay.mdtbbs.approval.reject"));
+            reject.setOnAction(e -> mdtbbs.rejectJoinRequest(request.id()));
+            HBox actions = new HBox(6, accept, reject);
+            actions.setAlignment(Pos.CENTER_RIGHT);
+            item.setRightGraphic(actions);
+            mdtbbsApprovalBox.getChildren().add(item);
+        }
+    }
+
+    /// Sets the registered Xenon client as the default join-intent launcher.
+    private void setDefaultMdtbbsClient() {
+        Schedulers.io().execute(() -> {
+            try {
+                Preferences preferences = CommunityServices.multiplayer().preferences();
+                ClientApp target = null;
+                for (ClientApp client : preferences.clients()) {
+                    String haystack = (client.clientId() + " " + client.name() + " "
+                            + client.launchUriTemplate()).toLowerCase();
+                    if (haystack.contains("xenon")) {
+                        target = client;
+                        break;
+                    }
+                }
+                if (target == null) {
+                    Platform.runLater(() -> mdtbbsStatus.setText(
+                            i18n("xenon.netplay.mdtbbs.default_client.missing")));
+                    return;
+                }
+                ClientApp chosen = target;
+                CommunityServices.multiplayer().setDefaultClient(chosen.clientId());
+                Platform.runLater(() -> mdtbbsStatus.setText(
+                        i18n("xenon.netplay.mdtbbs.default_client.done", chosen.name())));
+            } catch (IOException e) {
+                LOG.warning("Cannot update MDTBBS multiplayer preferences", e);
+                Platform.runLater(() -> mdtbbsStatus.setText(i18n(
+                        "xenon.netplay.mdtbbs.default_client.failed", MdtbbsMessages.describe(e))));
+            }
+        });
+    }
+
+    /// Builds the public-lobby block.
+    private VBox mdtbbsLobbySection() {
+        Label title = new Label(i18n("xenon.netplay.mdtbbs.lobby.title"));
+        title.setStyle("-fx-font-weight: BOLD;");
+        mdtbbsLobbyRefresh.setOnAction(e -> refreshMdtbbsLobby());
+        HBox header = new HBox(8, title, mdtbbsLobbyRefresh);
+        header.setAlignment(Pos.CENTER_LEFT);
+        mdtbbsLobbyStatus.setWrapText(true);
+        ScrollPane scroll = new ScrollPane(mdtbbsLobbyBox);
+        scroll.setFitToWidth(true);
+        scroll.setPrefHeight(220);
+        scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        FXUtils.smoothScrolling(scroll);
+        return new VBox(4, header, mdtbbsLobbyStatus, scroll);
+    }
+
+    /// Loads the first page of discoverable sessions.
+    private void refreshMdtbbsLobby() {
+        if (!mdtbbs.isLoggedIn()) {
+            mdtbbsLobbyBox.getChildren().clear();
+            mdtbbsLobbyStatus.setText(i18n("xenon.netplay.mdtbbs.login"));
+            return;
+        }
+        lobbyLoaded = true;
+        mdtbbsLobbyStatus.setText(i18n("message.doing"));
+        Schedulers.io().execute(() -> {
+            try {
+                SessionPage page = CommunityServices.multiplayer().sessions(1, 20);
+                Platform.runLater(() -> showMdtbbsLobby(page));
+            } catch (IOException e) {
+                LOG.warning("Cannot load the MDTBBS public lobby", e);
+                Platform.runLater(() -> mdtbbsLobbyStatus.setText(
+                        i18n("xenon.netplay.mdtbbs.lobby.failed", MdtbbsMessages.describe(e))));
+            }
+        });
+    }
+
+    /// Renders one lobby page.
+    private void showMdtbbsLobby(SessionPage page) {
+        mdtbbsLobbyBox.getChildren().clear();
+        if (page.sessions().isEmpty()) {
+            mdtbbsLobbyBox.getChildren().add(new Label(i18n("xenon.netplay.mdtbbs.lobby.empty")));
+            mdtbbsLobbyStatus.setText(i18n("xenon.netplay.mdtbbs.lobby.empty"));
+            return;
+        }
+        mdtbbsLobbyStatus.setText(page.hasMore()
+                ? i18n("xenon.netplay.mdtbbs.lobby.more")
+                : i18n("xenon.netplay.mdtbbs.lobby.count", page.sessions().size()));
+        for (Session session : page.sessions()) {
+            mdtbbsLobbyBox.getChildren().add(mdtbbsLobbyItem(session));
+        }
+    }
+
+    /// Builds one lobby row with a join action.
+    private AdvancedListItem mdtbbsLobbyItem(Session session) {
+        AdvancedListItem item = new AdvancedListItem();
+        String name = session.activityName().isBlank() ? session.id() : session.activityName();
+        item.setTitle(name);
+        item.setSubtitle(i18n("xenon.netplay.mdtbbs.lobby.players",
+                session.currentPlayers(), session.maxPlayers())
+                + "  ·  " + sessionVisibilityLabel(session.visibility())
+                + (session.gameVersion().isBlank() ? "" : "  ·  " + session.gameVersion()));
+        JFXButton join = FXUtils.newRaisedButton(session.requireApproval()
+                ? i18n("xenon.netplay.mdtbbs.lobby.request")
+                : i18n("xenon.netplay.mdtbbs.lobby.join"));
+        join.setDisable(mdtbbs.hasSession() || mdtbbs.awaitingApproval());
+        join.setOnAction(e -> {
+            if (session.requireApproval()) {
+                mdtbbs.requestJoin(session.id());
+            } else {
+                mdtbbs.joinByCode(session.id());
+            }
+        });
+        item.setRightGraphic(join);
+        return item;
+    }
+
+    /// Maps a visibility value to its localized label.
+    private static String sessionVisibilityLabel(String visibility) {
+        return switch (visibility == null ? "" : visibility) {
+            case "private" -> i18n("xenon.netplay.mdtbbs.visibility.private");
+            case "public" -> i18n("xenon.netplay.mdtbbs.visibility.public");
+            default -> i18n("xenon.netplay.mdtbbs.visibility.friends");
+        };
     }
 
     /// One localized choice carrying the wire value.
@@ -194,8 +362,10 @@ public final class MindustryNetplayPane extends BorderPane {
         });
         HBox axisRow = new HBox(8, mdtbbsVisibility, mdtbbsJoinPolicy, mdtbbsApproval);
         axisRow.setAlignment(Pos.CENTER_LEFT);
-        HBox createRow = new HBox(8, create, codeRoom, invite, mdtbbsCopyCode, leave);
+        HBox createRow = new HBox(8, create, codeRoom, invite, mdtbbsDefaultClient,
+                mdtbbsCopyCode, leave);
         createRow.setAlignment(Pos.CENTER_LEFT);
+        mdtbbsDefaultClient.setOnAction(e -> setDefaultMdtbbsClient());
 
         mdtbbsCodeField.setPromptText(i18n("xenon.netplay.mdtbbs.code.prompt"));
         FXUtils.setLimitWidth(mdtbbsCodeField, 200);
@@ -245,14 +415,20 @@ public final class MindustryNetplayPane extends BorderPane {
     /// Refreshes the MDTBBS status block from the session manager.
     private void refreshMdtbbs() {
         boolean working = mdtbbs.phase() == MdtbbsNetplayManager.Phase.WORKING;
+        boolean busy = working || mdtbbs.awaitingApproval();
         boolean attached = mdtbbs.hasSession();
         boolean ready = mdtbbs.isLoggedIn();
-        mdtbbsCreate.setDisable(!ready || working || attached);
-        mdtbbsJoin.setDisable(!ready || working || attached);
+        if (ready && !lobbyLoaded) {
+            refreshMdtbbsLobby();
+        }
+        mdtbbsCreate.setDisable(!ready || busy || attached);
+        mdtbbsJoin.setDisable(!ready || busy || attached);
         mdtbbsLeave.setDisable(!attached && !working);
         mdtbbsInvite.setDisable(!ready || !mdtbbs.hosting());
         mdtbbsCopyAddress.setDisable(mdtbbs.localAddress().isBlank());
         mdtbbsCopyCode.setDisable(mdtbbs.joinCode().isBlank());
+        mdtbbsDefaultClient.setDisable(!ready || busy);
+        refreshApprovals();
         if (!ready) {
             mdtbbsStatus.setText(i18n("xenon.netplay.mdtbbs.login"));
             mdtbbsAddress.setText("");
@@ -266,7 +442,9 @@ public final class MindustryNetplayPane extends BorderPane {
                         ? i18n("xenon.netplay.mdtbbs.hosting")
                         : i18n("xenon.netplay.mdtbbs.hosting.code", code));
             }
-            case GUEST_WAITING -> mdtbbsStatus.setText(i18n("xenon.netplay.mdtbbs.waiting"));
+            case GUEST_WAITING -> mdtbbsStatus.setText(mdtbbs.awaitingApproval()
+                    ? i18n("xenon.netplay.mdtbbs.lobby.waiting")
+                    : i18n("xenon.netplay.mdtbbs.waiting"));
             case GUEST_READY -> mdtbbsStatus.setText(i18n("xenon.netplay.mdtbbs.ready"));
             case ERROR -> mdtbbsStatus.setText(i18n("xenon.netplay.mdtbbs.failed",
                     mdtbbsErrorText(mdtbbs.errorCode(), mdtbbs.statusDetail())));
@@ -293,6 +471,8 @@ public final class MindustryNetplayPane extends BorderPane {
             case "JOIN_INTENT_CLIENT_MISMATCH" -> "xenon.netplay.mdtbbs.error.client";
             case "JOIN_INTENT_EXPIRED", "JOIN_INTENT_RECOVERY_EXPIRED", "JOIN_INTENT_INVALID" -> "xenon.netplay.mdtbbs.error.intent";
             case "PEER_EXPIRED", "PEER_RESUME_INVALID", "PEER_UNAVAILABLE" -> "xenon.netplay.mdtbbs.error.peer";
+            case "JOIN_REQUEST_REJECTED" -> "xenon.netplay.mdtbbs.error.rejected";
+            case "HOST_LEFT" -> "xenon.netplay.mdtbbs.error.host_left";
             case "AUTH_INVALID" -> "xenon.netplay.mdtbbs.error.credential";
             case "AUTH_EXPIRED" -> "xenon.netplay.mdtbbs.error.expired";
             default -> "xenon.netplay.mdtbbs.error.generic";

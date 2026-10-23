@@ -17,8 +17,10 @@
  */
 package determination.xenon.mindustry.netplay;
 
+import com.google.gson.JsonObject;
 import determination.xenon.mindustry.community.MdtbbsApiException;
 import determination.xenon.mindustry.community.MdtbbsCommunity;
+import determination.xenon.mindustry.community.MdtbbsJson;
 import determination.xenon.mindustry.community.MdtbbsMultiplayerApi;
 import determination.xenon.mindustry.community.MdtbbsMultiplayerClient;
 import determination.xenon.mindustry.community.MdtbbsMultiplayerClient.Capabilities;
@@ -26,7 +28,10 @@ import determination.xenon.mindustry.community.MdtbbsMultiplayerClient.Joined;
 import determination.xenon.mindustry.community.MdtbbsMultiplayerClient.Peer;
 import determination.xenon.mindustry.community.MdtbbsMultiplayerClient.RelayAllocation;
 import determination.xenon.mindustry.community.MdtbbsMultiplayerClient.Session;
+import determination.xenon.mindustry.community.MdtbbsRealtimeClient;
+import determination.xenon.mindustry.community.MdtbbsRealtimeEvent;
 import determination.xenon.netplay.mdtbbs.MdtbbsRelayTunnel;
+import determination.xenon.setting.ConfigHolder;
 import determination.xenon.task.Schedulers;
 import determination.xenon.util.logging.Logger;
 import org.jetbrains.annotations.NotNullByDefault;
@@ -37,6 +42,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -112,9 +118,22 @@ public final class MdtbbsNetplayManager {
         void update(@Nullable String sessionId, boolean hosting);
     }
 
+    /// One pending join request shown to the host.
+    ///
+    /// @param id       join request id
+    /// @param sessionId target session
+    /// @param userId   requesting user id, or `0` when unknown
+    /// @param username requesting user name, or empty
+    public record JoinRequest(String id, String sessionId, long userId, String username) {
+    }
+
     private final BooleanSupplier loggedIn;
+    private final BooleanSupplier lanDiscovery;
     private final MdtbbsMultiplayerApi multiplayer;
     private final TunnelFactory tunnelFactory;
+    private final @Nullable MdtbbsRealtimeClient realtime;
+    private final List<JoinRequest> joinRequests = new CopyOnWriteArrayList<>();
+    private volatile boolean realtimeStarted;
     private final long heartbeatSeconds;
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(runnable -> {
         Thread thread = new Thread(runnable, "xenon-mdtbbs-netplay");
@@ -145,6 +164,9 @@ public final class MdtbbsNetplayManager {
     private volatile String visibility = "";
     private volatile String joinPolicy = "";
     private volatile boolean requireApproval;
+    private volatile String activityName = "";
+    private volatile String requestedSessionId = "";
+    private volatile boolean awaitingApproval;
     private volatile int playerCount;
     private volatile int maxPlayers;
     private volatile @Nullable Capabilities capabilities;
@@ -156,9 +178,11 @@ public final class MdtbbsNetplayManager {
     /// @param community account coordinator carrying the MindAuth token
     public MdtbbsNetplayManager(MdtbbsCommunity community) {
         this(community::isLoggedIn,
+                () -> ConfigHolder.globalConfig().isMindustryLanDiscovery(),
                 new MdtbbsMultiplayerClient(community.api()),
                 MdtbbsRelayTunnel::new,
-                DEFAULT_HEARTBEAT_SECONDS);
+                DEFAULT_HEARTBEAT_SECONDS,
+                new MdtbbsRealtimeClient(community.api()));
     }
 
     /// Creates a manager with injected dependencies (tests).
@@ -169,10 +193,40 @@ public final class MdtbbsNetplayManager {
     /// @param heartbeatSeconds peer heartbeat interval
     MdtbbsNetplayManager(BooleanSupplier loggedIn, MdtbbsMultiplayerApi multiplayer,
                          TunnelFactory tunnelFactory, long heartbeatSeconds) {
+        this(loggedIn, () -> true, multiplayer, tunnelFactory, heartbeatSeconds, null);
+    }
+
+    /// Creates a manager with injected dependencies (tests).
+    ///
+    /// @param loggedIn       whether the account is logged in
+    /// @param lanDiscovery   whether guest sessions advertise on the LAN list
+    /// @param multiplayer    signalling client
+    /// @param tunnelFactory  relay tunnel factory
+    /// @param heartbeatSeconds peer heartbeat interval
+    MdtbbsNetplayManager(BooleanSupplier loggedIn, BooleanSupplier lanDiscovery,
+                         MdtbbsMultiplayerApi multiplayer,
+                         TunnelFactory tunnelFactory, long heartbeatSeconds) {
+        this(loggedIn, lanDiscovery, multiplayer, tunnelFactory, heartbeatSeconds, null);
+    }
+
+    /// Creates a manager with injected dependencies (tests).
+    ///
+    /// @param loggedIn       whether the account is logged in
+    /// @param lanDiscovery   whether guest sessions advertise on the LAN list
+    /// @param multiplayer    signalling client
+    /// @param tunnelFactory  relay tunnel factory
+    /// @param heartbeatSeconds peer heartbeat interval
+    /// @param realtime       realtime event client, or `null` in tests
+    MdtbbsNetplayManager(BooleanSupplier loggedIn, BooleanSupplier lanDiscovery,
+                         MdtbbsMultiplayerApi multiplayer,
+                         TunnelFactory tunnelFactory, long heartbeatSeconds,
+                         @Nullable MdtbbsRealtimeClient realtime) {
         this.loggedIn = loggedIn;
+        this.lanDiscovery = lanDiscovery;
         this.multiplayer = multiplayer;
         this.tunnelFactory = tunnelFactory;
         this.heartbeatSeconds = Math.max(1L, heartbeatSeconds);
+        this.realtime = realtime;
     }
 
     /// Replaces the activity sink used for the friends list.
@@ -252,6 +306,18 @@ public final class MdtbbsNetplayManager {
     /// Whether a session is attached.
     public boolean hasSession() {
         return !sessionId.isEmpty();
+    }
+
+    /// Whether a join request is waiting for host approval.
+    public boolean awaitingApproval() {
+        return awaitingApproval;
+    }
+
+    /// Pending join requests shown to the host.
+    ///
+    /// @return an immutable snapshot of the pending requests
+    public List<JoinRequest> joinRequests() {
+        return List.copyOf(joinRequests);
     }
 
     /// Whether the account is logged in.
@@ -390,6 +456,88 @@ public final class MdtbbsNetplayManager {
         });
     }
 
+    /// Requests to join a session that requires host approval.
+    ///
+    /// The request stays valid for five minutes; when the host approves it the
+    /// realtime client calls [#onJoinApproved(String)] with the returned join
+    /// intent. Joining without an approval is refused by the server, so this is
+    /// the only correct path for `require_approval` rooms.
+    ///
+    /// @param sessionId target session id
+    public void requestJoin(String sessionId) {
+        if (phase == Phase.WORKING) {
+            return;
+        }
+        String id = sessionId == null ? "" : sessionId.trim();
+        if (!id.startsWith("ses_")) {
+            setPhase(Phase.ERROR, "SESSION_NOT_FOUND", "not a session id: " + id);
+            return;
+        }
+        long token = generation.incrementAndGet();
+        String previous = detachLocalSession();
+        setPhase(Phase.WORKING, null, null);
+        Schedulers.io().execute(() -> {
+            try {
+                awaitCleanup();
+                leaveQuietly(previous);
+                requireCapabilities();
+                multiplayer.createJoinRequest(id);
+                if (isStale(token)) {
+                    return;
+                }
+                requestedSessionId = id;
+                awaitingApproval = true;
+                setPhase(Phase.GUEST_WAITING, null, "approval_pending");
+            } catch (IOException | RuntimeException e) {
+                fail(token, e);
+            }
+        });
+    }
+
+    /// Consumes the join intent produced by an approved join request.
+    ///
+    /// Unsolicited intents are ignored so an old event cannot pull the user
+    /// into a session they no longer wait for.
+    ///
+    /// @param intentId approved join intent id
+    public void onJoinApproved(String intentId) {
+        if (!awaitingApproval) {
+            return;
+        }
+        awaitingApproval = false;
+        joinByIntent(intentId);
+    }
+
+    /// Approves one join request (host side).
+    ///
+    /// @param requestId join request id from the realtime event
+    public void approveJoinRequest(String requestId) {
+        Schedulers.io().execute(() -> {
+            try {
+                multiplayer.approveJoinRequest(requestId);
+                joinRequests.removeIf(request -> request.id().equals(requestId));
+                notifyStateChange();
+            } catch (IOException | RuntimeException e) {
+                Logger.LOG.info("MDTBBS approve join request failed: " + e.getMessage());
+            }
+        });
+    }
+
+    /// Rejects one join request (host side).
+    ///
+    /// @param requestId join request id from the realtime event
+    public void rejectJoinRequest(String requestId) {
+        Schedulers.io().execute(() -> {
+            try {
+                multiplayer.rejectJoinRequest(requestId);
+                joinRequests.removeIf(request -> request.id().equals(requestId));
+                notifyStateChange();
+            } catch (IOException | RuntimeException e) {
+                Logger.LOG.info("MDTBBS reject join request failed: " + e.getMessage());
+            }
+        });
+    }
+
     /// Consumes a Join Intent and joins the bound session as a guest.
     ///
     /// @param intentId intent id from a deep link or an accepted invite
@@ -422,7 +570,6 @@ public final class MdtbbsNetplayManager {
     ///
     /// @param targetUserId forum user id
     public void inviteFriend(long targetUserId) {
-        long token = generation.incrementAndGet();
         String id = sessionId;
         if (!hosting || id.isEmpty()) {
             setPhase(Phase.ERROR, "SESSION_NOT_FOUND", "invite without a hosted session");
@@ -431,11 +578,10 @@ public final class MdtbbsNetplayManager {
         Schedulers.io().execute(() -> {
             try {
                 String inviteId = multiplayer.createInvite(id, targetUserId);
-                if (!isStale(token)) {
-                    setPhase(Phase.HOSTING, null, inviteId.isEmpty() ? null : inviteId);
-                }
+                statusDetail = inviteId.isEmpty() ? null : inviteId;
+                notifyStateChange();
             } catch (IOException | RuntimeException e) {
-                fail(token, e);
+                Logger.LOG.info("MDTBBS invite failed: " + e.getMessage());
             }
         });
     }
@@ -458,6 +604,7 @@ public final class MdtbbsNetplayManager {
     public void shutdown() {
         generation.incrementAndGet();
         detachLocalSession();
+        closeRealtime();
         scheduler.shutdownNow();
     }
 
@@ -465,6 +612,10 @@ public final class MdtbbsNetplayManager {
     /// previous session id for an optional server-side leave.
     private String detachLocalSession() {
         stopHeartbeat();
+        MdtbbsRealtimeClient events = realtime;
+        if (events != null && !sessionId.isEmpty()) {
+            events.unsubscribe(sessionId);
+        }
         MdtbbsRelayTunnel current = tunnel;
         tunnel = null;
         if (current != null) {
@@ -481,6 +632,9 @@ public final class MdtbbsNetplayManager {
         visibility = "";
         joinPolicy = "";
         requireApproval = false;
+        activityName = "";
+        requestedSessionId = "";
+        awaitingApproval = false;
         playerCount = 0;
         maxPlayers = 0;
         return previous;
@@ -544,6 +698,163 @@ public final class MdtbbsNetplayManager {
         }
     }
 
+    /// Starts the realtime client once and subscribes the attached session.
+    private void startRealtime() {
+        MdtbbsRealtimeClient events = realtime;
+        if (events == null || sessionId.isEmpty()) {
+            return;
+        }
+        if (!realtimeStarted) {
+            realtimeStarted = true;
+            events.setListener(new RealtimeListener());
+            events.start();
+        }
+        events.subscribe(sessionId);
+    }
+
+    /// Closes the realtime client on launcher shutdown.
+    private void closeRealtime() {
+        MdtbbsRealtimeClient events = realtime;
+        if (events != null) {
+            events.close();
+        }
+    }
+
+    /// Re-reads the session snapshot after a failed stream resume.
+    private void refreshSnapshot() {
+        String id = sessionId;
+        if (id.isEmpty()) {
+            return;
+        }
+        long token = generation.get();
+        Schedulers.io().execute(() -> {
+            try {
+                Session session = multiplayer.session(id);
+                List<Peer> peers = multiplayer.peers(id);
+                if (isStale(token)) {
+                    return;
+                }
+                if (session == null) {
+                    detachLocalSession();
+                    setPhase(Phase.ERROR, "SESSION_CLOSED", null);
+                    publishActivity();
+                    return;
+                }
+                maxPlayers = session.maxPlayers();
+                playerCount = peers.isEmpty() ? session.currentPlayers() : peers.size();
+                notifyStateChange();
+            } catch (IOException e) {
+                Logger.LOG.info("MDTBBS snapshot refresh failed: " + e.getMessage());
+            }
+        });
+    }
+
+    /// Applies one realtime event to the session state.
+    private void handleRealtimeEvent(MdtbbsRealtimeEvent event) {
+        String name = event.event();
+        switch (name) {
+            case "multiplayer.join_request.created" -> handleJoinRequestCreated(event);
+            case "multiplayer.join_request.approved" -> {
+                String intentId = event.string("intent_id");
+                if (!intentId.isBlank()) {
+                    onJoinApproved(intentId);
+                }
+            }
+            case "multiplayer.join_request.rejected" -> {
+                if (awaitingApproval) {
+                    awaitingApproval = false;
+                    setPhase(Phase.ERROR, "JOIN_REQUEST_REJECTED", null);
+                }
+            }
+            case "session.closed" -> {
+                if (!sessionId.isEmpty() && sessionId.equals(event.sessionId())) {
+                    detachLocalSession();
+                    setPhase(Phase.ERROR, "SESSION_CLOSED", null);
+                    publishActivity();
+                }
+            }
+            case "session.updated" -> {
+                if (!sessionId.isEmpty() && sessionId.equals(event.sessionId())) {
+                    long players = event.number("current_players", -1);
+                    if (players >= 0) {
+                        playerCount = (int) players;
+                    }
+                    notifyStateChange();
+                }
+            }
+            case "peer.joined" -> adjustPeerCount(1);
+            case "peer.left", "peer.disconnected" -> {
+                if (event.string("role").equals("owner") || event.string("peer_id").equals(ownerPeerId)) {
+                    setPhase(Phase.ERROR, "HOST_LEFT", null);
+                } else {
+                    adjustPeerCount(-1);
+                }
+            }
+            case "peer.updated", "multiplayer.invite.created", "multiplayer.invite.accepted",
+                    "multiplayer.invite.revoked" -> notifyStateChange();
+            default -> Logger.LOG.debug("Ignoring realtime event " + name);
+        }
+    }
+
+    /// Adds one pending join request from a realtime event.
+    private void handleJoinRequestCreated(MdtbbsRealtimeEvent event) {
+        String requestId = event.string("join_request_id");
+        if (requestId.isBlank()) {
+            requestId = event.string("id");
+        }
+        String target = event.sessionId();
+        if (requestId.isBlank() || (!target.isEmpty() && !target.equals(sessionId))) {
+            return;
+        }
+        JsonObject requester = MdtbbsJson.objectOf(event.data(), "requester");
+        if (requester == null) {
+            requester = MdtbbsJson.objectOf(event.data(), "user");
+        }
+        long userId = requester == null ? 0L : MdtbbsJson.longOf(requester, "id", 0L);
+        String username = requester == null
+                ? event.string("username")
+                : MdtbbsJson.stringOf(requester, "username");
+        String finalRequestId = requestId;
+        joinRequests.removeIf(request -> request.id().equals(finalRequestId));
+        joinRequests.add(new JoinRequest(finalRequestId, target.isEmpty() ? sessionId : target,
+                userId, username));
+        notifyStateChange();
+    }
+
+    /// Adjusts the player count, keeping it within the advertised limit.
+    private void adjustPeerCount(int delta) {
+        int next = playerCount + delta;
+        playerCount = Math.max(1, maxPlayers > 0 ? Math.min(maxPlayers, next) : next);
+        notifyStateChange();
+    }
+
+    /// Notifies the listener without changing the phase.
+    private void notifyStateChange() {
+        Runnable listener = stateListener;
+        if (listener != null) {
+            listener.run();
+        }
+    }
+
+    /// Realtime client callbacks for this manager.
+    private final class RealtimeListener implements MdtbbsRealtimeClient.Listener {
+        @Override
+        public void onEvent(MdtbbsRealtimeEvent event) {
+            handleRealtimeEvent(event);
+        }
+
+        @Override
+        public void onResumeFailed() {
+            refreshSnapshot();
+        }
+
+        @Override
+        public void onState(String state, @Nullable String detail) {
+            Logger.LOG.debug("MDTBBS realtime " + state
+                    + (detail == null || detail.isBlank() ? "" : ": " + detail));
+        }
+    }
+
     /// Stores the joined session and starts the heartbeat.
     private void attach(Joined joined, boolean owner) {
         // Any previous tunnel must not outlive the new session; the caller
@@ -561,6 +872,7 @@ public final class MdtbbsNetplayManager {
         visibility = joined.session().visibility();
         joinPolicy = joined.session().joinPolicy();
         requireApproval = joined.session().requireApproval();
+        activityName = joined.session().activityName();
         localAddress = "";
         playerCount = joined.session().currentPlayers();
         maxPlayers = joined.session().maxPlayers();
@@ -571,6 +883,7 @@ public final class MdtbbsNetplayManager {
         }
         startHeartbeat();
         publishActivity();
+        startRealtime();
     }
 
     /// Allocates the relay and starts the owner bridge.
@@ -588,7 +901,8 @@ public final class MdtbbsNetplayManager {
         MdtbbsRelayTunnel.Config config = new MdtbbsRelayTunnel.Config(
                 allocation.endpoint(), allocation.credential(), allocation.allocationId(),
                 allocation.agentId(), id, peer, null, true,
-                MINDUSTRY_PORT, 0, allocation.expiresInSeconds());
+                MINDUSTRY_PORT, 0, allocation.expiresInSeconds(),
+                activityName, maxPlayers, playerCount, lanDiscovery.getAsBoolean());
         tunnel = tunnelFactory.create(config, this::renewRelay,
                 detail -> updateDetail(token, detail),
                 message -> handleTunnelFailure(token, message),
@@ -627,7 +941,8 @@ public final class MdtbbsNetplayManager {
         MdtbbsRelayTunnel.Config config = new MdtbbsRelayTunnel.Config(
                 allocation.endpoint(), allocation.credential(), allocation.allocationId(),
                 allocation.agentId(), id, peer, owner, false,
-                0, MINDUSTRY_PORT, allocation.expiresInSeconds());
+                0, MINDUSTRY_PORT, allocation.expiresInSeconds(),
+                activityName, maxPlayers, playerCount, lanDiscovery.getAsBoolean());
         tunnel = tunnelFactory.create(config, this::renewRelay,
                 detail -> updateDetail(token, detail),
                 message -> handleTunnelFailure(token, message),

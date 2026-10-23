@@ -64,6 +64,13 @@ public interface MdtbbsMultiplayerApi {
     /// @throws IOException when the code is invalid or expired
     Session resolveCode(String code) throws IOException;
 
+    /// Reads one visible session.
+    ///
+    /// @param sessionId session id
+    /// @return the session, or `null` when unavailable
+    /// @throws IOException when the request fails
+    @Nullable Session session(String sessionId) throws IOException;
+
     /// Joins a session as a new peer.
     ///
     /// @param sessionId session id
@@ -121,4 +128,23 @@ public interface MdtbbsMultiplayerApi {
     /// @return the invite id
     /// @throws IOException when the request fails
     String createInvite(String sessionId, long targetUserId) throws IOException;
+
+    /// Requests to join a session whose policy requires host approval.
+    ///
+    /// @param sessionId session id
+    /// @throws IOException when the request fails
+    void createJoinRequest(String sessionId) throws IOException;
+
+    /// Approves one join request.
+    ///
+    /// @param requestId join request id
+    /// @return the join intent id the requester can consume, or empty
+    /// @throws IOException when the request fails
+    String approveJoinRequest(String requestId) throws IOException;
+
+    /// Rejects one join request.
+    ///
+    /// @param requestId join request id
+    /// @throws IOException when the request fails
+    void rejectJoinRequest(String requestId) throws IOException;
 }

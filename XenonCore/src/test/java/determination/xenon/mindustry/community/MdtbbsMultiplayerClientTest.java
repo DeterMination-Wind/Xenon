@@ -112,6 +112,21 @@ public final class MdtbbsMultiplayerClientTest {
         }
     }
 
+    /// Multiplayer preferences expose eligible clients and can be cleared.
+    @Test
+    public void readsAndClearsDefaultClient() throws Exception {
+        try (Fixture server = Fixture.start()) {
+            MdtbbsMultiplayerClient.Preferences preferences = server.client().preferences();
+            assertEquals("desktop-launcher", preferences.defaultClientId());
+            assertEquals(1, preferences.clients().size());
+            assertEquals("Xenon Launcher", preferences.clients().get(0).name());
+            assertTrue(preferences.clients().get(0).supportsJoinIntent());
+
+            server.client().setDefaultClient(null);
+            assertTrue(server.lastBody().contains("{}"), server.lastBody());
+        }
+    }
+
     /// Session creation returns the session, owner peer, resume token and join code.
     @Test
     public void createsSession() throws Exception {
@@ -253,6 +268,7 @@ public final class MdtbbsMultiplayerClientTest {
                         legacyCapabilities ? legacyCapabilitiesJson() : capabilitiesJson();
                 case "/api/v1/multiplayer/sessions" -> "GET".equals(method)
                         ? lobbyJson() : createdSessionJson();
+                case "/api/v1/multiplayer/preferences" -> preferencesJson();
                 case "/api/v1/multiplayer/join-intents/intent_1/consume" -> consumedIntentJson();
                 case "/api/v1/multiplayer/sessions/resolve-code" -> resolvedSessionJson();
                 case "/api/v1/multiplayer/sessions/ses_1/join" -> joinedMemberJson();
@@ -288,6 +304,14 @@ public final class MdtbbsMultiplayerClientTest {
         private static String legacyCapabilitiesJson() {
             return "{\"data\":{\"sessions_v1\":true,\"invites_v1\":true,\"relay_v1\":true,"
                     + "\"third_party_multiplayer\":true,\"relay_credential_ttl_seconds\":120}}";
+        }
+
+        /// Multiplayer preferences response fixture.
+        private static String preferencesJson() {
+            return "{\"data\":{\"default_client_id\":\"desktop-launcher\",\"clients\":["
+                    + "{\"client_id\":\"desktop-launcher\",\"name\":\"Xenon Launcher\","
+                    + "\"supports_presence\":true,\"supports_multiplayer\":true,"
+                    + "\"supports_join_intent\":true,\"launch_uri_template\":\"xenon://join?intent={intent_id}\"}]}}";
         }
 
         /// Public lobby response fixture.

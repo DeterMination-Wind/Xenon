@@ -340,6 +340,41 @@ public final class MdtbbsNetplayManagerTest {
         assertNull(tunnels.lastConfig);
     }
 
+    /// Requesting an approval room waits instead of joining directly.
+    @Test
+    public void requestJoinWaitsForApproval() throws Exception {
+        FakeMultiplayer fake = new FakeMultiplayer();
+        FakeTunnels tunnels = new FakeTunnels();
+        MdtbbsNetplayManager manager = new MdtbbsNetplayManager(() -> true, fake, tunnels, 30);
+
+        manager.requestJoin("ses_1");
+
+        assertTrue(await(5000, manager::awaitingApproval));
+        assertTrue(manager.phase() == MdtbbsNetplayManager.Phase.GUEST_WAITING);
+        assertTrue(fake.calls.contains("join-request:ses_1"));
+        assertNull(tunnels.lastConfig);
+        manager.leave();
+    }
+
+    /// An approval intent consumes the join intent and starts the guest tunnel.
+    @Test
+    public void approvalConsumesIntent() throws Exception {
+        FakeMultiplayer fake = new FakeMultiplayer();
+        fake.joined = new Joined(session(), memberPeer(), "rt_member", "");
+        fake.peers = List.of(ownerPeer(), memberPeer());
+        FakeTunnels tunnels = new FakeTunnels();
+        MdtbbsNetplayManager manager = new MdtbbsNetplayManager(() -> true, fake, tunnels, 30);
+
+        manager.requestJoin("ses_1");
+        assertTrue(await(5000, manager::awaitingApproval));
+        manager.onJoinApproved("intent_1");
+
+        assertTrue(await(5000, () -> manager.phase() == MdtbbsNetplayManager.Phase.GUEST_READY));
+        assertTrue(fake.calls.contains("consume:intent_1"));
+        assertFalse(manager.awaitingApproval());
+        manager.leave();
+    }
+
     /// Polls a condition until it holds or the timeout expires.
     private static boolean await(long timeoutMs, BooleanSupplier condition) throws InterruptedException {
         long deadline = System.currentTimeMillis() + timeoutMs;
@@ -430,7 +465,12 @@ public final class MdtbbsNetplayManagerTest {
 
         @Override
         public Session resolveCode(String code) {
-            return session();
+            return MdtbbsNetplayManagerTest.session();
+        }
+
+        @Override
+        public Session session(String sessionId) {
+            return MdtbbsNetplayManagerTest.session();
         }
 
         @Override
@@ -497,6 +537,22 @@ public final class MdtbbsNetplayManagerTest {
         public String createInvite(String sessionId, long targetUserId) {
             invited.add(sessionId + ":" + targetUserId);
             return "inv_1";
+        }
+
+        @Override
+        public void createJoinRequest(String sessionId) {
+            calls.add("join-request:" + sessionId);
+        }
+
+        @Override
+        public String approveJoinRequest(String requestId) {
+            calls.add("approve:" + requestId);
+            return "intent_1";
+        }
+
+        @Override
+        public void rejectJoinRequest(String requestId) {
+            calls.add("reject:" + requestId);
         }
 
         /// Waits for the optional gate of the current request.

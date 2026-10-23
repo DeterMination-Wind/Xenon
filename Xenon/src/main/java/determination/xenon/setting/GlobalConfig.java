@@ -264,6 +264,32 @@ public final class GlobalConfig extends ObservableSetting {
                 ? MindustryDownloadSource.defaultForLocale() : source);
     }
 
+    @SerializedName("mindustryLanDiscovery")
+    private final BooleanProperty mindustryLanDiscovery = new SimpleBooleanProperty(true);
+
+    /// Whether guest sessions advertise themselves on Mindustry's LAN list.
+    ///
+    /// The advertisement only answers discovery probes from this machine, so it
+    /// never exposes the relay room to other LAN hosts. It is on by default and
+    /// degrades silently when `20151` is already taken by a real game server.
+    public BooleanProperty mindustryLanDiscoveryProperty() {
+        return mindustryLanDiscovery;
+    }
+
+    /// Returns whether LAN discovery is enabled for guest sessions.
+    ///
+    /// @return whether LAN discovery is enabled
+    public boolean isMindustryLanDiscovery() {
+        return mindustryLanDiscovery.get();
+    }
+
+    /// Enables or disables LAN discovery for guest sessions.
+    ///
+    /// @param enabled whether LAN discovery should be enabled
+    public void setMindustryLanDiscovery(boolean enabled) {
+        mindustryLanDiscovery.set(enabled);
+    }
+
     @SerializedName("disabledJava")
     private final ObservableSet<String> disabledJava = FXCollections.observableSet(new LinkedHashSet<>());
 

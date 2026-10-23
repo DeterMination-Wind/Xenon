@@ -54,7 +54,24 @@ public final class MdtbbsSocialClient {
     /// @param username     display name
     /// @param status       presence status such as `online` or `idle`
     /// @param activityName current Rich Activity name, or empty
-    public record FriendPresence(long userId, String username, String status, String activityName) {
+    /// @param canJoin      server-calculated permission to join the shown session
+    /// @param canRequestJoin server-calculated permission to request joining
+    /// @param canInvite    server-calculated permission to invite the friend
+    /// @param sessionId    session shown by the friend's activity, or empty
+    /// @param inviteSessionId session the server would use for an invite, or empty
+    public record FriendPresence(long userId, String username, String status, String activityName,
+                                 boolean canJoin, boolean canRequestJoin, boolean canInvite,
+                                 String sessionId, String inviteSessionId) {
+
+        /// Builds a presence without server-calculated actions.
+        ///
+        /// @param userId       friend user id
+        /// @param username     display name
+        /// @param status       presence status
+        /// @param activityName current Rich Activity name, or empty
+        public FriendPresence(long userId, String username, String status, String activityName) {
+            this(userId, username, status, activityName, false, false, false, "", "");
+        }
     }
 
     /// One pending multiplayer invite.
@@ -214,12 +231,20 @@ public final class MdtbbsSocialClient {
                 : MdtbbsJson.stringOf(user, "username");
         JsonObject activity = MdtbbsJson.objectOf(object, "activity");
         String activityName = activity == null ? "" : MdtbbsJson.stringOf(activity, "name");
+        JsonObject join = activity == null ? null : MdtbbsJson.objectOf(activity, "join");
+        String sessionId = join == null ? "" : MdtbbsJson.stringOf(join, "session_id");
+        JsonObject actions = MdtbbsJson.objectOf(object, "actions");
         // Presence status moved into the nested `presence` object; keep the
         // flat `status` fallback for older responses.
         JsonObject presence = MdtbbsJson.objectOf(object, "presence");
         String status = presence == null ? MdtbbsJson.stringOf(object, "status")
                 : MdtbbsJson.stringOf(presence, "status");
-        return new FriendPresence(userId, username, status, activityName);
+        return new FriendPresence(userId, username, status, activityName,
+                actions != null && MdtbbsJson.boolOf(actions, "can_join", false),
+                actions != null && MdtbbsJson.boolOf(actions, "can_request_join", false),
+                actions != null && MdtbbsJson.boolOf(actions, "can_invite", false),
+                sessionId,
+                actions == null ? "" : MdtbbsJson.stringOf(actions, "invite_session_id"));
     }
 
     /// Reads the inviter name from the various response shapes.

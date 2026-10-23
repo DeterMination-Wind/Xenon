@@ -14,6 +14,7 @@ import determination.xenon.mindustry.community.MdtbbsCloudSavesClient;
 import determination.xenon.mindustry.community.MdtbbsCommunity;
 import determination.xenon.mindustry.community.MdtbbsForumClient;
 import determination.xenon.mindustry.community.MdtbbsGameContentClient;
+import determination.xenon.mindustry.community.MdtbbsMultiplayerClient;
 import determination.xenon.mindustry.community.MdtbbsPresenceService;
 import determination.xenon.mindustry.community.MdtbbsSocialClient;
 import determination.xenon.mindustry.netplay.MdtbbsNetplayManager;
@@ -40,6 +41,9 @@ public final class CommunityServices {
             new MdtbbsCloudSavesClient(COMMUNITY.api());
     /// Social client sharing the coordinator's token provider.
     private static final MdtbbsSocialClient SOCIAL = new MdtbbsSocialClient(COMMUNITY.api());
+    /// Multiplayer signalling client sharing the coordinator's token provider.
+    private static final MdtbbsMultiplayerClient MULTIPLAYER =
+            new MdtbbsMultiplayerClient(COMMUNITY.api());
     /// Presence heartbeat service bound to the account coordinator.
     private static final MdtbbsPresenceService PRESENCE = new MdtbbsPresenceService(COMMUNITY);
     /// Shared MDTBBS multiplayer session manager.
@@ -61,6 +65,9 @@ public final class CommunityServices {
 
     /// Shared social and multiplayer-signalling client.
     public static MdtbbsSocialClient social() { return SOCIAL; }
+
+    /// Shared multiplayer session and lobby client.
+    public static MdtbbsMultiplayerClient multiplayer() { return MULTIPLAYER; }
 
     /// Shared presence heartbeat service.
     public static MdtbbsPresenceService presence() { return PRESENCE; }

@@ -100,7 +100,25 @@ public final class MdtbbsSocialDialog {
             String activity = friend.activityName().isBlank() ? friend.status() : friend.activityName();
             Label row = new Label(i18n("xenon.social.friend.meta", name, activity));
             row.getStyleClass().add("subtitle-label");
-            friendsBox.getChildren().add(row);
+            HBox line = new HBox(8, row);
+            line.setAlignment(Pos.CENTER_LEFT);
+            if (!friend.sessionId().isBlank() && (friend.canJoin() || friend.canRequestJoin())) {
+                JFXButton join = FXUtils.newRaisedButton(friend.canJoin()
+                        ? i18n("xenon.social.join")
+                        : i18n("xenon.social.request_join"));
+                join.setOnAction(e -> {
+                    Controllers.navigate(new MindustryNetplayPane());
+                    if (friend.canJoin()) {
+                        CommunityServices.netplay().joinByCode(friend.sessionId());
+                    } else {
+                        CommunityServices.netplay().requestJoin(friend.sessionId());
+                    }
+                    layout.fireEvent(new DialogCloseEvent());
+                });
+                HBox.setHgrow(row, Priority.ALWAYS);
+                line.getChildren().add(join);
+            }
+            friendsBox.getChildren().add(line);
         }
 
         Label invitesTitle = new Label(i18n("xenon.social.invites"));

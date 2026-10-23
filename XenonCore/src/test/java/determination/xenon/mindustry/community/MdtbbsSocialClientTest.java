@@ -31,6 +31,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /// Tests friend presence parsing against the current MDTBBS social shape.
 @NotNullByDefault
@@ -47,6 +49,11 @@ public final class MdtbbsSocialClientTest {
             assertEquals("friend", friends.get(0).username());
             assertEquals("online", friends.get(0).status());
             assertEquals("Playing", friends.get(0).activityName());
+            assertTrue(friends.get(0).canJoin());
+            assertFalse(friends.get(0).canRequestJoin());
+            assertTrue(friends.get(0).canInvite());
+            assertEquals("ses_9", friends.get(0).sessionId());
+            assertEquals("ses_9", friends.get(0).inviteSessionId());
         }
     }
 
@@ -116,8 +123,9 @@ public final class MdtbbsSocialClientTest {
             {"data":{"data":[{
               "user":{"id":9,"username":"friend"},
               "presence":{"status":"online"},
-              "activity":{"name":"Playing"},
-              "actions":{"can_join":false}
+              "activity":{"name":"Playing","join":{"session_id":"ses_9"}},
+              "actions":{"can_join":true,"can_request_join":false,"can_invite":true,
+                         "invite_session_id":"ses_9","session_visible":true}
             }],"pagination":{"page":1,"limit":50,"total":1}},
             "meta":{"request_id":"req-1"}}
             """;

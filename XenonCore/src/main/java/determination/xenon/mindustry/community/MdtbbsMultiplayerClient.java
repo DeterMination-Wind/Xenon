@@ -192,6 +192,33 @@ public final class MdtbbsMultiplayerClient implements MdtbbsMultiplayerApi {
         }
     }
 
+    /// One OAuth client that can act as the default join-intent launcher.
+    ///
+    /// @param clientId          opaque client id accepted by the preference API
+    /// @param name              display name
+    /// @param iconUrl           application icon, or empty
+    /// @param developerName     developer name, or empty
+    /// @param supportsPresence  whether the client publishes presence
+    /// @param supportsMultiplayer whether the client supports multiplayer
+    /// @param supportsJoinIntent whether the client can consume join intents
+    /// @param launchUriTemplate registered launch URI, or empty
+    public record ClientApp(String clientId, String name, String iconUrl,
+                            String developerName, boolean supportsPresence,
+                            boolean supportsMultiplayer, boolean supportsJoinIntent,
+                            String launchUriTemplate) {
+    }
+
+    /// Multiplayer preferences of the current user.
+    ///
+    /// @param defaultClientId default join-intent client, or empty when unset
+    /// @param clients         clients eligible to become the default
+    public record Preferences(String defaultClientId, List<ClientApp> clients) {
+        /// Copies the client list defensively.
+        public Preferences {
+            clients = List.copyOf(clients);
+        }
+    }
+
     /// One page of discoverable lobby sessions.
     ///
     /// @param sessions   sessions on this page
@@ -364,6 +391,44 @@ public final class MdtbbsMultiplayerClient implements MdtbbsMultiplayerApi {
             hasMore = safePage < totalPages;
         }
         return new SessionPage(sessions, safePage, safeLimit, total, totalPages, hasMore);
+    }
+
+    /// Reads the user's multiplayer preferences and eligible clients.
+    ///
+    /// @return the preferences
+    /// @throws IOException when the request fails
+    public Preferences preferences() throws IOException {
+        JsonObject data = MdtbbsJson.dataObject(api.getAuth("/multiplayer/preferences", null));
+        List<ClientApp> clients = new ArrayList<>();
+        for (JsonElement element : MdtbbsJson.arrayOf(data, "clients")) {
+            JsonObject object = MdtbbsJson.asObject(element);
+            if (object == null) continue;
+            clients.add(new ClientApp(
+                    MdtbbsJson.stringOf(object, "client_id"),
+                    MdtbbsJson.stringOf(object, "name"),
+                    MdtbbsJson.stringOf(object, "application_icon_url"),
+                    MdtbbsJson.stringOf(object, "developer_name"),
+                    MdtbbsJson.boolOf(object, "supports_presence", false),
+                    MdtbbsJson.boolOf(object, "supports_multiplayer", false),
+                    MdtbbsJson.boolOf(object, "supports_join_intent", false),
+                    MdtbbsJson.stringOf(object, "launch_uri_template")));
+        }
+        return new Preferences(MdtbbsJson.stringOf(data, "default_client_id"), clients);
+    }
+
+    /// Sets or clears the default join-intent launcher.
+    ///
+    /// @param clientId client id from [#preferences()], or `null` to clear
+    /// @throws IOException when the request fails
+    public void setDefaultClient(@Nullable String clientId) throws IOException {
+        JsonObject body = new JsonObject();
+        if (clientId != null && !clientId.isBlank()) {
+            // Omitting `client_id` clears the default, which is the documented
+            // behaviour; sending JSON null is not representable here because
+            // the shared Gson instance omits null members.
+            body.addProperty("client_id", clientId);
+        }
+        api.patch("/multiplayer/preferences", body);
     }
 
     /// Resolves a public join code to its session.

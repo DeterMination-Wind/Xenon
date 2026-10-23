@@ -20,6 +20,7 @@ package determination.xenon.netplay.mdtbbs;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import determination.xenon.mindustry.community.MdtbbsMultiplayerClient.RelayAllocation;
+import determination.xenon.mindustry.netplay.MindustryLanAdvertiser;
 import determination.xenon.util.logging.Logger;
 import org.jetbrains.annotations.NotNullByDefault;
 import org.jetbrains.annotations.Nullable;
@@ -89,11 +90,68 @@ public final class MdtbbsRelayTunnel {
     /// @param gamePort        local Mindustry server port bridged by the owner
     /// @param preferredLocalPort preferred guest proxy port, or `0` for random
     /// @param credentialTtlSeconds credential lifetime hint
+    /// @param roomName       room name advertised on the LAN list
+    /// @param maxPlayers     player limit advertised on the LAN list
+    /// @param players        current player count advertised on the LAN list
+    /// @param advertiseLan   whether to answer Mindustry LAN discovery probes
     public record Config(String endpoint, String credential, String allocationId, String agentId,
                          String sessionId, String peerId, @Nullable String ownerPeerId,
                          boolean owner, int gamePort, int preferredLocalPort,
-                         long credentialTtlSeconds) {
+                         long credentialTtlSeconds, String roomName, int maxPlayers, int players,
+                         boolean advertiseLan) {
+
+        /// Builds a configuration that advertises the room on the LAN list.
+        ///
+        /// @param endpoint        `wss://…/relay/v1` endpoint
+        /// @param credential      short-lived credential from the allocation
+        /// @param allocationId    current allocation id
+        /// @param agentId         relay agent id
+        /// @param sessionId       session id
+        /// @param peerId          this peer id
+        /// @param ownerPeerId     owner peer id (required for guests)
+        /// @param owner           whether this peer is the session host
+        /// @param gamePort        local Mindustry server port bridged by the owner
+        /// @param preferredLocalPort preferred guest proxy port, or `0` for random
+        /// @param credentialTtlSeconds credential lifetime hint
+        /// @param roomName        room name advertised on the LAN list
+        /// @param maxPlayers      player limit advertised on the LAN list
+        /// @param players         current player count advertised on the LAN list
+        public Config(String endpoint, String credential, String allocationId, String agentId,
+                      String sessionId, String peerId, @Nullable String ownerPeerId,
+                      boolean owner, int gamePort, int preferredLocalPort,
+                      long credentialTtlSeconds, String roomName, int maxPlayers, int players) {
+            this(endpoint, credential, allocationId, agentId, sessionId, peerId, ownerPeerId,
+                    owner, gamePort, preferredLocalPort, credentialTtlSeconds,
+                    roomName, maxPlayers, players, true);
+        }
+
+        /// Builds a configuration without LAN advertisement metadata.
+        ///
+        /// @param endpoint        `wss://…/relay/v1` endpoint
+        /// @param credential      short-lived credential from the allocation
+        /// @param allocationId    current allocation id
+        /// @param agentId         relay agent id
+        /// @param sessionId       session id
+        /// @param peerId          this peer id
+        /// @param ownerPeerId     owner peer id (required for guests)
+        /// @param owner           whether this peer is the session host
+        /// @param gamePort        local Mindustry server port bridged by the owner
+        /// @param preferredLocalPort preferred guest proxy port, or `0` for random
+        /// @param credentialTtlSeconds credential lifetime hint
+        public Config(String endpoint, String credential, String allocationId, String agentId,
+                      String sessionId, String peerId, @Nullable String ownerPeerId,
+                      boolean owner, int gamePort, int preferredLocalPort,
+                      long credentialTtlSeconds) {
+            this(endpoint, credential, allocationId, agentId, sessionId, peerId, ownerPeerId,
+                    owner, gamePort, preferredLocalPort, credentialTtlSeconds, "", 8, 1, true);
+        }
     }
+
+    /// How long the owner keeps retrying the local game connection.
+    private static final long OWNER_CONNECT_WINDOW_MILLIS = 8000L;
+
+    /// One owner connection attempt.
+    private static final int OWNER_CONNECT_ATTEMPT_MILLIS = 1500;
 
     /// How long the WebSocket handshake may take.
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(8);
@@ -129,6 +187,7 @@ public final class MdtbbsRelayTunnel {
 
     private volatile @Nullable WebSocket socket;
     private volatile @Nullable RelayGuestProxy guestProxy;
+    private volatile @Nullable MindustryLanAdvertiser advertiser;
     private volatile @Nullable Socket pendingGuestSocket;
     private volatile @Nullable ScheduledFuture<?> renewal;
     private volatile long expiresAtMillis;
@@ -213,6 +272,7 @@ public final class MdtbbsRelayTunnel {
         if (proxy != null) {
             proxy.close();
         }
+        stopAdvertiser();
         closeQuietly(pendingGuestSocket);
         pendingGuestSocket = null;
         for (Socket stream : tcpStreams.values()) {
@@ -340,10 +400,29 @@ public final class MdtbbsRelayTunnel {
             RelayGuestProxy proxy = new RelayGuestProxy();
             proxy.start();
             guestProxy = proxy;
+            startLanAdvertisement(proxy.port());
             onStatus.accept("MDTBBS Relay 已连接，本地代理端口 " + proxy.port());
             onGuestReady.accept(proxy.port());
         } catch (IOException e) {
             fail("无法创建本地联机代理 (PROXY_BIND_FAILED): " + e.getMessage());
+        }
+    }
+
+    /// Advertises the guest proxy on Mindustry's LAN discovery channel.
+    ///
+    /// Failure is silent: the UI still shows the copyable loopback address.
+    private void startLanAdvertisement(int proxyPort) {
+        if (!config.advertiseLan()) {
+            return;
+        }
+        String name = config.roomName() == null || config.roomName().isBlank()
+                ? "Mindustry" : config.roomName();
+        MindustryLanAdvertiser lan = new MindustryLanAdvertiser(
+                new MindustryLanAdvertiser.Config(name, "MDTBBS",
+                        Math.max(1, config.players()), Math.max(2, config.maxPlayers()),
+                        proxyPort));
+        if (lan.start()) {
+            advertiser = lan;
         }
     }
 
@@ -387,24 +466,47 @@ public final class MdtbbsRelayTunnel {
     }
 
     /// Owner side: opens one stream to the local Mindustry server.
+    ///
+    /// The host may create the MDTBBS room before the game is running, so a
+    /// failed connect is retried for up to eight seconds instead of failing the
+    /// guest immediately. A guest that gives up earlier simply reconnects.
     private void openOwnerTcp(int streamId) {
         if (streamId <= 0) {
             fail("MDTBBS Relay TCP 流 id 无效 (HANDSHAKE_INVALID)");
             return;
         }
-        worker.execute(() -> {
-            Socket local = new Socket();
-            try {
-                local.connect(new InetSocketAddress(InetAddress.getLoopbackAddress(), config.gamePort()), 5000);
-                local.setTcpNoDelay(true);
-                tcpStreams.put(streamId, local);
-                sendText(streamResultJson(streamId, true));
-                pumpTcp(local, streamId);
-            } catch (IOException e) {
-                closeQuietly(local);
-                sendText(streamResultJson(streamId, false));
+        if (tcpStreams.containsKey(streamId)) {
+            return;
+        }
+        long deadline = System.currentTimeMillis() + OWNER_CONNECT_WINDOW_MILLIS;
+        worker.execute(() -> tryOpenOwnerTcp(streamId, deadline));
+    }
+
+    /// One owner-side connect attempt, rescheduled until the window closes.
+    private void tryOpenOwnerTcp(int streamId, long deadline) {
+        if (closed.get() || tcpStreams.containsKey(streamId)) {
+            return;
+        }
+        Socket local = new Socket();
+        try {
+            local.connect(new InetSocketAddress(InetAddress.getLoopbackAddress(), config.gamePort()),
+                    OWNER_CONNECT_ATTEMPT_MILLIS);
+            local.setTcpNoDelay(true);
+            tcpStreams.put(streamId, local);
+            sendText(streamResultJson(streamId, true));
+            pumpTcp(local, streamId);
+        } catch (IOException e) {
+            closeQuietly(local);
+            if (System.currentTimeMillis() < deadline) {
+                try {
+                    worker.schedule(() -> tryOpenOwnerTcp(streamId, deadline), 400, TimeUnit.MILLISECONDS);
+                } catch (RuntimeException ignored) {
+                    // The tunnel is closing.
+                }
+                return;
             }
-        });
+            sendText(streamResultJson(streamId, false));
+        }
     }
 
     /// Pumps one local socket into relay TCP data frames.
@@ -590,6 +692,7 @@ public final class MdtbbsRelayTunnel {
         if (proxy != null) {
             proxy.close();
         }
+        stopAdvertiser();
         closeQuietly(pendingGuestSocket);
         pendingGuestSocket = null;
         for (Socket stream : tcpStreams.values()) {
@@ -602,6 +705,15 @@ public final class MdtbbsRelayTunnel {
         ownerUdpSockets.clear();
         worker.shutdownNow();
         onFailure.accept(message);
+    }
+
+    /// Stops the LAN advertiser, if any.
+    private void stopAdvertiser() {
+        MindustryLanAdvertiser lan = advertiser;
+        advertiser = null;
+        if (lan != null) {
+            lan.close();
+        }
     }
 
     /// Reads a string field with an empty fallback.
@@ -692,9 +804,12 @@ public final class MdtbbsRelayTunnel {
         }
     }
 
-    /// Loopback TCP/UDP proxy that the guest's game client connects to.
+    /// Local TCP/UDP proxy that the guest's game client connects to.
+    ///
+    /// It listens on all local addresses so the address advertised through LAN
+    /// discovery (the reply's source address) is reachable as well as
+    /// `127.0.0.1`.
     private final class RelayGuestProxy {
-        private final InetAddress loopback = InetAddress.getLoopbackAddress();
         private volatile @Nullable ServerSocket tcpServer;
         private volatile @Nullable DatagramSocket udpSocket;
         private volatile @Nullable InetSocketAddress gameClient;
@@ -712,9 +827,9 @@ public final class MdtbbsRelayTunnel {
                 DatagramSocket udp = new DatagramSocket(null);
                 udp.setReuseAddress(false);
                 try {
-                    tcp.bind(new InetSocketAddress(loopback, candidate), 4);
+                    tcp.bind(new InetSocketAddress(candidate), 4);
                     int boundPort = tcp.getLocalPort();
-                    udp.bind(new InetSocketAddress(loopback, boundPort));
+                    udp.bind(new InetSocketAddress(boundPort));
                     tcp.setSoTimeout(1000);
                     udp.setSoTimeout(1000);
                     tcpServer = tcp;
