@@ -28,33 +28,82 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static determination.xenon.util.i18n.I18n.i18n;
 
-/// Handles `xenon://join?intent=...` deep links from MDTBBS.
+/// Handles `xenon://join`, `xenon://launch` and `xenon://open` deep links.
 ///
-/// The link is captured from launcher arguments before JavaFX starts and from
-/// in-app hyperlinks afterwards. After the user confirms, the intent is
-/// consumed through the netplay manager, which joins the MDTBBS session and
-/// prepares the relay so the game can connect to the shown loopback address.
+/// Join links are captured from launcher arguments before JavaFX starts and
+/// from in-app hyperlinks afterwards. Launch links ask for confirmation and
+/// start the instance; open links only navigate to its management page. After
+/// confirmation, a join intent is consumed through the netplay manager, which
+/// joins the MDTBBS session and prepares the relay for the game.
 @NotNullByDefault
 public final class MdtbbsJoinIntentHandler {
     /// Deep-link scheme and host handled by the launcher.
     public static final String JOIN_SCHEME = "xenon://join";
+    /// Deep link that launches an instance after confirmation.
+    public static final String LAUNCH_SCHEME = "xenon://launch";
+    /// Deep link that only opens an instance page.
+    public static final String OPEN_SCHEME = "xenon://open";
     /// Intent captured from the process arguments before the UI exists.
     private static final AtomicReference<String> PENDING = new AtomicReference<>();
+    /// Launch link captured from the process arguments.
+    private static final AtomicReference<String> PENDING_LAUNCH = new AtomicReference<>();
+    /// Open link captured from the process arguments.
+    private static final AtomicReference<String> PENDING_OPEN = new AtomicReference<>();
 
-    /// Captures a join link from process arguments.
+    /// Captures a deep link from process arguments.
     ///
     /// @param args launcher command-line arguments
     public static void captureArguments(String[] args) {
         if (args == null) return;
         for (String arg : args) {
-            if (arg != null && arg.startsWith(JOIN_SCHEME)) PENDING.set(arg);
+            if (arg == null) continue;
+            if (arg.startsWith(JOIN_SCHEME)) PENDING.set(arg);
+            else if (arg.startsWith(LAUNCH_SCHEME)) PENDING_LAUNCH.set(arg);
+            else if (arg.startsWith(OPEN_SCHEME)) PENDING_OPEN.set(arg);
         }
     }
 
-    /// Processes a previously captured link once the UI is ready.
+    /// Processes previously captured links once the UI is ready.
     public static void processPending() {
         String uri = PENDING.getAndSet(null);
         if (uri != null) handle(uri);
+        String launch = PENDING_LAUNCH.getAndSet(null);
+        if (launch != null) handleLaunch(launch);
+        String open = PENDING_OPEN.getAndSet(null);
+        if (open != null) handleOpen(open);
+    }
+
+    /// Handles a launch link after confirmation.
+    ///
+    /// @param uri deep link such as `xenon://launch?instance=vanilla-160`
+    public static void handleLaunch(String uri) {
+        String id = parseParameter(uri, "instance");
+        if (id == null || id.isBlank()) return;
+        var version = MindustryRoutes.get(id).orElse(null);
+        if (version == null) {
+            Controllers.dialog(i18n("xenon.join.launch.missing", id),
+                    i18n("xenon.join.launch.title"), MessageDialogPane.MessageType.WARNING);
+            return;
+        }
+        Controllers.confirm(i18n("xenon.join.launch.confirm", version.getName()),
+                i18n("xenon.join.launch.title"), MessageDialogPane.MessageType.QUESTION,
+                () -> MindustryRoutes.launch(version), () -> {
+                });
+    }
+
+    /// Handles an open link by navigating to the instance page.
+    ///
+    /// @param uri deep link such as `xenon://open?instance=vanilla-160`
+    public static void handleOpen(String uri) {
+        String id = parseParameter(uri, "instance");
+        if (id == null || id.isBlank()) return;
+        var version = MindustryRoutes.get(id).orElse(null);
+        if (version == null) {
+            Controllers.dialog(i18n("xenon.join.launch.missing", id),
+                    i18n("xenon.join.launch.title"), MessageDialogPane.MessageType.WARNING);
+            return;
+        }
+        Controllers.navigate(new MindustryVersionPage(version));
     }
 
     /// Handles one join link.
@@ -78,6 +127,25 @@ public final class MdtbbsJoinIntentHandler {
                     CommunityServices.netplay().joinByIntent(intentId);
                 },
                 () -> {});
+    }
+
+    /// Extracts a query parameter from a deep link.
+    ///
+    /// @param uri   deep link
+    /// @param name  parameter name
+    /// @return the decoded value, or `null` when absent
+    static @Nullable String parseParameter(@Nullable String uri, String name) {
+        if (uri == null) return null;
+        int query = uri.indexOf('?');
+        if (query < 0) return null;
+        for (String pair : uri.substring(query + 1).split("&")) {
+            int equals = pair.indexOf('=');
+            if (equals < 0) continue;
+            if (name.equals(pair.substring(0, equals))) {
+                return URLDecoder.decode(pair.substring(equals + 1), StandardCharsets.UTF_8);
+            }
+        }
+        return null;
     }
 
     /// Extracts the `intent` query parameter from a join link.

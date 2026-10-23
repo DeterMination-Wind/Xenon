@@ -20,6 +20,8 @@ package determination.xenon.mindustry.ui;
 import com.jfoenix.controls.JFXButton;
 import determination.xenon.mindustry.MindustryImportFlow;
 import determination.xenon.mindustry.MindustryVersion;
+import determination.xenon.mindustry.MindustryLaunchScriptWriter;
+import determination.xenon.mindustry.MindustryLaunchService;
 import determination.xenon.mindustry.XenonGameRepository;
 import determination.xenon.mindustry.save.MindustryLaunchSaveService;
 import determination.xenon.task.Schedulers;
@@ -121,9 +123,10 @@ public final class MindustryVersionPage extends DecoratorAnimatedPage implements
                 .addNavigationDrawerItem(i18n("xenon.mindustry.migrate.button"), SVG.CONTENT_COPY, this::migrateFromInstance)
                 .addNavigationDrawerItem(i18n("version.manage.duplicate"), SVG.CONTENT_COPY, this::duplicateVersion)
                 .addNavigationDrawerItem(i18n("modpack.export"), SVG.OUTPUT, () -> MindustryRoutes.exportModpack(version))
+                .addNavigationDrawerItem(i18n("xenon.dev.export_script"), SVG.SCRIPT, this::exportLaunchScript)
                 .addNavigationDrawerItem(i18n("version.manage.remove"), SVG.DELETE, this::deleteVersion);
         toolbar.getStyleClass().add("advanced-list-box-clear-padding");
-        FXUtils.setLimitHeight(toolbar, 40 * 6 + 12 * 2);
+        FXUtils.setLimitHeight(toolbar, 40 * 7 + 12 * 2);
 
         setLeft(sideBar, toolbar);
         setCenter(transitionPane);
@@ -166,6 +169,40 @@ public final class MindustryVersionPage extends DecoratorAnimatedPage implements
         if (modTab.isInitialized()) {
             modTab.getNode().refreshFromDisk();
         }
+    }
+
+    /// Exports a standalone launch script for this instance.
+    private void exportLaunchScript() {
+        javafx.stage.FileChooser chooser = new javafx.stage.FileChooser();
+        chooser.setTitle(i18n("xenon.dev.export_script"));
+        boolean windows = determination.xenon.util.platform.OperatingSystem.CURRENT_OS
+                == determination.xenon.util.platform.OperatingSystem.WINDOWS;
+        String extension = windows ? "*.bat" : "*.sh";
+        chooser.getExtensionFilters().setAll(
+                new javafx.stage.FileChooser.ExtensionFilter(extension, extension));
+        chooser.setInitialFileName(version.getName() + (windows ? ".bat" : ".sh"));
+        java.io.File file = FXUtils.showSaveDialog(chooser, Controllers.getStage());
+        if (file == null) {
+            return;
+        }
+        Path target = file.toPath();
+        Schedulers.io().execute(() -> {
+            try {
+                var options = MindustryLaunchService.buildLaunchOptions(
+                        MindustryImportFlow.repositoryForVersion(version), version);
+                if (windows) {
+                    MindustryLaunchScriptWriter.writeWindows(target, options);
+                } else {
+                    MindustryLaunchScriptWriter.writeUnix(target, options);
+                }
+                Platform.runLater(() -> Controllers.showToast(
+                        i18n("xenon.dev.export_script.done", target.toString())));
+            } catch (Exception e) {
+                LOG.warning("Cannot export a launch script", e);
+                Platform.runLater(() -> Controllers.dialog(e.getMessage(),
+                        i18n("message.error"), MessageDialogPane.MessageType.ERROR));
+            }
+        });
     }
 
     private void deleteVersion() {

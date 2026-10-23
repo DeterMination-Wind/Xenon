@@ -331,6 +331,13 @@ public final class Launcher extends Application {
             return;
         }
 
+        Integer cliExit = determination.xenon.mindustry.cli.XenonCli.runIfCli(args);
+        if (cliExit != null) {
+            LOG.shutdown();
+            System.exit(cliExit);
+            return;
+        }
+
         determination.xenon.mindustry.ui.MdtbbsJoinIntentHandler.captureArguments(args);
 
         Thread.setDefaultUncaughtExceptionHandler(CRASH_REPORTER);
