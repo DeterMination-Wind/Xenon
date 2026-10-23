@@ -104,6 +104,23 @@ public final class MindustryCloudArchiveTest {
         }
     }
 
+    /// A tampered file is rejected before anything is restored.
+    @Test
+    public void rejectsHashMismatch(@TempDir Path dir) throws Exception {
+        Path source = dataDir(dir.resolve("source"));
+        Path archive = dir.resolve("instance.zip");
+        MindustryCloudArchivePacker.pack(source, archive,
+                new MindustryCloudArchivePacker.Options("v157", 157, Set.of()), null, null);
+        // Rewrite the save while keeping the old manifest hash.
+        try (var fs = java.nio.file.FileSystems.newFileSystem(archive)) {
+            Files.writeString(fs.getPath("saves/world.msav"), "tampered");
+        }
+        Path target = dir.resolve("target");
+        assertThrows(IOException.class,
+                () -> MindustryCloudArchiveInstaller.install(archive, target, dir.resolve("backups")));
+        assertFalse(Files.exists(target.resolve("saves/world.msav")));
+    }
+
     /// A traversing entry is rejected before anything is extracted.
     @Test
     public void rejectsZipSlip(@TempDir Path dir) throws Exception {

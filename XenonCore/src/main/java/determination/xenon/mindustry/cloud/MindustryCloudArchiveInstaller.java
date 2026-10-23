@@ -96,6 +96,7 @@ public final class MindustryCloudArchiveInstaller {
         try {
             Files.createDirectories(staging);
             extract(archive, staging);
+            verifyHashes(staging, manifest);
             backupExisting(dataDir, backup);
             replaceTrees(staging, dataDir);
             return new RestoreResult(manifest, backup, missingMods(dataDir, manifest));
@@ -180,6 +181,43 @@ public final class MindustryCloudArchiveInstaller {
             return;
         }
         throw new IOException("cloud archive entry is not restorable: " + name);
+    }
+
+    /// Verifies the extracted files against the manifest hashes.
+    private static void verifyHashes(Path staging, MindustryCloudArchiveManifest manifest)
+            throws IOException {
+        for (MindustryCloudArchiveManifest.FileEntry expected : manifest.files()) {
+            Path file = staging.resolve(expected.path()).normalize();
+            if (!Files.isRegularFile(file)) {
+                throw new IOException("cloud archive is missing " + expected.path());
+            }
+            long size = Files.size(file);
+            if (expected.size() > 0 && size != expected.size()) {
+                throw new IOException("cloud archive size mismatch for " + expected.path());
+            }
+            if (!expected.sha256().isBlank()
+                    && !expected.sha256().equalsIgnoreCase(sha256(file))) {
+                throw new IOException("cloud archive hash mismatch for " + expected.path());
+            }
+        }
+    }
+
+    /// Computes the lowercase hex SHA-256 of one file.
+    private static String sha256(Path file) throws IOException {
+        try (InputStream input = Files.newInputStream(file)) {
+            java.security.MessageDigest digest;
+            try {
+                digest = java.security.MessageDigest.getInstance("SHA-256");
+            } catch (java.security.NoSuchAlgorithmException e) {
+                throw new IOException("SHA-256 is not available", e);
+            }
+            byte[] buffer = new byte[64 * 1024];
+            int read;
+            while ((read = input.read(buffer)) > 0) {
+                digest.update(buffer, 0, read);
+            }
+            return java.util.HexFormat.of().formatHex(digest.digest());
+        }
     }
 
     /// Copies existing top-level data into the backup directory.
