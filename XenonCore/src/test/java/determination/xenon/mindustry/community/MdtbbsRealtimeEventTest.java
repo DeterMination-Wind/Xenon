@@ -92,6 +92,16 @@ public final class MdtbbsRealtimeEventTest {
         assertTrue(deduper.accept("id-0"));
     }
 
+    /// Reconnect details never expose the one-shot ticket.
+    @Test
+    public void redactsRealtimeTicket() {
+        String detail = MdtbbsRealtimeClient.redact(
+                "connect wss://host/realtime/v1?ticket=secret-123 failed");
+        assertNotNull(detail);
+        assertFalse(detail.contains("secret-123"));
+        assertTrue(detail.contains("ticket=***"));
+    }
+
     /// Resetting forgets every id after a failed resume.
     @Test
     public void resetForgetsIds() {

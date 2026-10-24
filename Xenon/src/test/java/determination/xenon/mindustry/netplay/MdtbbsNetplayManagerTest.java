@@ -356,6 +356,26 @@ public final class MdtbbsNetplayManagerTest {
         manager.leave();
     }
 
+    /// An approval that arrives while the join request is in flight is queued.
+    @Test
+    public void approvalDuringRequestIsNotDropped() throws Exception {
+        FakeMultiplayer fake = new FakeMultiplayer();
+        fake.joined = new Joined(session(), memberPeer(), "rt_member", "");
+        fake.peers = List.of(ownerPeer(), memberPeer());
+        fake.joinRequestGate = new CountDownLatch(1);
+        FakeTunnels tunnels = new FakeTunnels();
+        MdtbbsNetplayManager manager = new MdtbbsNetplayManager(() -> true, fake, tunnels, 30);
+
+        manager.requestJoin("ses_1");
+        assertTrue(fake.joinRequestStarted.await(5, TimeUnit.SECONDS));
+        manager.onJoinApproved("intent_1");
+        fake.joinRequestGate.countDown();
+
+        assertTrue(await(5000, () -> manager.phase() == MdtbbsNetplayManager.Phase.GUEST_READY));
+        assertTrue(fake.calls.contains("consume:intent_1"));
+        manager.leave();
+    }
+
     /// An approval intent consumes the join intent and starts the guest tunnel.
     @Test
     public void approvalConsumesIntent() throws Exception {
@@ -423,6 +443,8 @@ public final class MdtbbsNetplayManagerTest {
         final CountDownLatch joinStarted = new CountDownLatch(1);
         @Nullable CountDownLatch consumeGate;
         final CountDownLatch consumeStarted = new CountDownLatch(1);
+        @Nullable CountDownLatch joinRequestGate;
+        final CountDownLatch joinRequestStarted = new CountDownLatch(1);
         @Nullable CountDownLatch allocateGate;
         final CountDownLatch allocateStarted = new CountDownLatch(1);
         final CountDownLatch resumeCalled = new CountDownLatch(1);
@@ -540,8 +562,10 @@ public final class MdtbbsNetplayManagerTest {
         }
 
         @Override
-        public void createJoinRequest(String sessionId) {
+        public void createJoinRequest(String sessionId) throws IOException {
             calls.add("join-request:" + sessionId);
+            joinRequestStarted.countDown();
+            waitGate(joinRequestGate);
         }
 
         @Override

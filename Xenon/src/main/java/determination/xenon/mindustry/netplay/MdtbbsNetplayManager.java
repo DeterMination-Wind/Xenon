@@ -166,6 +166,7 @@ public final class MdtbbsNetplayManager {
     private volatile boolean requireApproval;
     private volatile String activityName = "";
     private volatile String requestedSessionId = "";
+    private volatile String pendingApprovedIntent = "";
     private volatile boolean awaitingApproval;
     private volatile int playerCount;
     private volatile int maxPlayers;
@@ -346,7 +347,7 @@ public final class MdtbbsNetplayManager {
         if (phase == Phase.WORKING) {
             return;
         }
-        String requestedJoin = normalizeJoinPolicy(joinPolicy, requireApproval);
+        String requestedJoin = normalizeJoinPolicy(joinPolicy);
         String requestedVisibility = normalizeVisibility(visibility);
         boolean approval = normalizeApproval(requestedJoin, requireApproval);
         long token = generation.incrementAndGet();
@@ -396,14 +397,14 @@ public final class MdtbbsNetplayManager {
     }
 
     /// Normalises a join-policy value to the 1.7.0 enum.
-    private static String normalizeJoinPolicy(@Nullable String value, boolean requireApproval) {
+    private static String normalizeJoinPolicy(@Nullable String value) {
         String text = value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
         return switch (text) {
             case "invite_only" -> "invite_only";
             case "public", "open" -> "public";
             case "friends" -> "friends";
             // The removed `request` value meant "friends plus approval".
-            default -> requireApproval ? "friends" : "friends";
+            default -> "friends";
         };
     }
 
@@ -475,6 +476,10 @@ public final class MdtbbsNetplayManager {
         }
         long token = generation.incrementAndGet();
         String previous = detachLocalSession();
+        // Publish the target before the request returns: the approval event can
+        // arrive while the HTTP call is still in flight.
+        requestedSessionId = id;
+        awaitingApproval = true;
         setPhase(Phase.WORKING, null, null);
         Schedulers.io().execute(() -> {
             try {
@@ -482,13 +487,20 @@ public final class MdtbbsNetplayManager {
                 leaveQuietly(previous);
                 requireCapabilities();
                 multiplayer.createJoinRequest(id);
-                if (isStale(token)) {
+                if (isStale(token) || !awaitingApproval) {
                     return;
                 }
-                requestedSessionId = id;
-                awaitingApproval = true;
                 setPhase(Phase.GUEST_WAITING, null, "approval_pending");
+                String pending = pendingApprovedIntent;
+                pendingApprovedIntent = "";
+                if (!pending.isBlank()) {
+                    awaitingApproval = false;
+                    joinByIntent(pending);
+                }
             } catch (IOException | RuntimeException e) {
+                awaitingApproval = false;
+                requestedSessionId = "";
+                pendingApprovedIntent = "";
                 fail(token, e);
             }
         });
@@ -501,6 +513,12 @@ public final class MdtbbsNetplayManager {
     ///
     /// @param intentId approved join intent id
     public void onJoinApproved(String intentId) {
+        if (phase == Phase.WORKING) {
+            // The HTTP join-request call has not returned yet; keep the intent
+            // so it can be consumed instead of being acknowledged and dropped.
+            pendingApprovedIntent = intentId;
+            return;
+        }
         if (!awaitingApproval) {
             return;
         }
@@ -634,6 +652,7 @@ public final class MdtbbsNetplayManager {
         requireApproval = false;
         activityName = "";
         requestedSessionId = "";
+        pendingApprovedIntent = "";
         awaitingApproval = false;
         playerCount = 0;
         maxPlayers = 0;
@@ -756,13 +775,18 @@ public final class MdtbbsNetplayManager {
             case "multiplayer.join_request.created" -> handleJoinRequestCreated(event);
             case "multiplayer.join_request.approved" -> {
                 String intentId = event.string("intent_id");
-                if (!intentId.isBlank()) {
+                String approvedSession = event.sessionId();
+                boolean matches = approvedSession.isEmpty()
+                        || approvedSession.equals(requestedSessionId);
+                if (!intentId.isBlank() && matches) {
                     onJoinApproved(intentId);
                 }
             }
             case "multiplayer.join_request.rejected" -> {
                 if (awaitingApproval) {
                     awaitingApproval = false;
+                    requestedSessionId = "";
+                    pendingApprovedIntent = "";
                     setPhase(Phase.ERROR, "JOIN_REQUEST_REJECTED", null);
                 }
             }

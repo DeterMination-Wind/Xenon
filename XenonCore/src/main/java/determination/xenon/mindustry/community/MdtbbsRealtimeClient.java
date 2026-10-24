@@ -383,12 +383,19 @@ public final class MdtbbsRealtimeClient implements AutoCloseable {
         }
     }
 
-    /// Notifies the listener of a state change.
+    /// Notifies the listener of a state change with the one-shot ticket removed.
     private void notifyState(String state, @Nullable String detail) {
         Listener current = listener;
         if (current != null) {
-            current.onState(state, detail);
+            current.onState(state, redact(detail));
         }
+    }
+
+    /// Removes the one-shot ticket from exception details before they leave
+    /// the client.
+    static @Nullable String redact(@Nullable String detail) {
+        return detail == null ? null
+                : detail.replaceAll("ticket=[^&\\s]+", "ticket=***");
     }
 
     /// WebSocket listener that accumulates fragmented text frames.
