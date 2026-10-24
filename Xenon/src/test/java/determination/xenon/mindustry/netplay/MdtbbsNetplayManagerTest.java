@@ -349,8 +349,8 @@ public final class MdtbbsNetplayManagerTest {
 
         manager.requestJoin("ses_1");
 
-        assertTrue(await(5000, manager::awaitingApproval));
-        assertTrue(manager.phase() == MdtbbsNetplayManager.Phase.GUEST_WAITING);
+        assertTrue(await(5000, () -> manager.phase() == MdtbbsNetplayManager.Phase.GUEST_WAITING
+                && manager.awaitingApproval()));
         assertTrue(fake.calls.contains("join-request:ses_1"));
         assertNull(tunnels.lastConfig);
         manager.leave();

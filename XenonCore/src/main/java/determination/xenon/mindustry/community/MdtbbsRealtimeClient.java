@@ -395,7 +395,7 @@ public final class MdtbbsRealtimeClient implements AutoCloseable {
     /// the client.
     static @Nullable String redact(@Nullable String detail) {
         return detail == null ? null
-                : detail.replaceAll("ticket=[^&\\s]+", "ticket=***");
+                : detail.replaceAll("(?i)ticket=[^&\\s]+", "ticket=***");
     }
 
     /// WebSocket listener that accumulates fragmented text frames.
