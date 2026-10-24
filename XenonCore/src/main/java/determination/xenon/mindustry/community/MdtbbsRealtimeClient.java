@@ -37,6 +37,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.regex.Pattern;
 
 /// WebSocket client for MDTBBS realtime events.
 ///
@@ -79,6 +80,9 @@ public final class MdtbbsRealtimeClient implements AutoCloseable {
 
     /// Maximum sessions the server allows in one subscribe frame.
     private static final int MAX_SUBSCRIPTIONS = 32;
+
+    /// Query parameter carrying the one-shot realtime ticket.
+    private static final Pattern TICKET_PATTERN = Pattern.compile("(?i)ticket=[^&\\s]+");
 
     private final MdtbbsApiClient api;
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(runnable -> {
@@ -395,7 +399,7 @@ public final class MdtbbsRealtimeClient implements AutoCloseable {
     /// the client.
     static @Nullable String redact(@Nullable String detail) {
         return detail == null ? null
-                : detail.replaceAll("(?i)ticket=[^&\\s]+", "ticket=***");
+                : TICKET_PATTERN.matcher(detail).replaceAll("ticket=***");
     }
 
     /// WebSocket listener that accumulates fragmented text frames.

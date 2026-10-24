@@ -167,7 +167,9 @@ public final class MdtbbsNetplayManager {
     private volatile String activityName = "";
     private final Object approvalLock = new Object();
     private volatile String requestedSessionId = "";
-    private volatile String pendingApprovedIntent = "";
+    private String pendingApprovedIntent = "";
+    private boolean approvalInFlight;
+    private boolean approvalRejected;
     private volatile boolean awaitingApproval;
     private volatile int playerCount;
     private volatile int maxPlayers;
@@ -482,6 +484,8 @@ public final class MdtbbsNetplayManager {
         synchronized (approvalLock) {
             requestedSessionId = id;
             pendingApprovedIntent = "";
+            approvalInFlight = true;
+            approvalRejected = false;
             awaitingApproval = true;
         }
         setPhase(Phase.WORKING, null, null);
@@ -493,7 +497,8 @@ public final class MdtbbsNetplayManager {
                 multiplayer.createJoinRequest(id);
                 String pending;
                 synchronized (approvalLock) {
-                    if (isStale(token) || !awaitingApproval) {
+                    if (isStale(token) || !awaitingApproval || approvalRejected) {
+                        approvalInFlight = false;
                         return;
                     }
                     pending = pendingApprovedIntent;
@@ -504,14 +509,33 @@ public final class MdtbbsNetplayManager {
                 }
                 setPhase(Phase.GUEST_WAITING, null,
                         pending.isBlank() ? "approval_pending" : null);
+                // Keep `approvalInFlight` set across the phase publish so an
+                // approval arriving in that window is buffered and drained
+                // here instead of being stranded behind a WORKING phase.
+                String late;
+                synchronized (approvalLock) {
+                    if (approvalRejected) {
+                        approvalInFlight = false;
+                        return;
+                    }
+                    late = pendingApprovedIntent;
+                    pendingApprovedIntent = "";
+                    if (!pending.isBlank() || !late.isBlank()) {
+                        awaitingApproval = false;
+                    }
+                    approvalInFlight = false;
+                }
                 if (!pending.isBlank()) {
                     joinByIntent(pending);
+                } else if (!late.isBlank()) {
+                    joinByIntent(late);
                 }
             } catch (IOException | RuntimeException e) {
                 if (!isStale(token)) {
                     synchronized (approvalLock) {
                         if (!isStale(token)) {
                             awaitingApproval = false;
+                            approvalInFlight = false;
                             requestedSessionId = "";
                             pendingApprovedIntent = "";
                         }
@@ -530,10 +554,10 @@ public final class MdtbbsNetplayManager {
     /// @param intentId approved join intent id
     public void onJoinApproved(String intentId) {
         synchronized (approvalLock) {
-            if (phase == Phase.WORKING) {
-                // The HTTP join-request call has not returned yet; keep the
-                // intent so it can be consumed instead of being acknowledged
-                // and dropped. The worker drains it under the same lock.
+            if (approvalInFlight) {
+                // The HTTP join-request call (or its phase publish) has not
+                // finished; keep the intent so the worker can drain it instead
+                // of acknowledging and dropping it.
                 pendingApprovedIntent = intentId;
                 return;
             }
@@ -673,6 +697,8 @@ public final class MdtbbsNetplayManager {
         synchronized (approvalLock) {
             requestedSessionId = "";
             pendingApprovedIntent = "";
+            approvalInFlight = false;
+            approvalRejected = false;
             awaitingApproval = false;
         }
         playerCount = 0;
@@ -805,6 +831,7 @@ public final class MdtbbsNetplayManager {
             }
             case "multiplayer.join_request.rejected" -> {
                 synchronized (approvalLock) {
+                    approvalRejected = true;
                     if (awaitingApproval) {
                         awaitingApproval = false;
                         requestedSessionId = "";
