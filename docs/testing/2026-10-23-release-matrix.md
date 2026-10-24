@@ -48,3 +48,17 @@ not run in this headless build environment:
 - Windows `.bat` and WSL `.sh` script execution, and all three `xenon://` links
   in an OS with the scheme registered.
 - Recycle-bin restore of a real instance and `group:` filtering in the game list.
+
+## Competitor re-check (2026-10-23)
+
+- Copper Launcher (`MDTCopper/launcher`): latest commit `275f7503` dated
+  2026-10-22 ("联机页定时刷新玩家；房主等游戏开房最多 8 秒"). No commits after
+  the previous verification and no release newer than `v0.2.0-alpha2`
+  (2026-09-27). README competitor rows remain current.
+
+## Sol review
+
+- Route: audit, then repeated fresh reviews after each correction.
+- Final verdict: `ship` after matching approvals by `join_request_id`, guarding
+  stale workers by lifecycle token, releasing the approval lock before
+  `joinByIntent`, and adding deterministic stale rejection/stale worker tests.
