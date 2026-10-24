@@ -356,6 +356,29 @@ public final class MdtbbsNetplayManagerTest {
         manager.leave();
     }
 
+    /// A stale failed request cannot clear a newer request's approval state.
+    @Test
+    public void staleJoinRequestFailureDoesNotClobberNewRequest() throws Exception {
+        FakeMultiplayer fake = new FakeMultiplayer();
+        fake.failFirstJoinRequest = true;
+        fake.joinRequestGate = new CountDownLatch(1);
+        FakeTunnels tunnels = new FakeTunnels();
+        MdtbbsNetplayManager manager = new MdtbbsNetplayManager(() -> true, fake, tunnels, 30);
+
+        manager.requestJoin("ses_1");
+        assertTrue(fake.joinRequestStarted.await(5, TimeUnit.SECONDS));
+        manager.leave();
+        manager.requestJoin("ses_2");
+        assertTrue(await(5000, () -> manager.phase() == MdtbbsNetplayManager.Phase.GUEST_WAITING
+                && manager.awaitingApproval()));
+        fake.joinRequestGate.countDown();
+        Thread.sleep(300);
+
+        assertTrue(manager.phase() == MdtbbsNetplayManager.Phase.GUEST_WAITING);
+        assertTrue(manager.awaitingApproval());
+        manager.leave();
+    }
+
     /// An approval that arrives while the join request is in flight is queued.
     @Test
     public void approvalDuringRequestIsNotDropped() throws Exception {
@@ -445,6 +468,9 @@ public final class MdtbbsNetplayManagerTest {
         final CountDownLatch consumeStarted = new CountDownLatch(1);
         @Nullable CountDownLatch joinRequestGate;
         final CountDownLatch joinRequestStarted = new CountDownLatch(1);
+        final java.util.concurrent.atomic.AtomicInteger joinRequestCount =
+                new java.util.concurrent.atomic.AtomicInteger();
+        volatile boolean failFirstJoinRequest;
         @Nullable CountDownLatch allocateGate;
         final CountDownLatch allocateStarted = new CountDownLatch(1);
         final CountDownLatch resumeCalled = new CountDownLatch(1);
@@ -564,8 +590,12 @@ public final class MdtbbsNetplayManagerTest {
         @Override
         public void createJoinRequest(String sessionId) throws IOException {
             calls.add("join-request:" + sessionId);
+            int call = joinRequestCount.incrementAndGet();
             joinRequestStarted.countDown();
             waitGate(joinRequestGate);
+            if (failFirstJoinRequest && call == 1) {
+                throw new IOException("first request failed");
+            }
         }
 
         @Override

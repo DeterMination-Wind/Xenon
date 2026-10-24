@@ -353,9 +353,13 @@ public final class MdtbbsNetplayManager {
         String requestedJoin = normalizeJoinPolicy(joinPolicy);
         String requestedVisibility = normalizeVisibility(visibility);
         boolean approval = normalizeApproval(requestedJoin, requireApproval);
-        long token = generation.incrementAndGet();
-        String previous = detachLocalSession();
-        setPhase(Phase.WORKING, null, null);
+        long token;
+        String previous;
+        synchronized (approvalLock) {
+            token = generation.incrementAndGet();
+            previous = detachLocalSession();
+            setPhase(Phase.WORKING, null, null);
+        }
         Schedulers.io().execute(() -> {
             try {
                 awaitCleanup();
@@ -423,9 +427,13 @@ public final class MdtbbsNetplayManager {
         if (phase == Phase.WORKING) {
             return;
         }
-        long token = generation.incrementAndGet();
-        String previous = detachLocalSession();
-        setPhase(Phase.WORKING, null, null);
+        long token;
+        String previous;
+        synchronized (approvalLock) {
+            token = generation.incrementAndGet();
+            previous = detachLocalSession();
+            setPhase(Phase.WORKING, null, null);
+        }
         Schedulers.io().execute(() -> {
             try {
                 awaitCleanup();
@@ -477,58 +485,56 @@ public final class MdtbbsNetplayManager {
             setPhase(Phase.ERROR, "SESSION_NOT_FOUND", "not a session id: " + id);
             return;
         }
-        long token = generation.incrementAndGet();
-        String previous = detachLocalSession();
-        // Publish the target before the request returns: the approval event can
-        // arrive while the HTTP call is still in flight.
+        long token;
+        String previous;
         synchronized (approvalLock) {
+            token = generation.incrementAndGet();
+            previous = detachLocalSession();
+            // Publish the target before the request returns: the approval
+            // event can arrive while the HTTP call is still in flight.
             requestedSessionId = id;
             pendingApprovedIntent = "";
             approvalInFlight = true;
             approvalRejected = false;
             awaitingApproval = true;
+            setPhase(Phase.WORKING, null, null);
         }
-        setPhase(Phase.WORKING, null, null);
         Schedulers.io().execute(() -> {
             try {
                 awaitCleanup();
                 leaveQuietly(previous);
                 requireCapabilities();
                 multiplayer.createJoinRequest(id);
-                String pending;
+                // Everything below runs under the same lock that guards
+                // generation bumps and detach, so a stale worker can never
+                // publish over a newer request.
                 synchronized (approvalLock) {
-                    if (isStale(token) || !awaitingApproval || approvalRejected) {
+                    if (isStale(token)) {
+                        return;
+                    }
+                    if (!awaitingApproval || approvalRejected) {
                         approvalInFlight = false;
                         return;
                     }
-                    pending = pendingApprovedIntent;
+                    String pending = pendingApprovedIntent;
                     pendingApprovedIntent = "";
                     if (!pending.isBlank()) {
                         awaitingApproval = false;
-                    }
-                }
-                setPhase(Phase.GUEST_WAITING, null,
-                        pending.isBlank() ? "approval_pending" : null);
-                // Keep `approvalInFlight` set across the phase publish so an
-                // approval arriving in that window is buffered and drained
-                // here instead of being stranded behind a WORKING phase.
-                String late;
-                synchronized (approvalLock) {
-                    if (approvalRejected) {
                         approvalInFlight = false;
+                        setPhase(Phase.GUEST_WAITING, null, null);
+                        joinByIntent(pending);
                         return;
                     }
-                    late = pendingApprovedIntent;
+                    setPhase(Phase.GUEST_WAITING, null, "approval_pending");
+                    // Drain once more while still in flight: an approval that
+                    // arrived during the publish is consumed here.
+                    String late = pendingApprovedIntent;
                     pendingApprovedIntent = "";
-                    if (!pending.isBlank() || !late.isBlank()) {
-                        awaitingApproval = false;
-                    }
                     approvalInFlight = false;
-                }
-                if (!pending.isBlank()) {
-                    joinByIntent(pending);
-                } else if (!late.isBlank()) {
-                    joinByIntent(late);
+                    if (!late.isBlank()) {
+                        awaitingApproval = false;
+                        joinByIntent(late);
+                    }
                 }
             } catch (IOException | RuntimeException e) {
                 if (!isStale(token)) {
@@ -606,9 +612,13 @@ public final class MdtbbsNetplayManager {
         if (phase == Phase.WORKING) {
             return;
         }
-        long token = generation.incrementAndGet();
-        String previous = detachLocalSession();
-        setPhase(Phase.WORKING, null, null);
+        long token;
+        String previous;
+        synchronized (approvalLock) {
+            token = generation.incrementAndGet();
+            previous = detachLocalSession();
+            setPhase(Phase.WORKING, null, null);
+        }
         Schedulers.io().execute(() -> {
             try {
                 awaitCleanup();
@@ -649,10 +659,13 @@ public final class MdtbbsNetplayManager {
 
     /// Leaves the current session and tears the tunnel down.
     public void leave() {
-        generation.incrementAndGet();
         boolean wasHosting = hosting;
-        String previous = detachLocalSession();
-        setPhase(Phase.IDLE, null, null);
+        String previous;
+        synchronized (approvalLock) {
+            generation.incrementAndGet();
+            previous = detachLocalSession();
+            setPhase(Phase.IDLE, null, null);
+        }
         publishActivity();
         if (previous.isEmpty()) {
             return;
@@ -663,8 +676,10 @@ public final class MdtbbsNetplayManager {
 
     /// Stops the tunnel and heartbeat without network calls (launcher exit).
     public void shutdown() {
-        generation.incrementAndGet();
-        detachLocalSession();
+        synchronized (approvalLock) {
+            generation.incrementAndGet();
+            detachLocalSession();
+        }
         closeRealtime();
         scheduler.shutdownNow();
     }
@@ -672,38 +687,41 @@ public final class MdtbbsNetplayManager {
     /// Closes the active tunnel/heartbeat, clears session state and returns the
     /// previous session id for an optional server-side leave.
     private String detachLocalSession() {
-        stopHeartbeat();
-        MdtbbsRealtimeClient events = realtime;
-        if (events != null && !sessionId.isEmpty()) {
-            events.unsubscribe(sessionId);
-        }
-        MdtbbsRelayTunnel current = tunnel;
-        tunnel = null;
-        if (current != null) {
-            current.close();
-        }
-        String previous = sessionId;
-        sessionId = "";
-        joinCode = "";
-        localAddress = "";
-        ownerPeerId = "";
-        peerId = "";
-        resumeToken = "";
-        hosting = false;
-        visibility = "";
-        joinPolicy = "";
-        requireApproval = false;
-        activityName = "";
         synchronized (approvalLock) {
-            requestedSessionId = "";
-            pendingApprovedIntent = "";
-            approvalInFlight = false;
-            approvalRejected = false;
-            awaitingApproval = false;
+
+            stopHeartbeat();
+            MdtbbsRealtimeClient events = realtime;
+            if (events != null && !sessionId.isEmpty()) {
+                events.unsubscribe(sessionId);
+            }
+            MdtbbsRelayTunnel current = tunnel;
+            tunnel = null;
+            if (current != null) {
+                current.close();
+            }
+            String previous = sessionId;
+            sessionId = "";
+            joinCode = "";
+            localAddress = "";
+            ownerPeerId = "";
+            peerId = "";
+            resumeToken = "";
+            hosting = false;
+            visibility = "";
+            joinPolicy = "";
+            requireApproval = false;
+            activityName = "";
+            synchronized (approvalLock) {
+                requestedSessionId = "";
+                pendingApprovedIntent = "";
+                approvalInFlight = false;
+                approvalRejected = false;
+                awaitingApproval = false;
+            }
+            playerCount = 0;
+            maxPlayers = 0;
+            return previous;
         }
-        playerCount = 0;
-        maxPlayers = 0;
-        return previous;
     }
 
     /// Asks the server to leave a session, ignoring failures.
@@ -830,6 +848,11 @@ public final class MdtbbsNetplayManager {
                 }
             }
             case "multiplayer.join_request.rejected" -> {
+                String rejectedSession = event.sessionId();
+                if (!rejectedSession.isEmpty()
+                        && !rejectedSession.equals(requestedSessionId)) {
+                    return;
+                }
                 synchronized (approvalLock) {
                     approvalRejected = true;
                     if (awaitingApproval) {
