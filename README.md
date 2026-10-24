@@ -20,20 +20,20 @@ Xenon 源自 [HMCL](https://github.com/HMCL-dev/HMCL)，但工作流围绕 Mindu
 
 ### 核心能力
 
-- **实例隔离与版本管理**：原版、Bleeding-Edge、MindustryX、CN-ARC、Foo Client、本地 jar 与 Steam 安装可以并存，各自保留配置、存档和 Mod。
-- **安装与下载**：自动准备 Java 与数据目录，支持断点续传、暂停/继续、下载来源档位、全局限速和 GitHub Token 提速。
-- **内容管理**：Mod 社区索引与 GitHub 直装、批量启停、拖拽导入；地图/蓝图浏览安装与导入导出；`settings.bin` 表格化编辑与备份。
-- **存档与云存档**：本地备份/导出、删除进回收站、长会话退出后自动备份；云端支持单存档快照、冲突保留两份，以及整实例归档（存档/地图/蓝图/设置/Mod 清单）和按实例自动同步。
-- **MDTBBS 联机**：公开房间大厅、按可见范围与加入权限建房、房主审批、实时事件、好友邀请/加入动作，以及伪局域网自动发现，客人可直接从游戏内 LAN 列表进入。
-- **服务器管理**：多服务器实例、控制台、自动重启，以及 [ScriptAgent4Mindustry](https://github.com/way-zer/ScriptAgent4Mindustry) 脚本环境。
-- **排障与维护**：实例日志、崩溃报告、健康检查、内存建议、实例迁移、回收站和单层分组。
+- **实例隔离与版本管理**：原版、BE、MindustryX、CN-ARC、Foo Client、本地 jar 与 Steam 安装可以并存并可选各自隔离。
+- **安装与下载**：自动准备 Java 与数据目录，支持断点续传、暂停/继续、下载来源档位、和镜像加速。
+- **内容管理**：Mod 国内镜像索引和资源、Mod 批量启停、拖拽导入；WZ/MDTBBS地图、蓝图启动器内浏览安装与导入导出；游戏外 `settings.bin` 表格化编辑与备份。
+- **存档与云存档**：本地备份/导出、删除进回收站、长会话退出后自动备份；云存档支持单存档快照、冲突保留两份，以及整实例归档和按实例自动同步。
+- **MDTBBS 联机**：公开房间大厅、按可见范围与加入权限建房、房主审批、实时事件、好友邀请/加入动作，以及伪局域网自动发现，客人可直接从游戏内 LAN 列表进入。所有操作在游戏内完成。
+- **服务器管理**：多服务器实例、控制台、自动重启，以及自动配置 [ScriptAgent4Mindustry](https://github.com/way-zer/ScriptAgent4Mindustry) 脚本环境。
+- **排障与维护**：游戏外导出实例日志、崩溃报告；游戏外提供兼容检查、内存建议、实例迁移、回收站功能。
 
 ### 快速开始
 
 1. 下载 [最新 Release](https://github.com/DeterMination-Wind/Xenon/releases)：Windows 用单文件 `Xenon.exe`，macOS/Linux 用 `.jar`（需要 Java 17+）。
 2. 启动 Xenon，选择 `Install Mindustry` 并安装一个版本。
 3. 打开 `Mindustry Versions`，启动实例；首次启动会自动准备数据目录。
-4. 需要登录 MDTBBS 时，按提示在系统浏览器完成 MindAuth 授权。
+4. 需要登录 MDTBBS 时，按提示在系统浏览器完成 MindAuth 授权登录你的 MDTBBS账号。
 
 ### 文档
 
@@ -68,20 +68,20 @@ Xenon is based on [HMCL](https://github.com/HMCL-dev/HMCL) but reorganizes the w
 
 ### Highlights
 
-- **Instance isolation and versions**: Vanilla, Bleeding-Edge, MindustryX, CN-ARC, Foo Client, local jars, and Steam installs coexist with separate configuration, saves, and mods.
-- **Install and download**: automatic Java/data-directory setup, resumable and pausable downloads, source tiers, global rate limiting, and GitHub token acceleration.
-- **Content**: community mod index and GitHub installs, batch enable/disable, drag-and-drop import; map/schematic browsing, import, and export; table editor and backups for `settings.bin`.
-- **Saves and cloud**: local backup/export, recycle bin, post-session automatic backups; cloud single-save snapshots with keep-both conflicts, plus whole-instance archives (saves/maps/schematics/settings/mod manifest) with per-instance automatic sync.
-- **MDTBBS multiplayer**: public lobby, orthogonal visibility and join-policy room setup, host approval, realtime events, friend invite/join actions, and pseudo-LAN discovery so guests can join from Mindustry's LAN list.
-- **Server management**: multiple server instances, console, auto-restart, and the [ScriptAgent4Mindustry](https://github.com/way-zer/ScriptAgent4Mindustry) script environment.
-- **Diagnostics and maintenance**: instance logs, crash reports, health checks, memory suggestions, instance migration, recycle bin, and single-level groups.
+- **Instance isolation and versions**: Vanilla, BE, MindustryX, CN-ARC, Foo Client, local jars, and Steam installs can coexist with optional per-instance isolation.
+- **Install and download**: automatic Java and data-directory setup, resumable and pausable downloads, download source tiers, and mirror acceleration.
+- **Content**: domestic mod mirror index and resources, batch enable/disable, drag-and-drop import; WZ/MDTBBS maps and schematics can be browsed, installed, imported, and exported inside the launcher; table-style editing and backup of `settings.bin` outside the game.
+- **Saves and cloud**: local backup/export, recycle bin, automatic backup after exiting long sessions; cloud saves support single-save snapshots with keep-both conflict copies, whole-instance archives, and per-instance automatic sync.
+- **MDTBBS multiplayer**: public room lobby, room creation by visibility scope and join permission, host approval, realtime events, friend invite/join actions, and pseudo-LAN automatic discovery so guests can join directly from Mindustry's in-game LAN list. All operations are completed in-game.
+- **Server management**: multiple server instances, console, auto-restart, and automatic configuration of the [ScriptAgent4Mindustry](https://github.com/way-zer/ScriptAgent4Mindustry) script environment.
+- **Diagnostics and maintenance**: export instance logs and crash reports outside the game; outside the game, provide compatibility checks, memory suggestions, instance migration, and recycle bin.
 
 ### Quick Start
 
-1. Download the [latest release](https://github.com/DeterMination-Wind/Xenon/releases): `Xenon.exe` for Windows, or the `.jar` for macOS/Linux (Java 17+).
+1. Download the [latest release](https://github.com/DeterMination-Wind/Xenon/releases): `Xenon.exe` single file for Windows, or the `.jar` for macOS/Linux (Java 17+).
 2. Start Xenon, choose `Install Mindustry`, and install a version.
-3. Open `Mindustry Versions` and launch the instance; its data directory is prepared on first launch.
-4. Sign in to MDTBBS when prompted through MindAuth in the system browser.
+3. Open `Mindustry Versions` and launch the instance; its data directory is prepared automatically on first launch.
+4. When MDTBBS login is required, follow the prompt to complete MindAuth authorization in the system browser and sign in to your MDTBBS account.
 
 ### Documentation
 
@@ -98,7 +98,7 @@ Xenon is based on [HMCL](https://github.com/HMCL-dev/HMCL) but reorganizes the w
 
 ### Credits
 
-Thanks to [Wayzer / TinyLake](https://github.com/way-zer) (ScriptAgent, MindustryX, and GitHub mirrors), [DeterMination](https://github.com/DeterMination-Wind) (mirrors and hosting), [MDTbbs](https://mdtbbs.cn/) (original Mindustry download mirror), [Xiuxian](https://alist.mindustry.ltd/Github/MindustryX) (MindustryX mirror), [爱看番的年兽sama](https://space.bilibili.com/433674920) (default background), the [HMCL team](https://github.com/HMCL-dev/HMCL) (project foundation), [Anuken](https://github.com/Anuken) (Mindustry), and all [GitHub contributors](https://github.com/DeterMination-Wind/Xenon/graphs/contributors).
+Thanks to [Wayzer / TinyLake](https://github.com/way-zer) (ScriptAgent, MindustryX, and GitHub mirrors), [DeterMination](https://github.com/DeterMination-Wind) (mirrors and hosting), [MDTbbs](https://mdtbbs.cn/) (original Mindustry download mirror), [Xiuxian / 休闲](https://alist.mindustry.ltd/Github/MindustryX) (MindustryX mirror), [爱看番的年兽sama](https://space.bilibili.com/433674920) (default background), the [HMCL team](https://github.com/HMCL-dev/HMCL) (project foundation), [Anuken](https://github.com/Anuken) (Mindustry), and all [GitHub contributors](https://github.com/DeterMination-Wind/Xenon/graphs/contributors).
 
 ### License
 
