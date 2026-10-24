@@ -2,7 +2,7 @@
 
 All notable changes to Xenon will be documented in this file.
 
-## [1.18.0] — 2026-10-23
+## [2.0.0] — 2026-10-23
 
 ### Added
 - MDTBBS multiplayer moved to API 1.7.0: orthogonal visibility/join-policy axes, host approval, a public lobby, realtime WebSocket events, the default join-intent launcher preference and a pseudo-LAN advertiser so guests pick the room from Mindustry's LAN list.
@@ -20,7 +20,7 @@ All notable changes to Xenon will be documented in this file.
 ### Changed
 - The competitor table was re-verified as of 2026-10-23 and now compares cloud archives, Mod development, the recycle bin, groups and the CLI.
 
-See the [bilingual release notes](release-notes/v1.18.0.md) for details.
+See the [bilingual release notes](release-notes/v2.0.0.md) for details.
 
 ## [1.17.0] — 2026-10-19
 

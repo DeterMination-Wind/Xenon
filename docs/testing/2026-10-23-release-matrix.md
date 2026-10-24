@@ -1,4 +1,4 @@
-# Xenon 1.18.0 verification matrix (2026-10-23)
+# Xenon 2.0.0 verification matrix (2026-10-23)
 
 Automated checks run from the repository root with `-g .gradle-user-home`:
 
