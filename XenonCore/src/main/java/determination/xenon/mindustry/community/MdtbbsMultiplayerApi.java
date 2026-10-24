@@ -132,8 +132,9 @@ public interface MdtbbsMultiplayerApi {
     /// Requests to join a session whose policy requires host approval.
     ///
     /// @param sessionId session id
+    /// @return the server-side join request id, or empty when omitted
     /// @throws IOException when the request fails
-    void createJoinRequest(String sessionId) throws IOException;
+    String createJoinRequest(String sessionId) throws IOException;
 
     /// Approves one join request.
     ///

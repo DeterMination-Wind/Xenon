@@ -379,6 +379,33 @@ public final class MdtbbsNetplayManagerTest {
         manager.leave();
     }
 
+    /// A rejection carrying an old request id must not affect the new request.
+    @Test
+    public void staleJoinRequestRejectionIsIgnored() throws Exception {
+        FakeMultiplayer fake = new FakeMultiplayer();
+        FakeTunnels tunnels = new FakeTunnels();
+        MdtbbsNetplayManager manager = new MdtbbsNetplayManager(() -> true, fake, tunnels, 30);
+
+        manager.requestJoin("ses_1");
+        assertTrue(await(5000, () -> manager.phase() == MdtbbsNetplayManager.Phase.GUEST_WAITING));
+        manager.handleRealtimeEvent(rejectionEvent("jr_old", "ses_1"));
+        assertTrue(manager.phase() == MdtbbsNetplayManager.Phase.GUEST_WAITING);
+        manager.handleRealtimeEvent(rejectionEvent("jr_1", "ses_1"));
+        assertTrue(await(5000, () -> manager.phase() == MdtbbsNetplayManager.Phase.ERROR));
+        assertEquals("JOIN_REQUEST_REJECTED", manager.errorCode());
+        manager.leave();
+    }
+
+    /// Builds a rejection event for the current session.
+    private static determination.xenon.mindustry.community.MdtbbsRealtimeEvent rejectionEvent(
+            String requestId, String sessionId) {
+        com.google.gson.JsonObject data = new com.google.gson.JsonObject();
+        data.addProperty("join_request_id", requestId);
+        data.addProperty("session_id", sessionId);
+        return new determination.xenon.mindustry.community.MdtbbsRealtimeEvent(
+                "evt-" + requestId, "multiplayer.join_request.rejected", 1L, data);
+    }
+
     /// An approval that arrives while the join request is in flight is queued.
     @Test
     public void approvalDuringRequestIsNotDropped() throws Exception {
@@ -588,14 +615,15 @@ public final class MdtbbsNetplayManagerTest {
         }
 
         @Override
-        public void createJoinRequest(String sessionId) throws IOException {
+        public String createJoinRequest(String sessionId) throws IOException {
             calls.add("join-request:" + sessionId);
             int call = joinRequestCount.incrementAndGet();
             joinRequestStarted.countDown();
-            waitGate(joinRequestGate);
             if (failFirstJoinRequest && call == 1) {
+                waitGate(joinRequestGate);
                 throw new IOException("first request failed");
             }
+            return "jr_" + call;
         }
 
         @Override

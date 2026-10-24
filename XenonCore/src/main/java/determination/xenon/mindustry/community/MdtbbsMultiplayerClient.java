@@ -650,8 +650,12 @@ public final class MdtbbsMultiplayerClient implements MdtbbsMultiplayerApi {
     ///
     /// @param sessionId session id
     /// @throws IOException when the request fails
-    public void createJoinRequest(String sessionId) throws IOException {
-        api.post(path("/multiplayer/sessions/" + sessionId + "/join-requests"), new JsonObject());
+    public String createJoinRequest(String sessionId) throws IOException {
+        JsonObject data = MdtbbsJson.dataObject(
+                api.post(path("/multiplayer/sessions/" + sessionId + "/join-requests"),
+                        new JsonObject()));
+        String id = MdtbbsJson.stringOf(data, "join_request_id");
+        return id.isBlank() ? MdtbbsJson.stringOf(data, "id") : id;
     }
 
     /// Approves one join request.

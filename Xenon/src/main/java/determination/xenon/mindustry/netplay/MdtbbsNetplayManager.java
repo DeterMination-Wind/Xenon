@@ -167,6 +167,7 @@ public final class MdtbbsNetplayManager {
     private volatile String activityName = "";
     private final Object approvalLock = new Object();
     private volatile String requestedSessionId = "";
+    private volatile String activeJoinRequestId = "";
     private String pendingApprovedIntent = "";
     private boolean approvalInFlight;
     private boolean approvalRejected;
@@ -493,6 +494,7 @@ public final class MdtbbsNetplayManager {
             // Publish the target before the request returns: the approval
             // event can arrive while the HTTP call is still in flight.
             requestedSessionId = id;
+            activeJoinRequestId = "";
             pendingApprovedIntent = "";
             approvalInFlight = true;
             approvalRejected = false;
@@ -504,10 +506,11 @@ public final class MdtbbsNetplayManager {
                 awaitCleanup();
                 leaveQuietly(previous);
                 requireCapabilities();
-                multiplayer.createJoinRequest(id);
+                String requestId = multiplayer.createJoinRequest(id);
                 // Everything below runs under the same lock that guards
                 // generation bumps and detach, so a stale worker can never
                 // publish over a newer request.
+                String consume = "";
                 synchronized (approvalLock) {
                     if (isStale(token)) {
                         return;
@@ -516,25 +519,26 @@ public final class MdtbbsNetplayManager {
                         approvalInFlight = false;
                         return;
                     }
+                    activeJoinRequestId = requestId;
                     String pending = pendingApprovedIntent;
                     pendingApprovedIntent = "";
+                    if (pending.isBlank()) {
+                        setPhase(Phase.GUEST_WAITING, null, "approval_pending");
+                        // Drain once more while still in flight: an approval
+                        // that arrived during the publish is consumed here.
+                        pending = pendingApprovedIntent;
+                        pendingApprovedIntent = "";
+                    } else {
+                        setPhase(Phase.GUEST_WAITING, null, null);
+                    }
+                    approvalInFlight = false;
                     if (!pending.isBlank()) {
                         awaitingApproval = false;
-                        approvalInFlight = false;
-                        setPhase(Phase.GUEST_WAITING, null, null);
-                        joinByIntent(pending);
-                        return;
+                        consume = pending;
                     }
-                    setPhase(Phase.GUEST_WAITING, null, "approval_pending");
-                    // Drain once more while still in flight: an approval that
-                    // arrived during the publish is consumed here.
-                    String late = pendingApprovedIntent;
-                    pendingApprovedIntent = "";
-                    approvalInFlight = false;
-                    if (!late.isBlank()) {
-                        awaitingApproval = false;
-                        joinByIntent(late);
-                    }
+                }
+                if (!consume.isBlank()) {
+                    joinByIntent(token, consume);
                 }
             } catch (IOException | RuntimeException e) {
                 if (!isStale(token)) {
@@ -543,6 +547,7 @@ public final class MdtbbsNetplayManager {
                             awaitingApproval = false;
                             approvalInFlight = false;
                             requestedSessionId = "";
+                            activeJoinRequestId = "";
                             pendingApprovedIntent = "";
                         }
                     }
@@ -559,6 +564,7 @@ public final class MdtbbsNetplayManager {
     ///
     /// @param intentId approved join intent id
     public void onJoinApproved(String intentId) {
+        long token;
         synchronized (approvalLock) {
             if (approvalInFlight) {
                 // The HTTP join-request call (or its phase publish) has not
@@ -571,8 +577,9 @@ public final class MdtbbsNetplayManager {
                 return;
             }
             awaitingApproval = false;
+            token = generation.get();
         }
-        joinByIntent(intentId);
+        joinByIntent(token, intentId);
     }
 
     /// Approves one join request (host side).
@@ -609,12 +616,21 @@ public final class MdtbbsNetplayManager {
     ///
     /// @param intentId intent id from a deep link or an accepted invite
     public void joinByIntent(String intentId) {
-        if (phase == Phase.WORKING) {
-            return;
-        }
+        joinByIntent(generation.get(), intentId);
+    }
+
+    /// Joins only when the caller still owns the expected lifecycle token.
+    ///
+    /// Used by the approval handoff: the worker releases the approval lock
+    /// before this call, and a newer request/leave invalidates the token so an
+    /// old approval cannot start a session after cancellation.
+    private void joinByIntent(long expectedToken, String intentId) {
         long token;
         String previous;
         synchronized (approvalLock) {
+            if (isStale(expectedToken) || phase == Phase.WORKING) {
+                return;
+            }
             token = generation.incrementAndGet();
             previous = detachLocalSession();
             setPhase(Phase.WORKING, null, null);
@@ -833,24 +849,32 @@ public final class MdtbbsNetplayManager {
         });
     }
 
+    /// Whether an approval/rejection event belongs to the current request.
+    ///
+    /// The join request id is authoritative when both sides carry it; older
+    /// servers that omit it fall back to the session id.
+    private boolean matchesJoinRequest(MdtbbsRealtimeEvent event) {
+        String eventRequest = event.string("join_request_id");
+        if (!eventRequest.isBlank() && !activeJoinRequestId.isBlank()) {
+            return eventRequest.equals(activeJoinRequestId);
+        }
+        String session = event.sessionId();
+        return session.isEmpty() || session.equals(requestedSessionId);
+    }
+
     /// Applies one realtime event to the session state.
-    private void handleRealtimeEvent(MdtbbsRealtimeEvent event) {
+    void handleRealtimeEvent(MdtbbsRealtimeEvent event) {
         String name = event.event();
         switch (name) {
             case "multiplayer.join_request.created" -> handleJoinRequestCreated(event);
             case "multiplayer.join_request.approved" -> {
                 String intentId = event.string("intent_id");
-                String approvedSession = event.sessionId();
-                boolean matches = approvedSession.isEmpty()
-                        || approvedSession.equals(requestedSessionId);
-                if (!intentId.isBlank() && matches) {
+                if (!intentId.isBlank() && matchesJoinRequest(event)) {
                     onJoinApproved(intentId);
                 }
             }
             case "multiplayer.join_request.rejected" -> {
-                String rejectedSession = event.sessionId();
-                if (!rejectedSession.isEmpty()
-                        && !rejectedSession.equals(requestedSessionId)) {
+                if (!matchesJoinRequest(event)) {
                     return;
                 }
                 synchronized (approvalLock) {
