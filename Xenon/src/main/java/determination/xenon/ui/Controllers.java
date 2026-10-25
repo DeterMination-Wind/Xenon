@@ -60,7 +60,6 @@ import determination.xenon.ui.download.DownloadPage;
 import determination.xenon.ui.main.LauncherSettingsPage;
 import determination.xenon.ui.main.RootPage;
 import determination.xenon.ui.versions.GameListPage;
-import determination.xenon.ui.versions.VersionPage;
 import determination.xenon.ui.versions.Versions;
 import determination.xenon.util.*;
 import determination.xenon.util.i18n.I18n;
@@ -99,20 +98,12 @@ public final class Controllers {
 
     private static Scene scene;
     private static Stage stage;
-    private static VersionPage versionPage;
     private static Lazy<GameListPage> gameListPage = new Lazy<>(() -> {
         GameListPage gameListPage = new GameListPage();
         gameListPage.selectedProfileProperty().bindBidirectional(Profiles.selectedProfileProperty());
         gameListPage.profilesProperty().bindContent(Profiles.profilesProperty());
-        FXUtils.applyDragListener(gameListPage, file -> MindustryImportFlow.isXenonModpackFile(file) || "json".equalsIgnoreCase(FileUtils.getExtension(file)), files -> {
-            Path file = files.get(0);
-
-            if (MindustryImportFlow.isXenonModpackFile(file)) {
-                MindustryImportFlow.showInstallModpackDialog(file);
-            } else if ("json".equalsIgnoreCase(FileUtils.getExtension(file))) {
-                Versions.installFromJson(Profiles.getSelectedProfile(), file);
-            }
-        });
+        FXUtils.applyDragListener(gameListPage, MindustryImportFlow::isXenonModpackFile,
+                files -> MindustryImportFlow.showInstallModpackDialog(files.get(0)));
         return gameListPage;
     });
     private static Lazy<RootPage> rootPage = new Lazy<>(RootPage::new);
@@ -136,22 +127,6 @@ public final class Controllers {
 
     public static Stage getStage() {
         return stage;
-    }
-
-    // FXThread
-    public static VersionPage getVersionPage() {
-        if (versionPage == null) {
-            versionPage = new VersionPage();
-        }
-        return versionPage;
-    }
-
-    @FXThread
-    public static void prepareVersionPage() {
-        if (versionPage == null) {
-            LOG.info("Prepare the version page");
-            versionPage = FXUtils.prepareNode(new VersionPage());
-        }
     }
 
     // FXThread
@@ -641,7 +616,7 @@ public final class Controllers {
                     break;
                 case "hmcl://game/launch":
                     Profile profile = Profiles.getSelectedProfile();
-                    Versions.launch(profile, profile.getSelectedVersion(), LauncherHelper::setKeep);
+                    Versions.launch(profile, profile.getSelectedVersion());
                     break;
             }
         } else if (href.startsWith(determination.xenon.mindustry.ui.MdtbbsJoinIntentHandler.JOIN_SCHEME)) {
@@ -657,7 +632,6 @@ public final class Controllers {
 
     public static void shutdown() {
         rootPage = null;
-        versionPage = null;
         gameListPage = null;
         downloadPage = null;
         accountListPage = null;

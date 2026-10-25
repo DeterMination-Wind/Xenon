@@ -24,16 +24,12 @@ import determination.xenon.mindustry.ui.MindustryRoutes;
 import determination.xenon.setting.Profile;
 
 public class GameListItem extends GameItem {
-    private final boolean isModpack;
     private final boolean isMindustry;
     private final BooleanProperty selected = new SimpleBooleanProperty(this, "selected");
 
     public GameListItem(Profile profile, String id) {
         super(profile, id);
         this.isMindustry = MindustryRoutes.isMindustry(profile, id);
-        // HMCL's isModpack() crashes on a Mindustry id since it isn't in the
-        // HMCL repository; gate it.
-        this.isModpack = !isMindustry && profile.getRepository().isModpack(id);
         selected.bind(profile.selectedVersionProperty().isEqualTo(id));
     }
 
@@ -88,17 +84,5 @@ public class GameListItem extends GameItem {
 
     public void modifyGameSettings() {
         Versions.modifyGameSettings(profile, id);
-    }
-
-    public void generateLaunchScript() {
-        Versions.generateLaunchScript(profile, id);
-    }
-
-    public boolean canUpdate() {
-        return isModpack;
-    }
-
-    public void update() {
-        Versions.updateVersion(profile, id);
     }
 }

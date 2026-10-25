@@ -17,362 +17,69 @@
  */
 package determination.xenon.ui.versions;
 
-import com.jfoenix.controls.JFXButton;
-import javafx.application.Platform;
-import javafx.stage.FileChooser;
-import determination.xenon.auth.Account;
-import determination.xenon.auth.authlibinjector.AuthlibInjectorAccount;
-import determination.xenon.download.DefaultDependencyManager;
-import determination.xenon.download.DownloadProvider;
-import determination.xenon.download.game.GameAssetDownloadTask;
-import determination.xenon.download.game.GameDownloadTask;
-import determination.xenon.download.game.GameLibrariesTask;
-import determination.xenon.game.*;
-import determination.xenon.mindustry.MindustryImportFlow;
 import determination.xenon.mindustry.ui.MindustryRoutes;
-import determination.xenon.mod.RemoteMod;
-import determination.xenon.setting.*;
-import determination.xenon.task.Schedulers;
-import determination.xenon.task.Task;
-import determination.xenon.task.TaskExecutor;
+import determination.xenon.setting.Profile;
 import determination.xenon.ui.Controllers;
 import determination.xenon.ui.FXUtils;
-import determination.xenon.ui.account.CreateAccountPane;
-import determination.xenon.ui.construct.DialogCloseEvent;
-import determination.xenon.ui.construct.MessageDialogPane;
-import determination.xenon.ui.construct.PromptDialogPane;
-import determination.xenon.ui.construct.Validator;
-import determination.xenon.util.StringUtils;
-import determination.xenon.util.TaskCancellationAction;
-import determination.xenon.util.io.FileUtils;
-import determination.xenon.util.platform.OperatingSystem;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.concurrent.CompletableFuture;
-import java.util.function.Consumer;
 
-import static determination.xenon.util.i18n.I18n.i18n;
-import static determination.xenon.util.logging.Logger.LOG;
-
+/// Version-list actions shared by the game list, the sidebar and the popup
+/// menus.
+///
+/// Every action routes to {@link MindustryRoutes}, which owns instance
+/// manifests and data directories. An id that is no longer registered resolves
+/// to nothing and the action becomes a no-op, so stale selections left in
+/// `profile.json` cannot reach a removed code path.
 public final class Versions {
     private Versions() {
     }
 
+    /// Opens the install surface that offers the Mindustry variants.
     public static void addNewGame() {
         Controllers.getDownloadPage().showGameDownloads();
         Controllers.navigate(Controllers.getDownloadPage());
     }
 
-    public static void importModpack() {
-        MindustryImportFlow.showInstallModpackFileChooser();
-    }
-
-    public static void downloadModpackImpl(DownloadProvider downloadProvider, Profile profile, String version, RemoteMod mod, RemoteMod.Version file) {
-        Controllers.showToast(i18n("modpack.unsupported"));
-    }
-
+    /// Asks for confirmation and deletes the instance directory.
     public static void deleteVersion(Profile profile, String version) {
-        if (MindustryRoutes.isMindustry(profile, version)) {
-            MindustryRoutes.get(profile, version).ifPresent(MindustryRoutes::deleteVersion);
-            return;
-        }
-        boolean isIndependent = profile.getVersionSetting(version).getGameDirType() == GameDirectoryType.VERSION_FOLDER;
-        String message = isIndependent ? i18n("version.manage.remove.confirm.independent", version) :
-                i18n("version.manage.remove.confirm.trash", version, version + "_removed");
-
-        JFXButton deleteButton = new JFXButton(i18n("button.delete"));
-        deleteButton.getStyleClass().add("dialog-error");
-        deleteButton.setOnAction(e -> {
-            Task.supplyAsync(Schedulers.io(), () -> profile.getRepository().removeVersionFromDisk(version))
-                    .whenComplete(Schedulers.javafx(), (result, exception) -> {
-                        if (exception != null || !Boolean.TRUE.equals(result)) {
-                            Controllers.dialog(i18n("version.manage.remove.failed"), i18n("message.error"), MessageDialogPane.MessageType.ERROR);
-                        }
-                    }).start();
-        });
-
-        Controllers.confirmAction(message, i18n("message.warning"), MessageDialogPane.MessageType.WARNING, deleteButton);
+        MindustryRoutes.get(profile, version).ifPresent(MindustryRoutes::deleteVersion);
     }
 
+    /// Prompts for a new instance id and renames the manifest.
     public static CompletableFuture<String> renameVersion(Profile profile, String version) {
-        if (MindustryRoutes.isMindustry(profile, version)) {
-            return MindustryRoutes.renameVersion(profile, version);
-        }
-        return Controllers.prompt(i18n("version.manage.rename.message"), (newName, handler) -> {
-            if (newName.equals(version)) {
-                handler.resolve();
-                return;
-            }
-            if (profile.getRepository().renameVersion(version, newName)) {
-                handler.resolve();
-                profile.getRepository().refreshVersionsAsync()
-                        .thenRunAsync(Schedulers.javafx(), () -> {
-                            if (profile.getRepository().hasVersion(newName)) {
-                                profile.setSelectedVersion(newName);
-                            }
-                        }).start();
-            } else {
-                handler.reject(i18n("version.manage.rename.fail"));
-            }
-        }, version,
-            new Validator(i18n("install.new_game.malformed"), HMCLGameRepository::isValidVersionId),
-            new Validator(i18n("install.new_game.already_exists"), newVersionName -> !profile.getRepository().versionIdConflicts(newVersionName) || newVersionName.equals(version)));
+        return MindustryRoutes.renameVersion(profile, version);
     }
 
+    /// Exports the instance as a `.xenon` modpack.
     public static void exportVersion(Profile profile, String version) {
-        if (MindustryRoutes.isMindustry(profile, version)) {
-            MindustryRoutes.get(profile, version).ifPresent(MindustryRoutes::exportModpack);
-            return;
-        }
-        Controllers.showToast(i18n("modpack.unsupported"));
+        MindustryRoutes.get(profile, version).ifPresent(MindustryRoutes::exportModpack);
     }
 
+    /// Opens the instance's working directory in the system file manager.
     public static void openFolder(Profile profile, String version) {
-        if (MindustryRoutes.isMindustry(profile, version)) {
-            MindustryRoutes.get(profile, version).ifPresent(v ->
-                    FXUtils.openFolder(v.resolveWorkingDirectory(
-                            determination.xenon.mindustry.MindustryImportFlow.versionRoot(v))));
-            return;
-        }
-        FXUtils.openFolder(profile.getRepository().getRunDirectory(version));
+        MindustryRoutes.get(profile, version).ifPresent(v ->
+                FXUtils.openFolder(v.resolveWorkingDirectory(
+                        determination.xenon.mindustry.MindustryImportFlow.versionRoot(v))));
     }
 
-    public static void installFromJson(Profile profile, Path file) {
-        Version version;
-        try {
-            version = profile.getRepository().readVersionJson(file);
-        } catch (Exception e) {
-            Controllers.dialog(i18n("install.new_game.malformed_json"), i18n("message.error"), MessageDialogPane.MessageType.ERROR);
-            return;
-        }
-
-        Controllers.prompt(i18n("version.manage.duplicate.prompt"), (result, handler) -> {
-            handler.resolve();
-
-            DefaultDependencyManager dependencyManager = profile.getDependency();
-            HMCLGameRepository repository = profile.getRepository();
-            Version newVersion = version.setId(result).setJar(result);
-
-            Controllers.taskDialog(
-                    Task.allOf(new GameDownloadTask(dependencyManager, null, newVersion),
-                                    Task.allOf(
-                                            new GameAssetDownloadTask(dependencyManager, newVersion, GameAssetDownloadTask.DOWNLOAD_INDEX_FORCIBLY, true),
-                                            new GameLibrariesTask(dependencyManager, newVersion, true)
-                                    ).withRunAsync(() -> {
-                                        // ignore failure
-                                    }))
-                            .thenComposeAsync(repository.saveAsync(newVersion))
-                            .thenRunAsync(repository::refreshVersions)
-                            .whenComplete(Schedulers.javafx(), (exception) -> {
-                                if (exception == null) {
-                                    profile.setSelectedVersion(result);
-                                } else {
-                                    Controllers.dialog(
-                                            DownloadProviders.localizeErrorMessage(exception), i18n("install.failed"), MessageDialogPane.MessageType.ERROR);
-                                }
-                            }), i18n("install.new_game"), TaskCancellationAction.NORMAL);
-        }, FileUtils.getNameWithoutExtension(file), new Validator(i18n("install.new_game.malformed"), HMCLGameRepository::isValidVersionId), new Validator(i18n("install.new_game.already_exists"), newVersionName -> !profile.getRepository().versionIdConflicts(newVersionName)));
-    }
-
+    /// Duplicates the instance under a new id.
     public static void duplicateVersion(Profile profile, String version) {
-        if (MindustryRoutes.isMindustry(profile, version)) {
-            // Mindustry instances use their own manifest layout, so HMCL's
-            // Minecraft duplicate would only copy the launcher-facing files.
-            MindustryRoutes.duplicateVersion(profile, version);
-            return;
-        }
-        if (!profile.getRepository().hasVersion(version)) {
-            // A stale entry (for example the Minecraft scan renamed the
-            // manifest) used to surface a VersionNotFoundException stack trace.
-            Controllers.dialog(i18n("version.not_exist"), i18n("message.error"),
-                    MessageDialogPane.MessageType.ERROR);
-            return;
-        }
-        Controllers.prompt(
-                new PromptDialogPane.Builder(i18n("version.manage.duplicate.prompt"), (res, handler) -> {
-                    String newVersionName = ((PromptDialogPane.Builder.StringQuestion) res.get(1)).getValue();
-                    boolean copySaves = ((PromptDialogPane.Builder.BooleanQuestion) res.get(2)).getValue();
-                    if (!profile.getRepository().hasVersion(version)) {
-                        // The version can disappear between opening the dialog
-                        // and confirming it, so re-check before copying.
-                        handler.reject(i18n("version.not_exist"));
-                        return;
-                    }
-                    Task.runAsync(() -> profile.getRepository().duplicateVersion(version, newVersionName, copySaves))
-                            .thenComposeAsync(profile.getRepository().refreshVersionsAsync())
-                            .whenComplete(Schedulers.javafx(), (result, exception) -> {
-                                if (exception == null) {
-                                    handler.resolve();
-                                } else {
-                                    handler.reject(StringUtils.getStackTrace(exception));
-                                    if (!profile.getRepository().versionIdConflicts(newVersionName)) {
-                                        profile.getRepository().removeVersionFromDisk(newVersionName);
-                                    }
-                                }
-                            }).start();
-                })
-                        .addQuestion(new PromptDialogPane.Builder.HintQuestion(i18n("version.manage.duplicate.confirm")))
-                        .addQuestion(new PromptDialogPane.Builder.StringQuestion(null, version,
-                                new Validator(i18n("install.new_game.malformed"), HMCLGameRepository::isValidVersionId),
-                                new Validator(i18n("install.new_game.already_exists"), newVersionName -> !profile.getRepository().versionIdConflicts(newVersionName))))
-                        .addQuestion(new PromptDialogPane.Builder.BooleanQuestion(i18n("version.manage.duplicate.duplicate_save"), false)));
+        MindustryRoutes.duplicateVersion(profile, version);
     }
 
-    public static void updateVersion(Profile profile, String version) {
-        Controllers.showToast(i18n("modpack.unsupported"));
+    /// Launches the instance and closes the launcher unless "keep open" is set.
+    public static void launch(Profile profile, String id) {
+        MindustryRoutes.get(profile, id).ifPresent(MindustryRoutes::launch);
     }
 
-    public static void updateGameAssets(Profile profile, String version) {
-        TaskExecutor executor = new GameAssetDownloadTask(profile.getDependency(), profile.getRepository().getVersion(version), GameAssetDownloadTask.DOWNLOAD_INDEX_FORCIBLY, true)
-                .executor();
-        Controllers.taskDialog(executor, i18n("version.manage.redownload_assets_index"), TaskCancellationAction.NO_CANCEL);
-        executor.start();
-    }
-
-    public static void cleanVersion(Profile profile, String id) {
-        try {
-            profile.getRepository().clean(id);
-        } catch (IOException e) {
-            LOG.warning("Unable to clean game directory", e);
-        }
-    }
-
-    @SafeVarargs
-    public static void generateLaunchScript(Profile profile, String id, Consumer<LauncherHelper>... injecters) {
-        if (!checkVersionForLaunching(profile, id))
-            return;
-        ensureSelectedAccount(account -> {
-            GameRepository repository = profile.getRepository();
-            FileChooser chooser = new FileChooser();
-            if (Files.isDirectory(repository.getRunDirectory(id)))
-                chooser.setInitialDirectory(repository.getRunDirectory(id).toFile());
-            chooser.setTitle(i18n("version.launch_script.save"));
-            if (OperatingSystem.CURRENT_OS == OperatingSystem.MACOS) {
-                chooser.getExtensionFilters().add(
-                        new FileChooser.ExtensionFilter(i18n("extension.command"), "*.command")
-                );
-            }
-            chooser.getExtensionFilters().add(OperatingSystem.CURRENT_OS == OperatingSystem.WINDOWS
-                    ? new FileChooser.ExtensionFilter(i18n("extension.bat"), "*.bat")
-                    : new FileChooser.ExtensionFilter(i18n("extension.sh"), "*.sh"));
-            chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter(i18n("extension.ps1"), "*.ps1"));
-            Path file = FileUtils.toPath(FXUtils.showSaveDialog(chooser, Controllers.getStage()));
-            if (file != null) {
-                if (!isValidScriptExtension(FileUtils.getExtension(file))) {
-                    String defaultExt = getDefaultScriptExtension();
-                    file = file.resolveSibling(file.getFileName().toString() + "." + defaultExt);
-                }
-
-                LauncherHelper launcherHelper = new LauncherHelper(profile, account, id);
-                for (Consumer<LauncherHelper> injecter : injecters) {
-                    injecter.accept(launcherHelper);
-                }
-                launcherHelper.makeLaunchScript(file);
-            }
-        });
-    }
-
-    private static boolean isValidScriptExtension(String ext) {
-        if (OperatingSystem.CURRENT_OS == OperatingSystem.WINDOWS) {
-            return ext.equalsIgnoreCase("bat") || ext.equalsIgnoreCase("ps1");
-        }
-        return ext.equalsIgnoreCase("sh") || ext.equalsIgnoreCase("bash") || ext.equalsIgnoreCase("command") || ext.equalsIgnoreCase("ps1");
-    }
-
-    private static String getDefaultScriptExtension() {
-        return switch (OperatingSystem.CURRENT_OS) {
-            case WINDOWS -> "bat";
-            case MACOS -> "command";
-            default -> "sh";
-        };
-    }
-
-    @SafeVarargs
-    public static void launch(Profile profile, String id, Consumer<LauncherHelper>... injecters) {
-        if (MindustryRoutes.isMindustry(profile, id)) {
-            MindustryRoutes.get(profile, id).ifPresent(MindustryRoutes::launch);
-            return;
-        }
-        if (!checkVersionForLaunching(profile, id))
-            return;
-        ensureSelectedAccount(account -> {
-            LauncherHelper launcherHelper = new LauncherHelper(profile, account, id);
-            for (Consumer<LauncherHelper> injecter : injecters) {
-                injecter.accept(launcherHelper);
-            }
-            launcherHelper.launch();
-        });
-    }
-
+    /// Launches the instance in test mode.
     public static void testGame(Profile profile, String id) {
-        if (MindustryRoutes.isMindustry(profile, id)) {
-            MindustryRoutes.get(profile, id).ifPresent(MindustryRoutes::launch);
-            return;
-        }
-        launch(profile, id, LauncherHelper::setTestMode);
+        MindustryRoutes.get(profile, id).ifPresent(MindustryRoutes::launch);
     }
 
-    private static boolean checkVersionForLaunching(Profile profile, String id) {
-        if (id == null || !profile.getRepository().isLoaded() || !profile.getRepository().hasVersion(id)) {
-            JFXButton gotoDownload = new JFXButton(i18n("version.empty.launch.goto_download"));
-            gotoDownload.getStyleClass().add("dialog-accept");
-            gotoDownload.setOnAction(e -> Controllers.navigate(Controllers.getDownloadPage()));
-
-            Controllers.confirmAction(i18n("version.empty.launch"), i18n("launch.failed"),
-                    MessageDialogPane.MessageType.ERROR,
-                    gotoDownload,
-                    null);
-            return false;
-        } else {
-            return true;
-        }
-    }
-
-    private static void ensureSelectedAccount(Consumer<Account> action) {
-        Account account = Accounts.getSelectedAccount();
-        if (ConfigHolder.isNewlyCreated() && !AuthlibInjectorServers.getServers().isEmpty() &&
-                !(account instanceof AuthlibInjectorAccount && AuthlibInjectorServers.getServers().contains(((AuthlibInjectorAccount) account).getServer()))) {
-            CreateAccountPane dialog = new CreateAccountPane(AuthlibInjectorServers.getServers().iterator().next());
-            dialog.addEventHandler(DialogCloseEvent.CLOSE, e -> {
-                Account newAccount = Accounts.getSelectedAccount();
-                if (newAccount == null) {
-                    // user cancelled operation
-                } else {
-                    Platform.runLater(() -> action.accept(newAccount));
-                }
-            });
-            Controllers.dialog(dialog);
-        } else if (account == null) {
-            CreateAccountPane dialog = new CreateAccountPane();
-            dialog.addEventHandler(DialogCloseEvent.CLOSE, e -> {
-                Account newAccount = Accounts.getSelectedAccount();
-                if (newAccount == null) {
-                    // user cancelled operation
-                } else {
-                    Platform.runLater(() -> action.accept(newAccount));
-                }
-            });
-            Controllers.dialog(dialog);
-        } else {
-            action.accept(account);
-        }
-    }
-
-    public static void modifyGlobalSettings(Profile profile) {
-        Controllers.getSettingsPage().showGameSettings(profile);
-        Controllers.navigate(Controllers.getSettingsPage());
-    }
-
+    /// Opens the instance detail page.
     public static void modifyGameSettings(Profile profile, String version) {
-        if (MindustryRoutes.isMindustry(profile, version)) {
-            MindustryRoutes.get(profile, version).ifPresent(MindustryRoutes::openVersionPage);
-            return;
-        }
-        Controllers.getVersionPage().setVersion(version, profile);
-        Controllers.getVersionPage().showInstanceSettings();
-        // VersionPage.loadVersion will be invoked after navigation
-        Controllers.navigate(Controllers.getVersionPage());
+        MindustryRoutes.get(profile, version).ifPresent(MindustryRoutes::openVersionPage);
     }
 }

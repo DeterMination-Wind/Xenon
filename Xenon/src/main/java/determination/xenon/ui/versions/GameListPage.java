@@ -99,9 +99,8 @@ public class GameListPage extends DecoratorAnimatedPage implements DecoratorPage
             }
 
             AdvancedListBox bottomLeftCornerList = new AdvancedListBox()
-                    .addNavigationDrawerItem(i18n("install.new_game"), SVG.ADD_CIRCLE, Versions::addNewGame)
-                    .addNavigationDrawerItem(i18n("settings.type.global.manage"), SVG.SETTINGS, this::modifyGlobalGameSettings);
-            FXUtils.setLimitHeight(bottomLeftCornerList, 40 * 2 + 12 * 2);
+                    .addNavigationDrawerItem(i18n("install.new_game"), SVG.ADD_CIRCLE, Versions::addNewGame);
+            FXUtils.setLimitHeight(bottomLeftCornerList, 40 + 12 * 2);
             setLeft(pane, bottomLeftCornerList);
         }
 
@@ -122,10 +121,6 @@ public class GameListPage extends DecoratorAnimatedPage implements DecoratorPage
 
     public void setProfiles(ObservableList<Profile> profiles) {
         this.profiles.set(profiles);
-    }
-
-    public void modifyGlobalGameSettings() {
-        Versions.modifyGlobalSettings(Profiles.getSelectedProfile());
     }
 
     @Override
@@ -153,25 +148,11 @@ public class GameListPage extends DecoratorAnimatedPage implements DecoratorPage
             setLoading(true);
             setFailedReason(null);
 
-            java.util.LinkedHashSet<String> seenIds = new java.util.LinkedHashSet<>();
-            List<GameListItem> versionItems = new java.util.ArrayList<>();
-            profile.getRepository().getDisplayVersions()
-                    .forEach(instance -> {
-                        if (seenIds.add(instance.getId())) {
-                            versionItems.add(new GameListItem(profile, instance.getId()));
-                        }
-                    });
-
-            // Pull in Mindustry instances registered with the Xenon repository.
-            // Some installs are also visible through HMCL's repository scan
-            // because they live under the same versions directory, so dedupe
-            // by id before creating list cells.
+            java.util.List<GameListItem> versionItems = new java.util.ArrayList<>();
             try {
                 for (determination.xenon.mindustry.MindustryVersion v :
                         determination.xenon.mindustry.MindustryImportFlow.visibleVersions(profile)) {
-                    if (seenIds.add(v.getId())) {
-                        versionItems.add(new GameListItem(profile, v.getId()));
-                    }
+                    versionItems.add(new GameListItem(profile, v.getId()));
                 }
             } catch (Throwable ex) {
                 determination.xenon.util.logging.Logger.LOG
@@ -211,7 +192,7 @@ public class GameListPage extends DecoratorAnimatedPage implements DecoratorPage
         }
 
         public void refreshList() {
-            Profiles.getSelectedProfile().getRepository().refreshVersionsAsync().start();
+            loadVersions(Profiles.getSelectedProfile());
         }
 
         @Override

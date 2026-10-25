@@ -20,7 +20,6 @@ package determination.xenon.ui.main;
 import com.jfoenix.controls.JFXPopup;
 import javafx.beans.property.ReadOnlyObjectProperty;
 import javafx.scene.layout.Region;
-import determination.xenon.game.HMCLGameRepository;
 import determination.xenon.game.Version;
 import determination.xenon.mindustry.MindustryImportFlow;
 import determination.xenon.setting.Accounts;
@@ -34,27 +33,17 @@ import determination.xenon.ui.account.AccountListPopupMenu;
 import determination.xenon.ui.animation.AnimationUtils;
 import determination.xenon.ui.construct.AdvancedListBox;
 import determination.xenon.ui.construct.AdvancedListItem;
-import determination.xenon.ui.construct.MessageDialogPane;
 import determination.xenon.ui.decorator.DecoratorAnimatedPage;
 import determination.xenon.ui.decorator.DecoratorPage;
-import determination.xenon.ui.nbt.NBTEditorPage;
-import determination.xenon.ui.nbt.NBTFileType;
 import determination.xenon.ui.versions.GameAdvancedListItem;
 import determination.xenon.ui.versions.GameListPopupMenu;
 import determination.xenon.ui.versions.Versions;
 import determination.xenon.upgrade.UpdateChecker;
 import determination.xenon.util.Lang;
-import determination.xenon.util.StringUtils;
-import determination.xenon.util.io.FileUtils;
 import determination.xenon.util.platform.*;
-import determination.xenon.util.versioning.VersionNumber;
 
-import java.nio.file.Path;
-import java.time.Instant;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
-import java.util.stream.Collectors;
 
 import static determination.xenon.ui.FXUtils.runInFX;
 import static determination.xenon.util.i18n.I18n.i18n;
@@ -82,54 +71,22 @@ public class RootPage extends DecoratorAnimatedPage implements DecoratorPage {
         if (mainPage == null) {
             MainPage mainPage = new MainPage();
             FXUtils.applyDragListener(mainPage,
-                    file -> MindustryImportFlow.isXenonModpackFile(file) || NBTFileType.isNBTFileByExtension(file) || "json".equalsIgnoreCase(FileUtils.getExtension(file)),
-                    files -> {
-                        Path file = files.get(0);
-                        if (MindustryImportFlow.isXenonModpackFile(file)) {
-                            MindustryImportFlow.showInstallModpackDialog(file);
-                        } else if (NBTFileType.isNBTFileByExtension(file)) {
-                            try {
-                                Controllers.navigate(new NBTEditorPage(file));
-                            } catch (Throwable e) {
-                                LOG.warning("Fail to open nbt file", e);
-                                Controllers.dialog(i18n("nbt.open.failed") + "\n\n" + StringUtils.getStackTrace(e),
-                                        i18n("message.error"), MessageDialogPane.MessageType.ERROR);
-                            }
-                        } else if ("json".equalsIgnoreCase(FileUtils.getExtension(file))) {
-                            Versions.installFromJson(Profiles.getSelectedProfile(), file);
-                        }
-                    });
+                    MindustryImportFlow::isXenonModpackFile,
+                    files -> MindustryImportFlow.showInstallModpackDialog(files.get(0)));
 
             FXUtils.onChangeAndOperate(Profiles.selectedVersionProperty(), mainPage::setCurrentGame);
             mainPage.showUpdateProperty().bind(UpdateChecker.outdatedProperty());
             mainPage.latestVersionProperty().bind(UpdateChecker.latestVersionProperty());
 
             Profiles.registerVersionsListener(profile -> {
-                HMCLGameRepository repository = profile.getRepository();
-                List<Version> children = repository.getVersions().parallelStream()
-                        .filter(version -> !version.isHidden())
-                        .sorted(Comparator
-                                .comparing((Version version) -> Lang.requireNonNullElse(version.getReleaseTime(), Instant.EPOCH))
-                                .thenComparing(version -> VersionNumber.asVersion(repository.getGameVersion(version).orElse(version.getId()))))
-                        .collect(Collectors.toCollection(java.util.ArrayList::new));
-
-                // Merge Mindustry instances from XenonGameRepository so the
-                // MainPage launch button + sidebar see them. Without this the
-                // bottom-left says "no game instance" even when a Mindustry
-                // jar is registered (it appears in GameListPage because that
-                // page reads the Mindustry repo directly).
-                java.util.Set<String> seenIds = children.stream()
-                        .map(Version::getId)
-                        .collect(Collectors.toCollection(java.util.LinkedHashSet::new));
+                List<Version> children = new java.util.ArrayList<>();
                 try {
                     for (determination.xenon.mindustry.MindustryVersion v :
                             determination.xenon.mindustry.MindustryImportFlow.visibleVersions(profile)) {
-                        if (seenIds.add(v.getId())) {
-                            children.add(new Version(v.getId()));
-                        }
+                        children.add(new Version(v.getId()));
                     }
                 } catch (Throwable ex) {
-                    LOG.warning("Failed to merge Mindustry versions for MainPage", ex);
+                    LOG.warning("Failed to load Mindustry versions for MainPage", ex);
                 }
 
                 runInFX(() -> {
@@ -169,9 +126,6 @@ public class RootPage extends DecoratorAnimatedPage implements DecoratorPage {
                 String currentId = getSkinnable().getMainPage().getCurrentGame();
                 return Lang.indexWhere(list, instance -> instance.getId().equals(currentId));
             }, it -> getSkinnable().getMainPage().getProfile().setSelectedVersion(it.getId()));
-            if (AnimationUtils.isAnimationEnabled()) {
-                FXUtils.prepareOnMouseEnter(gameListItem, Controllers::prepareVersionPage);
-            }
             FXUtils.onSecondaryButtonClicked(gameListItem, () -> showGameListPopupMenu(gameListItem));
 
             // third item in left sidebar
@@ -219,15 +173,10 @@ public class RootPage extends DecoratorAnimatedPage implements DecoratorPage {
             AdvancedListItem launcherSettingsItem = new AdvancedListItem();
             launcherSettingsItem.setLeftIcon(SVG.SETTINGS);
             launcherSettingsItem.setTitle(i18n("settings"));
-            launcherSettingsItem.setOnAction(e -> {
-                Controllers.getSettingsPage().showGameSettings(Profiles.getSelectedProfile());
-                Controllers.navigate(Controllers.getSettingsPage());
-            });
+            launcherSettingsItem.setOnAction(e -> Controllers.navigate(Controllers.getSettingsPage()));
             if (AnimationUtils.isAnimationEnabled()) {
                 FXUtils.prepareOnMouseEnter(launcherSettingsItem, Controllers::prepareSettingsPage);
             }
-
-            // Terracotta (Minecraft 多人联机核心) — Xenon 不需要，已移除。
 
             // the left sidebar
             AdvancedListBox sideBar = new AdvancedListBox()

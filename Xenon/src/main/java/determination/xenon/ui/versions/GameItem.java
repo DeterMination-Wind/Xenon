@@ -19,7 +19,7 @@ package determination.xenon.ui.versions;
 
 import javafx.beans.property.*;
 import javafx.scene.image.Image;
-import determination.xenon.download.LibraryAnalyzer;
+import determination.xenon.game.TexturesLoader;
 import determination.xenon.mindustry.MindustryImportFlow;
 import determination.xenon.mindustry.MindustryVersion;
 import determination.xenon.mindustry.MindustryVersionDisplay;
@@ -27,26 +27,25 @@ import determination.xenon.mindustry.playtime.MindustryPlaytimeStore;
 import determination.xenon.mindustry.playtime.PlaytimeFormat;
 import determination.xenon.mindustry.playtime.PlaytimeSummary;
 import determination.xenon.mindustry.ui.MindustryRoutes;
-import determination.xenon.mod.ModpackConfiguration;
 import determination.xenon.setting.Profile;
 import determination.xenon.task.Schedulers;
 import determination.xenon.util.i18n.I18n;
-import org.jetbrains.annotations.Nullable;
 
-import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Instant;
-import java.util.Objects;
-import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
-import static determination.xenon.download.LibraryAnalyzer.LibraryType.MINECRAFT;
 import static determination.xenon.util.Lang.threadPool;
 import static determination.xenon.util.i18n.I18n.i18n;
 import static determination.xenon.util.logging.Logger.LOG;
 
+/// One Mindustry instance as rendered by the version list, the version
+/// switcher and the sidebar.
+///
+/// Properties are resolved lazily on first access. Playtime is read on a
+/// background thread so binding a list cell never blocks the JavaFX thread.
 public class GameItem {
     private static final ThreadPoolExecutor POOL_VERSION_RESOLVE = threadPool("VersionResolve", true, 1, 10, TimeUnit.SECONDS);
 
@@ -81,92 +80,27 @@ public class GameItem {
         tag = new SimpleStringProperty();
         subtitle = new SimpleStringProperty();
         image = new SimpleObjectProperty<>();
+        image.set(TexturesLoader.getDefaultSkinImage());
 
-        // Mindustry instances bypass the HMCL repository entirely — those
-        // calls would crash on a Mindustry id since it isn't an HMCL Version.
-        if (MindustryRoutes.isMindustry(profile, id)) {
-            MindustryVersion v = MindustryRoutes.get(profile, id).orElse(null);
-            title.set(v != null ? v.getName() : id);
-            if (v != null) {
-                StringBuilder sub = new StringBuilder();
-                sub.append(v.getVariant().getDisplayName());
-                String buildLabel = MindustryVersionDisplay.buildLabel(
-                        v.getVariant(), v.getBuild(), v.getBuildType(), v.getId(), v.getJarPath());
-                if (!buildLabel.isEmpty()) sub.append("  ·  ").append(buildLabel);
-                subtitle.set(sub.toString());
-                appendPlaytimeAsync(v, sub.toString());
-                tag.set("Mindustry");
-            }
-            image.set(determination.xenon.game.TexturesLoader.getDefaultSkinImage());
-            return;
-        }
-
-        if (!profile.getRepository().hasVersion(id)) {
-            // The popup can outlive its version folder (for example after a
-            // manual delete), so never resolve a missing version here.
+        MindustryVersion version = MindustryRoutes.get(profile, id).orElse(null);
+        if (version == null) {
+            // The entry can outlive its manifest (manual delete, external
+            // rename), so never assume the instance still exists.
             title.set(id);
             subtitle.set(i18n("version.not_exist"));
-            image.set(determination.xenon.game.TexturesLoader.getDefaultSkinImage());
             return;
         }
 
-        record Result(@Nullable String gameVersion, @Nullable String tag) {
+        title.set(version.getName());
+        StringBuilder sub = new StringBuilder(version.getVariant().getDisplayName());
+        String buildLabel = MindustryVersionDisplay.buildLabel(
+                version.getVariant(), version.getBuild(), version.getBuildType(), version.getId(), version.getJarPath());
+        if (!buildLabel.isEmpty()) {
+            sub.append("  ·  ").append(buildLabel);
         }
-
-        CompletableFuture.supplyAsync(() -> {
-            // GameVersion.minecraftVersion() is a time-costing job (up to ~200 ms)
-            Optional<String> gameVersion;
-            try {
-                gameVersion = profile.getRepository().getGameVersion(id);
-            } catch (RuntimeException e) {
-                LOG.warning("Failed to resolve game version for " + id, e);
-                gameVersion = Optional.empty();
-            }
-            String modPackVersion = null;
-            try {
-                ModpackConfiguration<?> config = profile.getRepository().readModpackConfiguration(id);
-                modPackVersion = config != null ? config.getVersion() : null;
-            } catch (IOException e) {
-                LOG.warning("Failed to read modpack configuration from " + id, e);
-            }
-            return new Result(gameVersion.orElse(null), modPackVersion);
-        }, POOL_VERSION_RESOLVE).whenCompleteAsync((result, exception) -> {
-            if (exception != null) {
-                LOG.warning("Failed to read version info from " + id, exception);
-                return;
-            }
-            String fallback = Objects.requireNonNullElse(result.gameVersion, i18n("message.unknown"));
-            try {
-                if (result.tag != null) {
-                    tag.set(result.tag);
-                }
-
-                StringBuilder libraries = new StringBuilder(fallback);
-                LibraryAnalyzer analyzer = LibraryAnalyzer.analyze(
-                        profile.getRepository().getResolvedPreservingPatchesVersion(id),
-                        result.gameVersion);
-                for (LibraryAnalyzer.LibraryMark mark : analyzer) {
-                    String libraryId = mark.getLibraryId();
-                    String libraryVersion = mark.getLibraryVersion();
-                    if (libraryId.equals(MINECRAFT.getPatchId())) continue;
-                    if (I18n.hasKey("install.installer." + libraryId)) {
-                        libraries.append(", ").append(i18n("install.installer." + libraryId));
-                        if (libraryVersion != null)
-                            libraries.append(": ").append(libraryVersion.replaceAll("(?i)" + libraryId, ""));
-                    }
-                }
-
-                subtitle.set(libraries.toString());
-            } catch (RuntimeException e) {
-                // A version whose metadata cannot be resolved must not take
-                // the launcher down while a popup is rendering.
-                LOG.warning("Failed to render version entry for " + id, e);
-                subtitle.set(fallback);
-            }
-        }, Schedulers.javafx());
-
-        title.set(id);
-        image.set(profile.getRepository().getVersionIconImage(id));
+        subtitle.set(sub.toString());
+        tag.set("Mindustry");
+        appendPlaytimeAsync(version, sub.toString());
     }
 
     /// Appends the recorded playtime line to `base` once the log has been read

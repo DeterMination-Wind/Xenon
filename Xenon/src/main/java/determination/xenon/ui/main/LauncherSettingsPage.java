@@ -19,15 +19,12 @@ package determination.xenon.ui.main;
 
 import javafx.beans.property.ReadOnlyObjectProperty;
 import javafx.beans.property.ReadOnlyObjectWrapper;
-import determination.xenon.setting.Profile;
-import determination.xenon.setting.Profiles;
 import determination.xenon.ui.FXUtils;
 import determination.xenon.ui.SVG;
 import determination.xenon.ui.animation.TransitionPane;
 import determination.xenon.ui.construct.*;
 import determination.xenon.ui.decorator.DecoratorAnimatedPage;
 import determination.xenon.ui.decorator.DecoratorPage;
-import determination.xenon.ui.versions.VersionSettingsPage;
 
 import java.util.Locale;
 
@@ -36,7 +33,6 @@ import static determination.xenon.util.i18n.I18n.i18n;
 public class LauncherSettingsPage extends DecoratorAnimatedPage implements DecoratorPage, PageAware {
     private final ReadOnlyObjectWrapper<State> state = new ReadOnlyObjectWrapper<>(State.fromTitle(i18n("settings")));
     private final TabHeader tab;
-    private final TabHeader.Tab<VersionSettingsPage> gameTab = new TabHeader.Tab<>("versionSettingsPage");
     private final TabControl.Tab<JavaManagementPage> javaManagementTab = new TabControl.Tab<>("javaManagementPage");
     private final TabHeader.Tab<SettingsPage> settingsTab = new TabHeader.Tab<>("settingsPage");
     private final TabHeader.Tab<PersonalizationPage> personalizationTab = new TabHeader.Tab<>("personalizationPage");
@@ -47,7 +43,6 @@ public class LauncherSettingsPage extends DecoratorAnimatedPage implements Decor
     private final TransitionPane transitionPane = new TransitionPane();
 
     public LauncherSettingsPage() {
-        gameTab.setNodeSupplier(() -> new VersionSettingsPage(true));
         javaManagementTab.setNodeSupplier(JavaManagementPage::new);
         settingsTab.setNodeSupplier(SettingsPage::new);
         personalizationTab.setNodeSupplier(PersonalizationPage::new);
@@ -55,15 +50,13 @@ public class LauncherSettingsPage extends DecoratorAnimatedPage implements Decor
         helpTab.setNodeSupplier(HelpPage::new);
         feedbackTab.setNodeSupplier(FeedbackPage::new);
         aboutTab.setNodeSupplier(AboutPage::new);
-        tab = new TabHeader(transitionPane, gameTab, javaManagementTab, settingsTab, personalizationTab, downloadTab, helpTab, feedbackTab, aboutTab);
+        tab = new TabHeader(transitionPane, javaManagementTab, settingsTab, personalizationTab, downloadTab, helpTab, feedbackTab, aboutTab);
 
-        tab.select(gameTab);
-        addEventHandler(Navigator.NavigationEvent.NAVIGATED, event -> gameTab.getNode().loadVersion(Profiles.getSelectedProfile(), null));
+        tab.select(settingsTab);
 
         AdvancedListBox sideBar = new AdvancedListBox()
-                .addNavigationDrawerTab(tab, gameTab, i18n("settings.type.global.manage"), SVG.STADIA_CONTROLLER, SVG.STADIA_CONTROLLER_FILL)
-                .addNavigationDrawerTab(tab, javaManagementTab, i18n("java.management"), SVG.LOCAL_CAFE, SVG.LOCAL_CAFE_FILL)
                 .startCategory(i18n("launcher").toUpperCase(Locale.ROOT))
+                .addNavigationDrawerTab(tab, javaManagementTab, i18n("java.management"), SVG.LOCAL_CAFE, SVG.LOCAL_CAFE_FILL)
                 .addNavigationDrawerTab(tab, settingsTab, i18n("settings.launcher.general"), SVG.TUNE)
                 .addNavigationDrawerTab(tab, personalizationTab, i18n("settings.launcher.appearance"), SVG.STYLE, SVG.STYLE_FILL)
                 .addNavigationDrawerTab(tab, downloadTab, i18n("download"), SVG.DOWNLOAD)
@@ -85,11 +78,6 @@ public class LauncherSettingsPage extends DecoratorAnimatedPage implements Decor
     @Override
     public void onPageHidden() {
         tab.onPageHidden();
-    }
-
-    public void showGameSettings(Profile profile) {
-        gameTab.getNode().loadVersion(profile, null);
-        tab.select(gameTab, false);
     }
 
     public void showFeedback() {

@@ -47,7 +47,6 @@ public final class GameListCell extends ListCell<GameListItem> {
     private final TwoLineListItem content;
 
     private final JFXRadioButton chkSelected;
-    private final JFXButton btnUpgrade;
     private final JFXButton btnLaunch;
     private final JFXButton btnManage;
 
@@ -108,15 +107,6 @@ public final class GameListCell extends ListCell<GameListItem> {
             root.setRight(right);
 
             right.setAlignment(Pos.CENTER_RIGHT);
-
-            this.btnUpgrade = FXUtils.newToggleButton4(SVG.UPDATE);
-            btnUpgrade.setOnAction(e -> {
-                GameListItem item = this.getItem();
-                if (item != null)
-                    item.update();
-            });
-            FXUtils.installFastTooltip(btnUpgrade, i18n("version.update"));
-            right.getChildren().add(btnUpgrade);
 
             this.btnLaunch = FXUtils.newToggleButton4(SVG.ROCKET_LAUNCH);
             btnLaunch.setOnAction(e -> {
@@ -182,8 +172,7 @@ public final class GameListCell extends ListCell<GameListItem> {
             this.content.titleProperty().bind(item.titleProperty());
             this.content.subtitleProperty().bind(item.subtitleProperty());
             this.tag.bind(item.tagProperty());
-            if (item.canUpdate())
-                this.right.getChildren().add(btnUpgrade);
+
             this.right.getChildren().addAll(btnLaunch, btnManage);
         }
     }
@@ -194,7 +183,6 @@ public final class GameListCell extends ListCell<GameListItem> {
 
         java.util.List<javafx.scene.Node> entries = new java.util.ArrayList<>();
         entries.add(new IconedMenuItem(SVG.ROCKET_LAUNCH, i18n("version.launch.test"), item::testGame, popup));
-        entries.add(new IconedMenuItem(SVG.SCRIPT, i18n("version.launch_script"), item::generateLaunchScript, popup));
         entries.add(new MenuSeparator());
         entries.add(new IconedMenuItem(SVG.SETTINGS, i18n("version.manage.manage"), item::modifyGameSettings, popup));
         entries.add(new MenuSeparator());

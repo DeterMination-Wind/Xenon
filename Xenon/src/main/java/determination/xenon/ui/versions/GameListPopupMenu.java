@@ -54,11 +54,9 @@ public final class GameListPopupMenu extends StackPane {
                             double initOffsetX, double initOffsetY,
                             Profile profile, List<Version> versions) {
         GameListPopupMenu menu = new GameListPopupMenu();
-        // Drop entries whose version folder disappeared while the list was
-        // open; rendering them later throws VersionNotFoundException.
+        // Stale ids are safe: GameItem renders a placeholder when the
+        // instance manifest has disappeared since the list was built.
         menu.getItems().setAll(versions.stream()
-                .filter(it -> profile.getRepository().hasVersion(it.getId())
-                        || MindustryRoutes.isMindustry(profile, it.getId()))
                 .map(it -> new GameItem(profile, it.getId()))
                 .toList());
         JFXPopup popup = new JFXPopup(menu);
