@@ -47,8 +47,7 @@ import java.util.Objects;
 import java.util.Optional;
 
 /**
- * {@link MindustryModRepository} backed by the community-maintained
- * {@code Anuken/mindustry-mods} index. The index is a single JSON array
+ * Parser for the community-maintained {@code Anuken/mindustry-mods} index. The index is a single JSON array
  * served from {@code raw.githubusercontent.com}; every entry roughly
  * follows the shape
  * <pre>
