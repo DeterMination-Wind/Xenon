@@ -137,34 +137,9 @@ public final class JavaFXUtils {
         }
     }
 
-    private static void preTouchOpenJFXDependencies(Task task) {
-        String mirrorRepo = "https://mirrors.cloud.tencent.com/nexus/repository/maven-public";
-
-        JavaFXPlatform.ALL.forEach((name, platform) -> {
-            platform.getVersions().forEach((versionType, version) -> {
-                for (String module : MODULES) {
-                    String jarUrl = String.format("%s/%s/javafx-%s/%s/javafx-%s-%s-%s.jar",
-                            mirrorRepo,
-                            platform.getGroupId().replace('.', '/'),
-                            module, version,
-                            module, version, platform.getClassifier()
-                    );
-                    task.getLogger().info("Fetching {}", jarUrl);
-                    try (InputStream stream = new URI(jarUrl).toURL().openStream()) {
-                        stream.readNBytes(128);
-                    } catch (IOException ignored) {
-                    } catch (URISyntaxException e) {
-                        throw new GradleException("Failed to fetch jar from " + jarUrl, e);
-                    }
-                }
-            });
-        });
-    }
-
     public static void register(Project rootProject) {
         addDependencies(rootProject);
 
         rootProject.getTasks().register("generateOpenJFXDependencies", task -> task.doLast(JavaFXUtils::generateOpenJFXDependencies));
-        rootProject.getTasks().register("preTouchOpenJFXDependencies", task -> task.doLast(JavaFXUtils::preTouchOpenJFXDependencies));
     }
 }

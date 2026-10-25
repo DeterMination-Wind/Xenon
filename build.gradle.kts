@@ -1,6 +1,4 @@
-import determination.xenon.gradle.ci.CheckUpdate
 import determination.xenon.gradle.docs.UpdateDocuments
-import determination.xenon.gradle.l10n.ParseLanguageSubtagRegistry
 
 plugins {
     id("checkstyle")
@@ -94,21 +92,6 @@ determination.xenon.gradle.javafx.JavaFXUtils.register(rootProject)
 
 defaultTasks("clean", "build")
 
-tasks.register<ParseLanguageSubtagRegistry>("parseLanguageSubtagRegistry") {
-    languageSubtagRegistryFile.set(layout.projectDirectory.file("language-subtag-registry"))
-
-    sublanguagesFile.set(layout.projectDirectory.file("HMCLCore/src/main/resources/assets/lang/sublanguages.csv"))
-    defaultScriptFile.set(layout.projectDirectory.file("HMCLCore/src/main/resources/assets/lang/default_script.csv"))
-}
-
 tasks.register<UpdateDocuments>("updateDocuments") {
     documentsDir.set(layout.projectDirectory.dir("docs"))
-}
-
-tasks.register<CheckUpdate>("checkUpdateDev") {
-    uri.set("https://ci.huangyuhui.net/job/HMCL-nightly")
-}
-
-tasks.register<CheckUpdate>("checkUpdateStable") {
-    uri.set("https://ci.huangyuhui.net/job/HMCL-stable")
 }

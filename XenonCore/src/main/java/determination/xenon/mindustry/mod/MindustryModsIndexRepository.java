@@ -75,7 +75,7 @@ import java.util.Optional;
  * {@code <cacheRoot>/mods/community-index.json}; if the next refresh
  * fails the on-disk copy is replayed.</p>
  */
-public final class MindustryModsIndexRepository extends MindustryModRepository {
+public final class MindustryModsIndexRepository {
 
     /** Upstream URL of the community index (Anuken/MindustryMods, master branch). */
     public static final String INDEX_URL =
@@ -113,7 +113,6 @@ public final class MindustryModsIndexRepository extends MindustryModRepository {
                 .build();
     }
 
-    @Override
     public List<MindustryRemoteMod> refresh() throws IOException {
         String body;
         IOException networkError = null;
@@ -149,7 +148,6 @@ public final class MindustryModsIndexRepository extends MindustryModRepository {
         return parsed;
     }
 
-    @Override
     public Optional<MindustryRemoteMod> findByName(String name) {
         if (name == null || name.isBlank()) return Optional.empty();
         String key = name.toLowerCase(Locale.ROOT);
