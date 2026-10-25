@@ -87,18 +87,18 @@ public abstract class Account implements Observable {
 
     @Override
     public int hashCode() {
-        return Objects.hash(portable);
+        return Objects.hash(getIdentifier(), portable);
     }
 
     @Override
     public boolean equals(Object obj) {
         if (this == obj)
             return true;
-        if (!(obj instanceof Account))
+        if (!(obj instanceof Account another))
             return false;
 
-        Account another = (Account) obj;
-        return isPortable() == another.isPortable();
+        return isPortable() == another.isPortable()
+                && Objects.equals(getIdentifier(), another.getIdentifier());
     }
 
     @Override
