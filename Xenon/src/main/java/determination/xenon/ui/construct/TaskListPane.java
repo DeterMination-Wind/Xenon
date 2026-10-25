@@ -359,29 +359,7 @@ public final class TaskListPane extends StackPane {
                 stageValue = null;
             }
 
-            // CHECKSTYLE:OFF
-            // @formatter:off
-            message = switch (stageKey) {
-                case "hmcl.modpack" ->                  i18n("install.modpack");
-                case "hmcl.modpack.download" ->         i18n("launch.state.modpack");
-                case "hmcl.install.assets" ->           i18n("assets.download");
-                case "hmcl.install.libraries" ->        i18n("libraries.download");
-                case "hmcl.install.game" ->             i18n("install.installer.install", i18n("install.installer.game") + " " + stageValue);
-                case "hmcl.install.forge" ->            i18n("install.installer.install", i18n("install.installer.forge") + " " + stageValue);
-                case "hmcl.install.cleanroom" ->        i18n("install.installer.install", i18n("install.installer.cleanroom") + " " + stageValue);
-                case "hmcl.install.neoforge" ->         i18n("install.installer.install", i18n("install.installer.neoforge") + " " + stageValue);
-                case "hmcl.install.liteloader" ->       i18n("install.installer.install", i18n("install.installer.liteloader") + " " + stageValue);
-                case "hmcl.install.optifine" ->         i18n("install.installer.install", i18n("install.installer.optifine") + " " + stageValue);
-                case "hmcl.install.fabric" ->           i18n("install.installer.install", i18n("install.installer.fabric") + " " + stageValue);
-                case "hmcl.install.fabric-api" ->       i18n("install.installer.install", i18n("install.installer.fabric-api") + " " + stageValue);
-                case "hmcl.install.legacyfabric" ->     i18n("install.installer.install", i18n("install.installer.legacyfabric") + " " + stageValue);
-                case "hmcl.install.legacyfabric-api" -> i18n("install.installer.install", i18n("install.installer.legacyfabric-api") + " " + stageValue);
-                case "hmcl.install.quilt" ->            i18n("install.installer.install", i18n("install.installer.quilt") + " " + stageValue);
-                case "hmcl.install.quilt-api" ->        i18n("install.installer.install", i18n("install.installer.quilt-api") + " " + stageValue);
-                default -> i18n(stageKey);
-            };
-            // @formatter:on
-            // CHECKSTYLE:ON
+            message = i18n(stageKey);
 
             title.set(message);
         }
