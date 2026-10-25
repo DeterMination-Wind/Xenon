@@ -41,7 +41,7 @@ definitions live in `Xenon/build.gradle.kts`, root default tasks are `clean buil
 - `XenonCore/` — backend: versions, downloads, mods, saves, schematics, crashes, servers, UUID; `determination.xenon.mindustry.*`. Read `XenonCore/AGENTS.md`.
 - `Xenon/` — JavaFX UI, HMCL shell, and packaging; the Windows single-file stub is `XenonBootstrap/`. Read `Xenon/AGENTS.md`.
 - `XenonBoot/` — Java-8 bootstrap stub; the packaged jar replaces its `EntryPoint` with `Xenon`'s. Read `XenonBoot/AGENTS.md`.
-- `minecraft/libraries/*` — two Minecraft loader libraries kept compiling; not on the Mindustry path. `buildSrc/` and `gradle/libs.versions.toml` own build logic and dependency pins.
+- `buildSrc/` and `gradle/libs.versions.toml` own build logic and dependency pins. The Minecraft backend and its two `minecraft/libraries` modules have been removed; the launcher is Mindustry-only.
 - `docs/` holds Xenon user docs (README, USAGE, DEVELOPMENT); it is not the agent entry point. Don't edit it in agent-doc refactors.
 
 ## i18n
@@ -69,7 +69,6 @@ definitions live in `Xenon/build.gradle.kts`, root default tasks are `clean buil
 | `XenonBoot/**` | `XenonBoot/AGENTS.md` |
 | `**/I18N*.properties` | root i18n + `:Xenon:checkTranslations` |
 | `.github/workflows/**` or release/updater | root traps; inspect CI logs before editing |
-| `minecraft/libraries/**` | leave alone unless the build breaks |
 
 ## Commit discipline
 

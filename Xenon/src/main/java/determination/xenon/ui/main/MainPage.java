@@ -41,7 +41,7 @@ import javafx.scene.layout.VBox;
 import javafx.scene.text.TextFlow;
 import javafx.util.Duration;
 import determination.xenon.Metadata;
-import determination.xenon.game.Version;
+import determination.xenon.mindustry.MindustryVersion;
 import determination.xenon.setting.Profile;
 import determination.xenon.setting.Profiles;
 import determination.xenon.theme.Themes;
@@ -79,7 +79,7 @@ public final class MainPage extends StackPane implements DecoratorPage {
     private final StringProperty currentGame = new SimpleStringProperty(this, "currentGame");
     private final BooleanProperty showUpdate = new SimpleBooleanProperty(this, "showUpdate");
     private final ObjectProperty<RemoteVersion> latestVersion = new SimpleObjectProperty<>(this, "latestVersion");
-    private final ObservableList<Version> versions = FXCollections.observableArrayList();
+    private final ObservableList<MindustryVersion> versions = FXCollections.observableArrayList();
     private Profile profile;
 
     private TransitionPane announcementPane;
@@ -346,7 +346,7 @@ public final class MainPage extends StackPane implements DecoratorPage {
         this.currentGame.set(currentGame);
     }
 
-    public ObservableList<Version> getVersions() {
+    public ObservableList<MindustryVersion> getVersions() {
         return versions;
     }
 
@@ -374,7 +374,7 @@ public final class MainPage extends StackPane implements DecoratorPage {
         this.latestVersion.set(latestVersion);
     }
 
-    public void initVersions(Profile profile, List<Version> versions) {
+    public void initVersions(Profile profile, List<MindustryVersion> versions) {
         FXUtils.checkFxUserThread();
         this.profile = profile;
         this.versions.setAll(versions);

@@ -20,7 +20,6 @@ package determination.xenon.ui.main;
 import com.jfoenix.controls.JFXPopup;
 import javafx.beans.property.ReadOnlyObjectProperty;
 import javafx.scene.layout.Region;
-import determination.xenon.game.Version;
 import determination.xenon.mindustry.MindustryImportFlow;
 import determination.xenon.setting.Accounts;
 import determination.xenon.setting.Profile;
@@ -79,12 +78,9 @@ public class RootPage extends DecoratorAnimatedPage implements DecoratorPage {
             mainPage.latestVersionProperty().bind(UpdateChecker.latestVersionProperty());
 
             Profiles.registerVersionsListener(profile -> {
-                List<Version> children = new java.util.ArrayList<>();
+                List<determination.xenon.mindustry.MindustryVersion> children = new java.util.ArrayList<>();
                 try {
-                    for (determination.xenon.mindustry.MindustryVersion v :
-                            determination.xenon.mindustry.MindustryImportFlow.visibleVersions(profile)) {
-                        children.add(new Version(v.getId()));
-                    }
+                    children.addAll(determination.xenon.mindustry.MindustryImportFlow.visibleVersions(profile));
                 } catch (Throwable ex) {
                     LOG.warning("Failed to load Mindustry versions for MainPage", ex);
                 }

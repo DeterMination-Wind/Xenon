@@ -37,7 +37,6 @@ import determination.xenon.java.JavaInfo;
 import determination.xenon.java.JavaManager;
 import determination.xenon.java.JavaRuntime;
 import determination.xenon.setting.ConfigHolder;
-import determination.xenon.setting.DownloadProviders;
 import determination.xenon.task.Schedulers;
 import determination.xenon.task.Task;
 import determination.xenon.ui.*;
@@ -79,7 +78,7 @@ public final class JavaManagementPage extends ListPageBase<JavaRuntime> {
         if (Platform.SYSTEM_PLATFORM.equals(OperatingSystem.LINUX, Architecture.LOONGARCH64_OW)) {
             onInstallJava = () -> FXUtils.openLink("https://www.loongnix.cn/zh/api/java/");
         } else {
-            onInstallJava = JavaDownloadDialog.showDialogAction(DownloadProviders.getDownloadProvider());
+            onInstallJava = JavaDownloadDialog.showDialogAction();
         }
 
         FXUtils.applyDragListener(this, it -> {
@@ -176,7 +175,7 @@ public final class JavaManagementPage extends ListPageBase<JavaRuntime> {
         }).whenComplete(Schedulers.javafx(), (result, exception) -> {
             if (exception == null) {
                 Controllers.getDecorator().startWizard(new SinglePageWizardProvider(controller ->
-                        new JavaInstallPage(controller::onFinish, result.getValue(), null, null, result.getKey(), file)));
+                        new JavaInstallPage(controller::onFinish, result.getValue(), result.getKey(), file)));
             } else {
                 if (exception instanceof UnsupportedPlatformException) {
                     Controllers.dialog(i18n("java.install.failed.unsupported_platform"), null, MessageDialogPane.MessageType.WARNING);

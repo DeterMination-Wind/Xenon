@@ -17,10 +17,7 @@
  */
 package determination.xenon.util.i18n.translator;
 
-import determination.xenon.download.RemoteVersion;
-import determination.xenon.download.game.GameRemoteVersion;
 import determination.xenon.util.i18n.SupportedLocale;
-import determination.xenon.util.versioning.GameVersionNumber;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -80,157 +77,8 @@ public class Translator_lzh extends Translator {
         builder.append(hour % 2 == 0 ? '正' : '初');
     }
 
-    public static String translateGameVersion(GameVersionNumber gameVersion) {
-        if (gameVersion instanceof GameVersionNumber.Release release) {
-            StringBuilder builder = new StringBuilder();
-            appendDigitByDigit(builder, String.valueOf(release.getMajor()));
-            builder.append(DOT);
-            appendDigitByDigit(builder, String.valueOf(release.getMinor()));
-
-            if (release.getPatch() != 0) {
-                builder.append(DOT);
-                appendDigitByDigit(builder, String.valueOf(release.getPatch()));
-            }
-
-            switch (release.getEaType()) {
-                case GA -> {
-                    // do nothing
-                }
-                case SNAPSHOT -> {
-                    builder.append("之快照");
-                    appendDigitByDigit(builder, release.getEaVersion().toString());
-                }
-                case PRE_RELEASE -> {
-                    builder.append("之預");
-                    appendDigitByDigit(builder, release.getEaVersion().toString());
-                }
-                case RELEASE_CANDIDATE -> {
-                    builder.append("之候");
-                    appendDigitByDigit(builder, release.getEaVersion().toString());
-                }
-                default -> {
-                    // Unsupported
-                    return gameVersion.toString();
-                }
-            }
-
-            switch (release.getAdditional()) {
-                case NONE -> {
-                }
-                case UNOBFUSCATED -> {
-                    builder.append("涇渭");
-                }
-                default -> {
-                    // Unsupported
-                    return gameVersion.toString();
-                }
-            }
-
-            return builder.toString();
-        } else if (gameVersion instanceof GameVersionNumber.LegacySnapshot snapshot) {
-            StringBuilder builder = new StringBuilder();
-
-            appendDigitByDigit(builder, String.valueOf(snapshot.getYear()));
-            builder.append('週');
-            appendDigitByDigit(builder, String.valueOf(snapshot.getWeek()));
-
-            char suffix = snapshot.getSuffix();
-            if (suffix >= 'a' && (suffix - 'a') < TIAN_GAN.length)
-                builder.append(TIAN_GAN[suffix - 'a']);
-            else
-                builder.append(suffix);
-
-            if (snapshot.isUnobfuscated())
-                builder.append("涇渭");
-
-            return builder.toString();
-        } else if (gameVersion instanceof GameVersionNumber.Special) {
-            String version = gameVersion.toString();
-            return switch (version.toLowerCase(Locale.ROOT)) {
-                case "2.0" -> "二點〇";
-                case "2.0_blue" -> "二點〇藍";
-                case "2.0_red" -> "二點〇赤";
-                case "2.0_purple" -> "二點〇紫";
-                case "1.rv-pre1" -> "一點真視之預一";
-                case "3d shareware v1.34" -> "躍然享件一點三四";
-                case "13w12~" -> "一三週一二閏";
-                case "20w14infinite", "20w14~", "20w14∞" -> "二〇週一四宇";
-                case "22w13oneblockatatime" -> "二二週一三典";
-                case "23w13a_or_b" -> "二三週一三暨";
-                case "24w14potato" -> "二四週一四芋";
-                case "25w14craftmine" -> "二五週一四礦";
-                default -> {
-                    if (version.length() >= 6 && version.charAt(2) == 'w') {
-                        Matcher matcher = Pattern.compile("(?<year>[0-9]{2})w(?<week>[0-9]{2})(?<suffix>.+)").matcher(version);
-                        if (matcher.matches()) {
-                            int year = Integer.parseInt(matcher.group("year"));
-                            int week = Integer.parseInt(matcher.group("week"));
-                            String suffix = matcher.group("suffix");
-                            char suffixFirstChar = suffix.charAt(0);
-
-                            StringBuilder builder = new StringBuilder();
-                            appendDigitByDigit(builder, String.valueOf(year));
-                            builder.append('週');
-                            appendDigitByDigit(builder, String.valueOf(week));
-
-                            if (suffix.length() == 1
-                                    && suffixFirstChar >= 'a' && (suffixFirstChar - 'a') < TIAN_GAN.length)
-                                builder.append(TIAN_GAN[suffixFirstChar - 'a']);
-                            else
-                                builder.append(suffix);
-
-                            yield builder.toString();
-                        }
-                    }
-
-                    yield version;
-                }
-            };
-        } else {
-            return gameVersion.toString();
-        }
-    }
-
-    private static final Pattern GENERIC_VERSION_PATTERN =
-            Pattern.compile("^[0-9]+(\\.[0-9]+)*");
-
-    public static String translateGenericVersion(String version) {
-        Matcher matcher = GENERIC_VERSION_PATTERN.matcher(version);
-        if (matcher.find()) {
-            String prefix = matcher.group();
-            StringBuilder builder = new StringBuilder(version.length());
-
-            for (int i = 0; i < prefix.length(); i++) {
-                char ch = prefix.charAt(i);
-                if (ch >= '0' && ch <= '9')
-                    builder.append(digitToString(ch));
-                else if (ch == '.')
-                    builder.append(DOT);
-                else
-                    builder.append(ch);
-            }
-            builder.append(version, prefix.length(), version.length());
-            return builder.toString();
-        }
-
-        return version;
-    }
-
     public Translator_lzh(SupportedLocale locale) {
         super(locale);
-    }
-
-    @Override
-    public String getDisplayVersion(RemoteVersion remoteVersion) {
-        if (remoteVersion instanceof GameRemoteVersion)
-            return translateGameVersion(GameVersionNumber.asGameVersion(remoteVersion.getSelfVersion()));
-        else
-            return translateGenericVersion(remoteVersion.getSelfVersion());
-    }
-
-    @Override
-    public String getDisplayVersion(GameVersionNumber versionNumber) {
-        return translateGameVersion(versionNumber);
     }
 
     @Override

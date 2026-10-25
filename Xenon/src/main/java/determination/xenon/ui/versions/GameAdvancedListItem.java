@@ -21,7 +21,6 @@ import javafx.geometry.Pos;
 import determination.xenon.mindustry.ui.MindustryRoutes;
 import determination.xenon.setting.Profile;
 import determination.xenon.setting.Profiles;
-import determination.xenon.setting.VersionIconType;
 import determination.xenon.ui.FXUtils;
 import determination.xenon.ui.WeakListenerHolder;
 import determination.xenon.ui.construct.AdvancedListItem;
@@ -51,11 +50,11 @@ public class GameAdvancedListItem extends AdvancedListItem {
         if (version != null && MindustryRoutes.isMindustry(profile, version)) {
             setTitle(i18n("version.manage.manage"));
             setSubtitle(version);
-            imageContainer.setImage(VersionIconType.DEFAULT.getIcon());
+            imageContainer.setImage(FXUtils.newBuiltinImage("/assets/img/mindustry/vanilla.png"));
         } else {
             setTitle(i18n("version.empty"));
             setSubtitle(i18n("version.empty.add"));
-            imageContainer.setImage(VersionIconType.DEFAULT.getIcon());
+            imageContainer.setImage(FXUtils.newBuiltinImage("/assets/img/mindustry/vanilla.png"));
         }
     }
 }

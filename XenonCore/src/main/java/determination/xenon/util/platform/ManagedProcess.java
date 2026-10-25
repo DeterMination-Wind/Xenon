@@ -17,7 +17,7 @@
  */
 package determination.xenon.util.platform;
 
-import determination.xenon.launch.StreamPump;
+import determination.xenon.util.platform.StreamPump;
 import determination.xenon.util.Lang;
 
 import java.io.IOException;
@@ -29,8 +29,7 @@ import java.util.function.Predicate;
 /// The managed process.
 ///
 /// @author huangyuhui
-/// <!-- @see determination.xenon.launch.ExitWaiter -->
-/// @see determination.xenon.launch.StreamPump
+/// @see StreamPump
 public final class ManagedProcess {
     private final ReentrantLock lock = new ReentrantLock();
     private final Process process;

@@ -34,8 +34,8 @@ import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
-import determination.xenon.game.Version;
-import determination.xenon.mindustry.ui.MindustryRoutes;
+import determination.xenon.mindustry.MindustryVersion;
+
 import determination.xenon.setting.Profile;
 import determination.xenon.ui.FXUtils;
 import determination.xenon.ui.construct.ImageContainer;
@@ -52,7 +52,7 @@ public final class GameListPopupMenu extends StackPane {
 
     public static void show(Node owner, JFXPopup.PopupVPosition vAlign, JFXPopup.PopupHPosition hAlign,
                             double initOffsetX, double initOffsetY,
-                            Profile profile, List<Version> versions) {
+                            Profile profile, List<MindustryVersion> versions) {
         GameListPopupMenu menu = new GameListPopupMenu();
         // Stale ids are safe: GameItem renders a placeholder when the
         // instance manifest has disappeared since the list was built.

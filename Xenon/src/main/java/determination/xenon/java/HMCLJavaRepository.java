@@ -1,6 +1,6 @@
 /*
  * Xenon Launcher
- * Copyright (C) 2024-2026  Xenon contributors
+ * Copyright (C) 2021-2026  Xenon contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -17,31 +17,39 @@
  */
 package determination.xenon.java;
 
-import determination.xenon.download.DownloadProvider;
-import determination.xenon.download.java.mojang.MojangJavaDownloadTask;
-import determination.xenon.download.java.mojang.MojangJavaRemoteFiles;
-import determination.xenon.game.DownloadInfo;
-import determination.xenon.game.GameJavaVersion;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import determination.xenon.task.FileDownloadTask;
+import determination.xenon.task.Schedulers;
 import determination.xenon.task.Task;
 import determination.xenon.util.gson.JsonUtils;
 import determination.xenon.util.io.FileUtils;
+import determination.xenon.util.platform.Architecture;
 import determination.xenon.util.platform.OperatingSystem;
 import determination.xenon.util.platform.Platform;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.*;
 
 import static determination.xenon.util.logging.Logger.LOG;
 
-/**
- * @author Glavo
- */
+/// On-disk JDK pool under `<root>/<platform>/`.
+///
+/// Managed runtimes are named `temurin-<major>` and recorded by a sibling
+/// `<name>.json` manifest. Downloads come from the Adoptium API, which serves
+/// Eclipse Temurin builds for every platform Xenon supports.
 public final class HMCLJavaRepository implements JavaRepository {
-    public static final String MOJANG_JAVA_PREFIX = "mojang-";
+    public static final String TEMURIN_PREFIX = "temurin-";
 
     private final Path root;
 
@@ -58,8 +66,8 @@ public final class HMCLJavaRepository implements JavaRepository {
         return getPlatformRoot(platform).resolve(name);
     }
 
-    public Path getJavaDir(Platform platform, GameJavaVersion gameJavaVersion) {
-        return getJavaDir(platform, MOJANG_JAVA_PREFIX + gameJavaVersion.component());
+    public Path getJavaDir(Platform platform, int majorVersion) {
+        return getJavaDir(platform, TEMURIN_PREFIX + majorVersion);
     }
 
     @Override
@@ -67,16 +75,16 @@ public final class HMCLJavaRepository implements JavaRepository {
         return getPlatformRoot(platform).resolve(name + ".json");
     }
 
-    public Path getManifestFile(Platform platform, GameJavaVersion gameJavaVersion) {
-        return getManifestFile(platform, MOJANG_JAVA_PREFIX + gameJavaVersion.component());
+    public Path getManifestFile(Platform platform, int majorVersion) {
+        return getManifestFile(platform, TEMURIN_PREFIX + majorVersion);
     }
 
     public boolean isInstalled(Platform platform, String name) {
         return Files.exists(getManifestFile(platform, name));
     }
 
-    public boolean isInstalled(Platform platform, GameJavaVersion gameJavaVersion) {
-        return isInstalled(platform, MOJANG_JAVA_PREFIX + gameJavaVersion.component());
+    public boolean isInstalled(Platform platform, int majorVersion) {
+        return isInstalled(platform, TEMURIN_PREFIX + majorVersion);
     }
 
     public @Nullable Path getJavaExecutable(Platform platform, String name) {
@@ -95,8 +103,8 @@ public final class HMCLJavaRepository implements JavaRepository {
         return null;
     }
 
-    public @Nullable Path getJavaExecutable(Platform platform, GameJavaVersion gameJavaVersion) {
-        return getJavaExecutable(platform, MOJANG_JAVA_PREFIX + gameJavaVersion.component());
+    public @Nullable Path getJavaExecutable(Platform platform, int majorVersion) {
+        return getJavaExecutable(platform, TEMURIN_PREFIX + majorVersion);
     }
 
     private static void getAllJava(List<Path> list, Platform platform, Path platformRoot) {
@@ -142,49 +150,41 @@ public final class HMCLJavaRepository implements JavaRepository {
     }
 
     @Override
-    public Task<JavaRuntime> getDownloadJavaTask(DownloadProvider downloadProvider, Platform platform, GameJavaVersion gameJavaVersion) {
-        Path javaDir = getJavaDir(platform, gameJavaVersion);
+    public Task<JavaRuntime> getDownloadJavaTask(Platform platform, int majorVersion) {
+        Path javaDir = getJavaDir(platform, majorVersion);
         Path tempDir = getPlatformRoot(platform).resolve(".tmp").resolve(javaDir.getFileName());
 
-        return new MojangJavaDownloadTask(downloadProvider, javaDir, tempDir, gameJavaVersion, JavaManager.getMojangJavaPlatform(platform)).thenApplyAsync(result -> {
-            Path executable;
-            try {
-                executable = JavaManager.getExecutable(javaDir).toRealPath();
-            } catch (IOException e) {
-                if (platform.getOperatingSystem() == OperatingSystem.MACOS)
-                    executable = JavaManager.getMacExecutable(javaDir).toRealPath();
-                else
-                    throw e;
-            }
+        return Task.supplyAsync(Schedulers.io(), () -> queryAdoptium(platform, majorVersion))
+                .thenComposeAsync(asset -> {
+                    Path archive = tempDir.resolve(asset.name());
+                    FileDownloadTask download = new FileDownloadTask(asset.link(), archive,
+                            new FileDownloadTask.IntegrityCheck("sha256", asset.checksum()));
 
-            JavaInfo info;
-            if (JavaManager.isCompatible(platform))
-                info = JavaInfoUtils.fromExecutable(executable);
-            else
-                info = new JavaInfo(platform, result.download().version().name(), null);
+                    Map<String, Object> update = new LinkedHashMap<>();
+                    update.put("provider", "adoptium");
+                    update.put("version", majorVersion);
 
-            Map<String, Object> update = new LinkedHashMap<>();
-            update.put("provider", "mojang");
-            update.put("component", gameJavaVersion.component());
-
-            Map<String, JavaLocalFiles.Local> files = new LinkedHashMap<>();
-            result.remoteFiles().getFiles().forEach((path, file) -> {
-                if (file instanceof MojangJavaRemoteFiles.RemoteFile) {
-                    DownloadInfo downloadInfo = ((MojangJavaRemoteFiles.RemoteFile) file).getDownloads().get("raw");
-                    if (downloadInfo != null) {
-                        files.put(path, new JavaLocalFiles.LocalFile(downloadInfo.getSha1(), downloadInfo.getSize()));
+                    return download.thenComposeAsync(() -> new JavaInstallTask(javaDir, update, archive));
+                })
+                .thenApplyAsync(result -> {
+                    Path executable;
+                    try {
+                        executable = JavaManager.getExecutable(javaDir).toRealPath();
+                    } catch (IOException e) {
+                        if (platform.getOperatingSystem() == OperatingSystem.MACOS)
+                            executable = JavaManager.getMacExecutable(javaDir).toRealPath();
+                        else
+                            throw e;
                     }
-                } else if (file instanceof MojangJavaRemoteFiles.RemoteDirectory) {
-                    files.put(path, new JavaLocalFiles.LocalDirectory());
-                } else if (file instanceof MojangJavaRemoteFiles.RemoteLink) {
-                    files.put(path, new JavaLocalFiles.LocalLink(((MojangJavaRemoteFiles.RemoteLink) file).getTarget()));
-                }
-            });
 
-            JavaManifest manifest = new JavaManifest(info, update, files);
-            JsonUtils.writeToJsonFile(getManifestFile(platform, gameJavaVersion), manifest);
-            return JavaRuntime.of(executable, info, true);
-        });
+                    JavaInfo info = result.getInfo().getPlatform().equals(platform) && JavaManager.isCompatible(platform)
+                            ? JavaInfoUtils.fromExecutable(executable)
+                            : result.getInfo();
+
+                    JavaManifest manifest = new JavaManifest(info, result.getUpdate(), result.getFiles());
+                    JsonUtils.writeToJsonFile(getManifestFile(platform, majorVersion), manifest);
+                    return JavaRuntime.of(executable, info, true);
+                });
     }
 
     public Task<JavaRuntime> getInstallJavaTask(Platform platform, String name, Map<String, Object> update, Path archiveFile) {
@@ -209,15 +209,71 @@ public final class HMCLJavaRepository implements JavaRepository {
 
     @Override
     public Task<Void> getUninstallJavaTask(JavaRuntime java) {
-        return Task.runAsync(() -> {
-            Path root = getPlatformRoot(java.getPlatform());
-            Path relativized = root.relativize(java.getBinary());
+        assert java.isManaged();
 
-            if (relativized.getNameCount() > 1) {
-                String name = relativized.getName(0).toString();
-                Files.deleteIfExists(getManifestFile(java.getPlatform(), name));
-                FileUtils.deleteDirectory(getJavaDir(java.getPlatform(), name));
-            }
-        });
+        Path binary = java.getBinary();
+        Path platformRoot = getPlatformRoot(java.getPlatform());
+        Path javaDir = binary;
+        for (int i = 0; i < 3 && javaDir != null; i++) {
+            javaDir = javaDir.getParent();
+        }
+        if (javaDir == null || !javaDir.startsWith(platformRoot) || javaDir.equals(platformRoot))
+            return Task.completed(null);
+
+        return getUninstallJavaTask(java.getPlatform(), javaDir.getFileName().toString());
+    }
+
+    private record AdoptiumAsset(String link, String checksum, String name) {
+    }
+
+    private static AdoptiumAsset queryAdoptium(Platform platform, int majorVersion) throws IOException, InterruptedException {
+        String os = switch (platform.getOperatingSystem()) {
+            case WINDOWS -> "windows";
+            case LINUX -> "linux";
+            case MACOS -> "mac";
+            default -> throw new IOException("Adoptium has no build for " + platform);
+        };
+
+        String arch = switch (platform.getArchitecture()) {
+            case X86 -> "x86";
+            case X86_64 -> "x64";
+            case ARM64 -> "aarch64";
+            case ARM32 -> "arm";
+            case RISCV64 -> "riscv64";
+            default -> throw new IOException("Adoptium has no build for " + platform);
+        };
+
+        URI uri = URI.create(String.format(
+                "https://api.adoptium.net/v3/assets/latest/%d/hotspot?architecture=%s&image_type=jdk&os=%s&vendor=eclipse&page=0&page_size=1",
+                majorVersion, arch, os));
+
+        HttpClient client = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(10))
+                .followRedirects(HttpClient.Redirect.NORMAL)
+                .build();
+        HttpRequest request = HttpRequest.newBuilder(uri)
+                .timeout(Duration.ofSeconds(30))
+                .header("Accept", "application/json")
+                .GET()
+                .build();
+
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        if (response.statusCode() / 100 != 2) {
+            throw new IOException("Adoptium API returned HTTP " + response.statusCode());
+        }
+
+        JsonElement body = JsonParser.parseString(response.body());
+        if (!body.isJsonArray() || body.getAsJsonArray().isEmpty()) {
+            throw new IOException("No Adoptium build for Java " + majorVersion + " on " + platform);
+        }
+
+        JsonObject binary = body.getAsJsonArray().get(0).getAsJsonObject()
+                .getAsJsonObject("binary");
+        JsonObject pkg = binary.getAsJsonObject("package");
+
+        return new AdoptiumAsset(
+                pkg.get("link").getAsString(),
+                pkg.get("checksum").getAsString(),
+                pkg.get("name").getAsString());
     }
 }

@@ -14,36 +14,18 @@ tasks.compileJava {
 dependencies {
     api(libs.kala.compress.zip)
     api(libs.kala.compress.tar)
-    api(libs.simple.png.javafx)
     api(libs.gson)
     implementation(libs.hjson)
-    api(libs.tomlj)
     api(libs.xz)
     api(libs.fx.gson)
-    api(libs.constant.pool.scanner)
-    api(libs.nanohttpd)
     api(libs.jsoup)
     api(libs.chardet)
     api(libs.jna)
     api(libs.pci.ids)
-    api(libs.hello.nbt)
     api(libs.weburl)
 
     compileOnlyApi(libs.jetbrains.annotations)
 
     testImplementation(libs.jna.platform)
     testImplementation(libs.jimfs)
-}
-
-tasks.processResources {
-    listOf(
-        "HMCLTransformerDiscoveryService",
-        "HMCLMultiMCBootstrap"
-    ).map { project(":$it").tasks["jar"] as Jar }.forEach { task ->
-        dependsOn(task)
-
-        into("assets/game") {
-            from(task.outputs.files)
-        }
-    }
 }

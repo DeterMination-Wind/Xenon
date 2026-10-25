@@ -17,10 +17,7 @@
  */
 package determination.xenon.util.i18n;
 
-import determination.xenon.download.RemoteVersion;
-import determination.xenon.download.game.GameRemoteVersion;
 import determination.xenon.util.i18n.translator.Translator;
-import determination.xenon.util.versioning.GameVersionNumber;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.PropertyKey;
 
@@ -77,14 +74,6 @@ public final class I18n {
         return getTranslator().formatSpeed(bytes);
     }
 
-    public static String getDisplayVersion(RemoteVersion version) {
-        return getTranslator().getDisplayVersion(version);
-    }
-
-    public static String getDisplayVersion(GameVersionNumber version) {
-        return getTranslator().getDisplayVersion(version);
-    }
-
     /// Find the builtin localized resource with given name and suffix.
     ///
     /// For example, if the current locale is `zh-CN`, when calling `getBuiltinResource("assets.lang.foo", "json")`,
@@ -118,10 +107,6 @@ public final class I18n {
         } catch (IOException e) {
             return null;
         }
-    }
-
-    public static String getWikiLink(GameRemoteVersion remoteVersion) {
-        return MinecraftWiki.getWikiLink(locale, remoteVersion);
     }
 
     public static boolean hasKey(String key) {

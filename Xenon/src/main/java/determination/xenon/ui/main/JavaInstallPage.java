@@ -25,9 +25,6 @@ import javafx.geometry.Pos;
 import javafx.scene.control.SkinBase;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.VBox;
-import determination.xenon.download.java.JavaRemoteVersion;
-import determination.xenon.download.java.disco.DiscoJavaDistribution;
-import determination.xenon.download.java.disco.DiscoJavaRemoteVersion;
 import determination.xenon.java.HMCLJavaRepository;
 import determination.xenon.java.JavaInfo;
 import determination.xenon.java.JavaManager;
@@ -56,15 +53,11 @@ public final class JavaInstallPage extends WizardSinglePage {
     private final Path file;
 
     private final JavaInfo info;
-    private final JavaRemoteVersion remoteVersion;
-    private final Map<String, Object> update;
     private final StringProperty nameProperty = new SimpleStringProperty();
 
-    public JavaInstallPage(Runnable onFinish, JavaInfo info, JavaRemoteVersion remoteVersion, Map<String, Object> update, String defaultName, Path file) {
+    public JavaInstallPage(Runnable onFinish, JavaInfo info, String defaultName, Path file) {
         super(onFinish);
         this.info = info;
-        this.remoteVersion = remoteVersion;
-        this.update = update;
         this.file = file;
         this.nameProperty.set(defaultName);
     }
@@ -76,14 +69,7 @@ public final class JavaInstallPage extends WizardSinglePage {
 
     @Override
     protected Object finish() {
-        Task<JavaRuntime> installTask = JavaManager.getInstallJavaTask(info.getPlatform(), nameProperty.get(), update, file);
-        return remoteVersion == null ? installTask : installTask.whenComplete(exception -> {
-            try {
-                Files.delete(file);
-            } catch (IOException e) {
-                LOG.warning("Failed to delete file: " + file, e);
-            }
-        });
+        return JavaManager.getInstallJavaTask(info.getPlatform(), nameProperty.get(), null, file);
     }
 
     @Override
@@ -119,7 +105,7 @@ public final class JavaInstallPage extends WizardSinglePage {
                     nameField.setValidators(
                             new RequiredValidator(),
                             new Validator(i18n("java.install.warning.invalid_character"),
-                                    text -> !text.startsWith(HMCLJavaRepository.MOJANG_JAVA_PREFIX) && NAME_PATTERN.matcher(text).matches()),
+                                    text -> !text.startsWith(HMCLJavaRepository.TEMURIN_PREFIX) && NAME_PATTERN.matcher(text).matches()),
                             new Validator(i18n("java.install.failed.exists"), text -> !usedNames.contains(text))
                     );
                     String defaultName = control.nameProperty.get();
@@ -136,12 +122,7 @@ public final class JavaInstallPage extends WizardSinglePage {
                 if (vendor != null)
                     addInfo(i18n("java.info.vendor"), vendor);
 
-                if (control.remoteVersion instanceof DiscoJavaRemoteVersion) {
-                    String distributionName = ((DiscoJavaRemoteVersion) control.remoteVersion).getDistribution();
-                    DiscoJavaDistribution distribution = DiscoJavaDistribution.of(distributionName);
-                    addInfo(i18n("java.info.disco.distribution"), distribution != null ? distribution.getDisplayName() : distributionName);
-                } else
-                    addInfo(i18n("java.install.archive"), control.file.toAbsolutePath().toString());
+                addInfo(i18n("java.install.archive"), control.file.toAbsolutePath().toString());
 
                 addInfo(i18n("java.info.version"), control.info.getVersion());
                 addInfo(i18n("java.info.architecture"), control.info.getPlatform().getArchitecture().getDisplayName());

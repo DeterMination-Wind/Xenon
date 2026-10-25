@@ -23,11 +23,6 @@ fun org.gradle.api.artifacts.dsl.RepositoryHandler.jitpackWithMirror() {
     maven(url = "https://jitpack.io")
 }
 
-fun org.gradle.api.artifacts.dsl.RepositoryHandler.minecraftLibrariesWithMirror() {
-    maven(url = "https://bmclapi2.bangbang93.com/maven")
-    maven(url = "https://libraries.minecraft.net")
-}
-
 subprojects {
     apply {
         plugin("java")
@@ -44,7 +39,6 @@ subprojects {
 
         mavenCentralWithMirrors()
         jitpackWithMirror()
-        minecraftLibrariesWithMirror()
     }
 
     tasks.withType<JavaCompile> {

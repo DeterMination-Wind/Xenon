@@ -17,13 +17,12 @@
  */
 package determination.xenon.util.io;
 
-import determination.xenon.download.ArtifactMalformedException;
 import determination.xenon.util.DigestUtils;
 
 import java.io.IOException;
 import java.nio.file.Path;
 
-public final class ChecksumMismatchException extends ArtifactMalformedException {
+public final class ChecksumMismatchException extends IOException {
 
     private final String algorithm;
     private final String expectedChecksum;

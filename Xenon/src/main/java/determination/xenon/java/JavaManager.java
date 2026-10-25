@@ -22,11 +22,6 @@ import com.google.gson.stream.JsonWriter;
 import javafx.beans.property.ObjectProperty;
 import javafx.beans.property.SimpleObjectProperty;
 import determination.xenon.Metadata;
-import determination.xenon.download.DownloadProvider;
-import determination.xenon.download.LibraryAnalyzer;
-import determination.xenon.game.GameJavaVersion;
-import determination.xenon.game.JavaVersionConstraint;
-import determination.xenon.game.Version;
 import determination.xenon.setting.ConfigHolder;
 import determination.xenon.task.Schedulers;
 import determination.xenon.task.Task;
@@ -38,7 +33,6 @@ import determination.xenon.util.gson.JsonUtils;
 import determination.xenon.util.io.FileUtils;
 import determination.xenon.util.platform.*;
 import determination.xenon.util.platform.windows.WinReg;
-import determination.xenon.util.versioning.GameVersionNumber;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.BufferedReader;
@@ -221,8 +215,8 @@ public final class JavaManager {
                 });
     }
 
-    public static Task<JavaRuntime> getDownloadJavaTask(DownloadProvider downloadProvider, Platform platform, GameJavaVersion gameJavaVersion) {
-        return REPOSITORY.getDownloadJavaTask(downloadProvider, platform, gameJavaVersion)
+    public static Task<JavaRuntime> getDownloadJavaTask(Platform platform, int majorVersion) {
+        return REPOSITORY.getDownloadJavaTask(platform, majorVersion)
                 .thenApplyAsync(Schedulers.javafx(), java -> {
                     addJava(java);
                     return java;
@@ -303,56 +297,6 @@ public final class JavaManager {
             return java1.getParsedVersion() < java2.getParsedVersion() ? java1 : java2;
         else
             return java1.getVersionNumber().compareTo(java2.getVersionNumber()) >= 0 ? java1 : java2;
-    }
-
-    @Nullable
-    public static JavaRuntime findSuitableJava(GameVersionNumber gameVersion, Version version) throws InterruptedException {
-        return findSuitableJava(getAllJava(), gameVersion, version);
-    }
-
-    @Nullable
-    public static JavaRuntime findSuitableJava(Collection<JavaRuntime> javaRuntimes, GameVersionNumber gameVersion, Version version) {
-        LibraryAnalyzer analyzer = version != null ? LibraryAnalyzer.analyze(version, gameVersion != null ? gameVersion.toString() : null) : null;
-
-        boolean forceX86 = Architecture.SYSTEM_ARCH == Architecture.ARM64
-                && (OperatingSystem.CURRENT_OS == OperatingSystem.WINDOWS || OperatingSystem.CURRENT_OS == OperatingSystem.MACOS)
-                && (gameVersion == null || gameVersion.compareTo("1.6") < 0);
-
-        JavaRuntime mandatory = null;
-        JavaRuntime suggested = null;
-        for (JavaRuntime java : javaRuntimes) {
-            if (forceX86) {
-                if (!java.getArchitecture().isX86())
-                    continue;
-            } else {
-                if (java.getArchitecture() != Architecture.SYSTEM_ARCH)
-                    continue;
-            }
-
-            boolean violationMandatory = false;
-            boolean violationSuggested = false;
-
-            for (JavaVersionConstraint constraint : JavaVersionConstraint.ALL) {
-                if (constraint.appliesToVersion(gameVersion, version, java, analyzer)) {
-                    if (!constraint.checkJava(gameVersion, version, java, analyzer)) {
-                        if (constraint.isMandatory()) {
-                            violationMandatory = true;
-                        } else {
-                            violationSuggested = true;
-                        }
-                    }
-                }
-            }
-
-            if (!violationMandatory) {
-                mandatory = chooseJava(mandatory, java);
-
-                if (!violationSuggested)
-                    suggested = chooseJava(suggested, java);
-            }
-        }
-
-        return suggested != null ? suggested : mandatory;
     }
 
     public static void initialize() {

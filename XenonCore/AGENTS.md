@@ -33,10 +33,10 @@ Mindustry code.
   cover their named domains.
 - `java/` — JDK discovery and runtime metadata (Adoptium/Temurin-aware); the UI
   picker lives in `Xenon`.
-- Legacy HMCL support (`auth/`, `download/`, `game/`, `launch/`, `mod/`,
-  `netplay/`, `resourcepack/`, `schematic/`, `task/`, `util/`) stays compiling but
-  is not the Mindustry path; use only genuinely generic helpers (`FetchTask`,
-  `NetworkUtils`).
+- The Minecraft backend (`auth/` non-offline providers, `download/`, `game/`,
+  `launch/`, `mod/`, `resourcepack/`, `schematic/`) has been removed. `netplay/`
+  is Mindustry-only and stays; generic helpers live in `task/`, `util/`,
+  `event/`, and `java/`.
 
 ## Data-directory invariants
 

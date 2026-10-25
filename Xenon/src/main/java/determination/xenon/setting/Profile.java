@@ -23,17 +23,7 @@ import javafx.application.Platform;
 import javafx.beans.InvalidationListener;
 import javafx.beans.Observable;
 import javafx.beans.property.*;
-import determination.xenon.download.DefaultDependencyManager;
-import determination.xenon.download.DownloadProvider;
-import determination.xenon.event.EventBus;
-import determination.xenon.event.EventPriority;
-import determination.xenon.event.RefreshedVersionsEvent;
-import determination.xenon.game.HMCLCacheRepository;
-import determination.xenon.game.HMCLGameRepository;
-import determination.xenon.game.Version;
 import determination.xenon.mindustry.MindustryVersion;
-import determination.xenon.mindustry.ui.MindustryRoutes;
-import determination.xenon.ui.WeakListenerHolder;
 import determination.xenon.util.ToStringBuilder;
 import determination.xenon.util.javafx.ObservableHelper;
 
@@ -42,18 +32,37 @@ import java.nio.file.Path;
 import java.util.Optional;
 
 import static determination.xenon.ui.FXUtils.onInvalidating;
-import static determination.xenon.ui.FXUtils.runInFX;
 
-/**
- *
- * @author huangyuhui
- */
+/// A game directory that hosts Mindustry instances under `versions/`.
+///
+/// Xenon keeps HMCL's profile model — a named directory plus a selected
+/// instance id — because the sidebar, version list and install wizard all
+/// navigate through it. Instances themselves live in
+/// [determination.xenon.mindustry.XenonGameRepository], keyed by the profile's
+/// `versions/` directory, so this class no longer owns a Minecraft repository.
 @JsonAdapter(Profile.Serializer.class)
 public final class Profile implements Observable {
-    private final WeakListenerHolder listenerHolder = new WeakListenerHolder();
-    private final HMCLGameRepository repository;
+    private final StringProperty name;
+    private final ObjectProperty<Path> gameDir;
+    private final StringProperty selectedVersion;
+    private final BooleanProperty useRelativePath;
 
-    private final StringProperty selectedVersion = new SimpleStringProperty();
+    public Profile(String name) {
+        this(name, MindustryVersion.defaultMindustryDataDir());
+    }
+
+    public Profile(String name, Path initialGameDir) {
+        this(name, initialGameDir, null, false);
+    }
+
+    public Profile(String name, Path initialGameDir, String selectedVersion, boolean useRelativePath) {
+        this.name = new SimpleStringProperty(this, "name", name);
+        this.gameDir = new SimpleObjectProperty<>(this, "gameDir", initialGameDir);
+        this.selectedVersion = new SimpleStringProperty(this, "selectedVersion", selectedVersion);
+        this.useRelativePath = new SimpleBooleanProperty(this, "useRelativePath", useRelativePath);
+
+        addPropertyChangedListener(onInvalidating(this::invalidate));
+    }
 
     public StringProperty selectedVersionProperty() {
         return selectedVersion;
@@ -67,8 +76,6 @@ public final class Profile implements Observable {
         this.selectedVersion.set(selectedVersion);
     }
 
-    private final ObjectProperty<Path> gameDir;
-
     public ObjectProperty<Path> gameDirProperty() {
         return gameDir;
     }
@@ -80,18 +87,6 @@ public final class Profile implements Observable {
     public void setGameDir(Path gameDir) {
         this.gameDir.set(gameDir);
     }
-
-    private final ReadOnlyObjectWrapper<VersionSetting> global = new ReadOnlyObjectWrapper<>(this, "global");
-
-    public ReadOnlyObjectProperty<VersionSetting> globalProperty() {
-        return global.getReadOnlyProperty();
-    }
-
-    public VersionSetting getGlobal() {
-        return global.get();
-    }
-
-    private final SimpleStringProperty name;
 
     public StringProperty nameProperty() {
         return name;
@@ -105,8 +100,6 @@ public final class Profile implements Observable {
         this.name.set(name);
     }
 
-    private final BooleanProperty useRelativePath = new SimpleBooleanProperty(this, "useRelativePath", false);
-
     public BooleanProperty useRelativePathProperty() {
         return useRelativePath;
     }
@@ -117,68 +110,6 @@ public final class Profile implements Observable {
 
     public void setUseRelativePath(boolean useRelativePath) {
         this.useRelativePath.set(useRelativePath);
-    }
-
-    public Profile(String name) {
-        this(name, MindustryVersion.defaultMindustryDataDir());
-    }
-
-    public Profile(String name, Path initialGameDir) {
-        this(name, initialGameDir, new VersionSetting());
-    }
-
-    public Profile(String name, Path initialGameDir, VersionSetting global) {
-        this(name, initialGameDir, global, null, false);
-    }
-
-    public Profile(String name, Path initialGameDir, VersionSetting global, String selectedVersion, boolean useRelativePath) {
-        this.name = new SimpleStringProperty(this, "name", name);
-        gameDir = new SimpleObjectProperty<>(this, "gameDir", initialGameDir);
-        repository = new HMCLGameRepository(this, initialGameDir);
-        this.global.set(global == null ? new VersionSetting() : global);
-        this.selectedVersion.set(selectedVersion);
-        this.useRelativePath.set(useRelativePath);
-
-        gameDir.addListener((a, b, newValue) -> repository.changeDirectory(newValue));
-        this.selectedVersion.addListener(o -> checkSelectedVersion());
-        listenerHolder.add(EventBus.EVENT_BUS.channel(RefreshedVersionsEvent.class).registerWeak(event -> checkSelectedVersion(), EventPriority.HIGHEST));
-
-        addPropertyChangedListener(onInvalidating(this::invalidate));
-    }
-
-    private void checkSelectedVersion() {
-        runInFX(() -> {
-            if (!repository.isLoaded()) return;
-            String newValue = selectedVersion.get();
-            if (MindustryRoutes.isMindustry(this, newValue)
-                    && determination.xenon.mindustry.MindustryImportFlow.visibleVersions(this).stream()
-                    .anyMatch(version -> newValue.equals(version.getId()))) {
-                return;
-            }
-            if (!repository.hasVersion(newValue)) {
-                Optional<String> version = repository.getVersions().stream().findFirst().map(Version::getId);
-                if (version.isPresent())
-                    selectedVersion.setValue(version.get());
-                else if (newValue != null)
-                    selectedVersion.setValue(null);
-            }
-        });
-    }
-
-    public HMCLGameRepository getRepository() {
-        return repository;
-    }
-
-    public DefaultDependencyManager getDependency() {
-        return getDependency(DownloadProviders.getDownloadProvider());
-    }
-
-    public DefaultDependencyManager getDependency(DownloadProvider downloadProvider) {
-        return new DefaultDependencyManager(repository, downloadProvider, HMCLCacheRepository.REPOSITORY);
-    }
-
-    public VersionSetting getVersionSetting(String id) {
-        return repository.getVersionSetting(id);
     }
 
     @Override
@@ -192,14 +123,12 @@ public final class Profile implements Observable {
 
     private void addPropertyChangedListener(InvalidationListener listener) {
         name.addListener(listener);
-        global.addListener(listener);
         gameDir.addListener(listener);
         useRelativePath.addListener(listener);
-        global.get().addListener(listener);
         selectedVersion.addListener(listener);
     }
 
-    private ObservableHelper observableHelper = new ObservableHelper(this);
+    private final ObservableHelper observableHelper = new ObservableHelper(this);
 
     @Override
     public void addListener(InvalidationListener listener) {
@@ -215,24 +144,6 @@ public final class Profile implements Observable {
         Platform.runLater(observableHelper::invalidate);
     }
 
-    public static class ProfileVersion {
-        private final Profile profile;
-        private final String version;
-
-        public ProfileVersion(Profile profile, String version) {
-            this.profile = profile;
-            this.version = version;
-        }
-
-        public Profile getProfile() {
-            return profile;
-        }
-
-        public String getVersion() {
-            return version;
-        }
-    }
-
     public static final class Serializer implements JsonSerializer<Profile>, JsonDeserializer<Profile> {
         @Override
         public JsonElement serialize(Profile src, Type typeOfSrc, JsonSerializationContext context) {
@@ -240,10 +151,9 @@ public final class Profile implements Observable {
                 return JsonNull.INSTANCE;
 
             JsonObject jsonObject = new JsonObject();
-            jsonObject.add("global", context.serialize(src.getGlobal()));
             jsonObject.addProperty("gameDir", src.getGameDir().toString());
             jsonObject.addProperty("useRelativePath", src.isUseRelativePath());
-            jsonObject.addProperty("selectedMinecraftVersion", src.getSelectedVersion());
+            jsonObject.addProperty("selectedVersion", src.getSelectedVersion());
 
             return jsonObject;
         }
@@ -254,12 +164,17 @@ public final class Profile implements Observable {
             String gameDir = Optional.ofNullable(obj.get("gameDir")).map(JsonElement::getAsString)
                     .orElseGet(() -> MindustryVersion.defaultMindustryDataDir().toString());
 
+            // `selectedMinecraftVersion` is the key HMCL wrote; keep reading it
+            // so an existing installation keeps its selected instance.
+            String selectedVersion = Optional.ofNullable(obj.get("selectedVersion"))
+                    .or(() -> Optional.ofNullable(obj.get("selectedMinecraftVersion")))
+                    .map(JsonElement::getAsString)
+                    .orElse(null);
+
             return new Profile("Default",
                     Path.of(gameDir),
-                    context.deserialize(obj.get("global"), VersionSetting.class),
-                    Optional.ofNullable(obj.get("selectedMinecraftVersion")).map(JsonElement::getAsString).orElse(""),
+                    selectedVersion,
                     Optional.ofNullable(obj.get("useRelativePath")).map(JsonElement::getAsBoolean).orElse(false));
         }
-
     }
 }

@@ -36,14 +36,12 @@ import javafx.stage.Stage;
 import javafx.util.Duration;
 import org.glavo.url.WebURL;
 import determination.xenon.Metadata;
-import determination.xenon.auth.authlibinjector.AuthlibInjectorDnD;
 import determination.xenon.setting.EnumBackgroundImage;
 import determination.xenon.task.Schedulers;
 import determination.xenon.task.Task;
 import determination.xenon.ui.Controllers;
 import determination.xenon.ui.DialogUtils;
 import determination.xenon.ui.FXUtils;
-import determination.xenon.ui.account.AddAuthlibInjectorServerPane;
 import determination.xenon.ui.animation.ContainerAnimations;
 import determination.xenon.ui.animation.Motion;
 import determination.xenon.ui.animation.TransitionPane.AnimationProducer;
@@ -92,7 +90,6 @@ public class DecoratorController {
         decorator.onBackNavButtonActionProperty().set(e -> back());
         decorator.onRefreshNavButtonActionProperty().set(e -> refresh());
 
-        setupAuthlibInjectorDnD();
 
         // Setup background
         LoadedBackground initialBackground = createBackground(
@@ -547,13 +544,5 @@ public class DecoratorController {
 
         navigator.navigate(new DecoratorWizardDisplayer(wizardProvider, category),
                 ContainerAnimations.FORWARD, Motion.SHORT4, Motion.EASE);
-    }
-
-    // ==== Authlib Injector DnD ====
-
-    private void setupAuthlibInjectorDnD() {
-        decorator.addEventFilter(DragEvent.DRAG_OVER, AuthlibInjectorDnD.dragOverHandler());
-        decorator.addEventFilter(DragEvent.DRAG_DROPPED, AuthlibInjectorDnD.dragDroppedHandler(
-                url -> Controllers.dialog(new AddAuthlibInjectorServerPane(url))));
     }
 }

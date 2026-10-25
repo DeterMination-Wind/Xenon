@@ -17,12 +17,9 @@
  */
 package determination.xenon.setting;
 
-import javafx.beans.binding.Bindings;
 import determination.xenon.Metadata;
-import determination.xenon.game.HMCLCacheRepository;
 import determination.xenon.ui.animation.AnimationUtils;
 import determination.xenon.util.CacheRepository;
-import determination.xenon.util.io.FileUtils;
 
 import static determination.xenon.setting.ConfigHolder.config;
 
@@ -45,21 +42,14 @@ public final class Settings {
     }
 
     private Settings() {
-        DownloadProviders.init();
         ProxyManager.init();
         Accounts.init();
         Profiles.init();
-        AuthlibInjectorServers.init();
         AnimationUtils.init();
 
-        CacheRepository.setInstance(HMCLCacheRepository.REPOSITORY);
-        HMCLCacheRepository.REPOSITORY.directoryProperty().bind(Bindings.createStringBinding(() -> {
-            if (FileUtils.canCreateDirectory(getCommonDirectory())) {
-                return getCommonDirectory();
-            } else {
-                return getDefaultCommonDirectory();
-            }
-        }, config().commonDirectoryProperty(), config().commonDirTypeProperty()));
+        CacheRepository cacheRepository = new CacheRepository();
+        cacheRepository.changeDirectory(Metadata.getCachesDirectory());
+        CacheRepository.setInstance(cacheRepository);
     }
 
     public static String getDefaultCommonDirectory() {

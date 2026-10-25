@@ -18,7 +18,6 @@
 package determination.xenon.mindustry.ui;
 
 import com.jfoenix.controls.JFXButton;
-import determination.xenon.game.HMCLGameRepository;
 import determination.xenon.mindustry.LaunchOptions;
 import determination.xenon.mindustry.MindustryClientRuntimeRegistry;
 import determination.xenon.mindustry.MindustryImportFlow;
@@ -226,10 +225,6 @@ public final class MindustryRoutes {
                 handler.reject(i18n("install.new_game.already_exists"));
                 return;
             }
-            if (profile.getRepository().versionIdConflicts(targetId)) {
-                handler.reject(i18n("install.new_game.already_exists"));
-                return;
-            }
             handler.resolve();
 
             Task<?> rename = Task.supplyAsync(Schedulers.io(), () -> {
@@ -248,7 +243,7 @@ public final class MindustryRoutes {
                 }
                 moveModPaneRefreshListeners(currentId, targetId);
                 profile.setSelectedVersion(targetId);
-                profile.getRepository().refreshVersionsAsync().start();
+                Profiles.notifyVersionsChanged(profile);
                 Controllers.showToast(i18n("message.success"));
             }).start();
         }, currentId,
@@ -295,11 +290,10 @@ public final class MindustryRoutes {
         repo.refresh();
 
         @Nullable Profile profile = Profiles.getSelectedProfile();
-        @Nullable HMCLGameRepository hmclRepository = profile == null ? null : profile.getRepository();
 
         String baseId = currentId + "-copy";
         String defaultId = MindustryImportFlow.uniqueId(repo, baseId);
-        for (int i = 2; hmclRepository != null && hmclRepository.versionIdConflicts(defaultId); i++) {
+        for (int i = 2; repo.has(defaultId); i++) {
             defaultId = MindustryImportFlow.uniqueId(repo, baseId + "-" + i);
         }
 
@@ -333,8 +327,7 @@ public final class MindustryRoutes {
                 .addQuestion(new PromptDialogPane.Builder.StringQuestion(null, defaultId,
                         new Validator(i18n("install.new_game.malformed"), XenonGameRepository::isValidId),
                         new Validator(i18n("install.new_game.already_exists"), name -> name != null
-                                && !repo.has(name)
-                                && (hmclRepository == null || !hmclRepository.versionIdConflicts(name)))));
+                                && !repo.has(name))));
         if (dataInRoot) {
             builder.addQuestion(new PromptDialogPane.Builder.BooleanQuestion(
                     i18n("xenon.mindustry.instance.duplicate.data"), false));
@@ -365,7 +358,7 @@ public final class MindustryRoutes {
             }
             if (profile != null) {
                 profile.setSelectedVersion(targetId);
-                profile.getRepository().refreshVersionsAsync().start();
+                Profiles.notifyVersionsChanged(profile);
             }
             Controllers.showToast(i18n("message.success"));
         }).start();

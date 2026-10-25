@@ -205,13 +205,13 @@ public final class MindustryImportFlow {
         return repo.getVersionRoot(version);
     }
 
-    /** Selects an imported instance and refreshes the HMCL-facing version list. */
+    /** Selects an imported instance and refreshes the version list. */
     public static void selectVersion(Profile profile, MindustryVersion version) {
         if (profile == null || version == null || version.getId() == null) {
             return;
         }
         profile.setSelectedVersion(version.getId());
-        profile.getRepository().refreshVersionsAsync().start();
+        Profiles.notifyVersionsChanged(profile);
     }
 
     /**

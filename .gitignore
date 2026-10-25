@@ -28,11 +28,6 @@ language-subtag-registry
 /Xenon/build/
 /XenonCore/build/
 /XenonBoot/build/
-/HMCL/build/
-/HMCLCore/build/
-/HMCLBoot/build/
-/minecraft/libraries/HMCLTransformerDiscoveryService/build/
-/minecraft/libraries/HMCLMultiMCBootstrap/build/
 /buildSrc/build/
 
 # idea
@@ -40,19 +35,11 @@ language-subtag-registry
 /out/
 /Xenon/out/
 /XenonCore/out/
-/HMCL/out/
-/HMCLCore/out/
-/minecraft/libraries/HMCLTransformerDiscoveryService/out/
-/minecraft/libraries/HMCLMultiMCBootstrap/out/
 
 # eclipse
 /bin/
 /Xenon/bin/
 /XenonCore/bin/
-/HMCL/bin/
-/HMCLCore/bin/
-/minecraft/libraries/HMCLTransformerDiscoveryService/bin/
-/minecraft/libraries/HMCLMultiMCBootstrap/bin/
 .classpath
 .project
 .settings
@@ -69,7 +56,6 @@ language-subtag-registry
 .vscode/
 
 # test
-/hmcl.json
 /.hmcl.json
 /.hmcl/
 

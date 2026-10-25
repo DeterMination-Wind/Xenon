@@ -1,6 +1,6 @@
 /*
  * Xenon Launcher
- * Copyright (C) 2024-2026  Xenon contributors
+ * Copyright (C) 2021-2026  Xenon contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -17,17 +17,13 @@
  */
 package determination.xenon.java;
 
-import determination.xenon.download.DownloadProvider;
-import determination.xenon.game.GameJavaVersion;
 import determination.xenon.task.Task;
 import determination.xenon.util.platform.Platform;
 
 import java.nio.file.Path;
 import java.util.Collection;
 
-/**
- * @author Glavo
- */
+/// A pool of JDK runtimes for one or more platforms.
 public interface JavaRepository {
 
     Path getJavaDir(Platform platform, String name);
@@ -36,7 +32,8 @@ public interface JavaRepository {
 
     Collection<Path> getAllJava(Platform platform);
 
-    Task<JavaRuntime> getDownloadJavaTask(DownloadProvider downloadProvider, Platform platform, GameJavaVersion gameJavaVersion);
+    /// Downloads and installs a Temurin JDK of the requested feature version.
+    Task<JavaRuntime> getDownloadJavaTask(Platform platform, int majorVersion);
 
     Task<Void> getUninstallJavaTask(Platform platform, String name);
 

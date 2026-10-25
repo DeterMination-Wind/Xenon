@@ -32,7 +32,6 @@ import org.hildan.fxgson.creators.ObservableMapCreator;
 import org.hildan.fxgson.creators.ObservableSetCreator;
 import org.hildan.fxgson.factories.JavaFxPropertyTypeAdapterFactory;
 import determination.xenon.Metadata;
-import determination.xenon.auth.authlibinjector.AuthlibInjectorServer;
 import determination.xenon.java.JavaRuntime;
 import determination.xenon.theme.ThemeColor;
 import determination.xenon.ui.FXUtils;
@@ -522,66 +521,6 @@ public final class Config extends ObservableSetting {
         this.downloadThreads.set(downloadThreads);
     }
 
-    @SerializedName("downloadType")
-    private final StringProperty downloadType = new SimpleStringProperty(DownloadProviders.DEFAULT_DIRECT_PROVIDER_ID);
-
-    public StringProperty downloadTypeProperty() {
-        return downloadType;
-    }
-
-    public String getDownloadType() {
-        return downloadType.get();
-    }
-
-    public void setDownloadType(String downloadType) {
-        this.downloadType.set(downloadType);
-    }
-
-    @SerializedName("autoChooseDownloadType")
-    private final BooleanProperty autoChooseDownloadType = new SimpleBooleanProperty(true);
-
-    public BooleanProperty autoChooseDownloadTypeProperty() {
-        return autoChooseDownloadType;
-    }
-
-    public boolean isAutoChooseDownloadType() {
-        return autoChooseDownloadType.get();
-    }
-
-    public void setAutoChooseDownloadType(boolean autoChooseDownloadType) {
-        this.autoChooseDownloadType.set(autoChooseDownloadType);
-    }
-
-    @SerializedName("versionListSource")
-    private final StringProperty versionListSource = new SimpleStringProperty(DownloadProviders.DEFAULT_AUTO_PROVIDER_ID);
-
-    public StringProperty versionListSourceProperty() {
-        return versionListSource;
-    }
-
-    public String getVersionListSource() {
-        return versionListSource.get();
-    }
-
-    public void setVersionListSource(String versionListSource) {
-        this.versionListSource.set(versionListSource);
-    }
-
-    @SerializedName("defaultAddonSource")
-    private final StringProperty defaultAddonSource = new SimpleStringProperty("modrinth");
-
-    public StringProperty defaultAddonSourceProperty() {
-        return defaultAddonSource;
-    }
-
-    public String getDefaultAddonSource() {
-        return defaultAddonSource.get();
-    }
-
-    public void setDefaultAddonSource(String defaultAddonSource) {
-        this.defaultAddonSource.set(defaultAddonSource);
-    }
-
     @SerializedName("hasProxy")
     private final BooleanProperty hasProxy = new SimpleBooleanProperty();
 
@@ -757,46 +696,6 @@ public final class Config extends ObservableSetting {
     }
 
     // Accounts
-
-    @SerializedName("authlibInjectorServers")
-    private final ObservableList<AuthlibInjectorServer> authlibInjectorServers = FXCollections.observableArrayList(server -> new Observable[]{server});
-
-    public ObservableList<AuthlibInjectorServer> getAuthlibInjectorServers() {
-        return authlibInjectorServers;
-    }
-
-    @SerializedName("addedLittleSkin")
-    private final BooleanProperty addedLittleSkin = new SimpleBooleanProperty(false);
-
-    public BooleanProperty addedLittleSkinProperty() {
-        return addedLittleSkin;
-    }
-
-    public boolean isAddedLittleSkin() {
-        return addedLittleSkin.get();
-    }
-
-    public void setAddedLittleSkin(boolean addedLittleSkin) {
-        this.addedLittleSkin.set(addedLittleSkin);
-    }
-
-    /**
-     * The preferred login type to use when the user wants to add an account.
-     */
-    @SerializedName("preferredLoginType")
-    private final StringProperty preferredLoginType = new SimpleStringProperty();
-
-    public StringProperty preferredLoginTypeProperty() {
-        return preferredLoginType;
-    }
-
-    public String getPreferredLoginType() {
-        return preferredLoginType.get();
-    }
-
-    public void setPreferredLoginType(String preferredLoginType) {
-        this.preferredLoginType.set(preferredLoginType);
-    }
 
     @SerializedName("selectedAccount")
     private final StringProperty selectedAccount = new SimpleStringProperty();

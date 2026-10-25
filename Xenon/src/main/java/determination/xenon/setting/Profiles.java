@@ -23,8 +23,6 @@ import javafx.beans.property.*;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import determination.xenon.Metadata;
-import determination.xenon.event.EventBus;
-import determination.xenon.event.RefreshedVersionsEvent;
 import determination.xenon.mindustry.MindustryImportFlow;
 import determination.xenon.mindustry.MindustryInstallationDiscovery;
 import determination.xenon.mindustry.MindustryVersion;
@@ -44,6 +42,11 @@ import static determination.xenon.ui.FXUtils.onInvalidating;
 import static determination.xenon.ui.FXUtils.runInFX;
 import static determination.xenon.util.i18n.I18n.i18n;
 
+/// Launcher profiles: named game directories that host Mindustry instances.
+///
+/// A profile is the unit the sidebar, version list and install wizard operate
+/// on. The first launch creates `Default` (Steam install when one is found,
+/// otherwise the global Mindustry data directory) and `Home` (the Xenon root).
 public final class Profiles {
 
     public static final String DEFAULT_PROFILE = "Default";
@@ -89,14 +92,8 @@ public final class Profiles {
 
             config().setSelectedProfile(profile == null ? "" : profile.getName());
             if (profile != null) {
-                if (profile.getRepository().isLoaded())
-                    selectedVersion.bind(profile.selectedVersionProperty());
-                else {
-                    selectedVersion.unbind();
-                    selectedVersion.set(null);
-                    // bind when repository was reloaded.
-                    profile.getRepository().refreshVersionsAsync().start();
-                }
+                selectedVersion.bind(profile.selectedVersionProperty());
+                notifyVersionsChanged(profile);
             } else {
                 selectedVersion.unbind();
                 selectedVersion.set(null);
@@ -109,7 +106,7 @@ public final class Profiles {
             Optional<Path> steamMindustry = MindustryInstallationDiscovery.findDefaultSteamInstallationRoot();
             Path defaultGameDir = steamMindustry.orElse(MindustryVersion.defaultMindustryDataDir());
             Profile current = new Profile(Profiles.DEFAULT_PROFILE, defaultGameDir,
-                    new VersionSetting(), null, !defaultGameDir.isAbsolute());
+                    null, !defaultGameDir.isAbsolute());
             Profile home = new Profile(Profiles.HOME_PROFILE, Metadata.XENON_GLOBAL_DIRECTORY);
             Platform.runLater(() -> {
                 profiles.addAll(current, home);
@@ -129,11 +126,6 @@ public final class Profiles {
     static {
         profiles.addListener(onInvalidating(Profiles::updateProfileStorages));
         profiles.addListener(onInvalidating(Profiles::checkProfiles));
-
-        selectedProfile.addListener((a, b, newValue) -> {
-            if (newValue != null)
-                newValue.getRepository().refreshVersionsAsync().start();
-        });
     }
 
     private static void updateProfileStorages() {
@@ -175,17 +167,6 @@ public final class Profiles {
                             .findFirst()
                             .orElse(profiles.get(0)));
         });
-
-        EventBus.EVENT_BUS.channel(RefreshedVersionsEvent.class).registerWeak(event -> {
-            runInFX(() -> {
-                Profile profile = selectedProfile.get();
-                if (profile != null && profile.getRepository() == event.getSource()) {
-                    selectedVersion.bind(profile.selectedVersionProperty());
-                    for (Consumer<Profile> listener : versionsListeners)
-                        listener.accept(profile);
-                }
-            });
-        });
     }
 
     public static ObservableList<Profile> getProfiles() {
@@ -214,17 +195,33 @@ public final class Profiles {
         return selectedVersion.getReadOnlyProperty();
     }
 
-    // Guaranteed that the repository is loaded.
     public static String getSelectedVersion() {
         return selectedVersion.get();
     }
 
     private static final List<Consumer<Profile>> versionsListeners = new ArrayList<>(4);
 
+    /// Registers a listener that is called whenever the visible instance list
+    /// for a profile may have changed.
     public static void registerVersionsListener(Consumer<Profile> listener) {
         Profile profile = getSelectedProfile();
-        if (profile != null && profile.getRepository().isLoaded())
+        if (profile != null)
             listener.accept(profile);
         versionsListeners.add(listener);
+    }
+
+    /// Rebuilds the version list for `profile` after an install, import,
+    /// rename or delete.
+    public static void notifyVersionsChanged(Profile profile) {
+        if (profile == null)
+            return;
+        runInFX(() -> {
+            if (profile == getSelectedProfile()) {
+                selectedVersion.bind(profile.selectedVersionProperty());
+            }
+            for (Consumer<Profile> listener : versionsListeners) {
+                listener.accept(profile);
+            }
+        });
     }
 }

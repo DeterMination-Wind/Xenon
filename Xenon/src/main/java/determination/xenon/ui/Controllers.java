@@ -42,7 +42,6 @@ import javafx.stage.StageStyle;
 import javafx.util.Duration;
 import determination.xenon.Launcher;
 import determination.xenon.Metadata;
-import determination.xenon.game.LauncherHelper;
 import determination.xenon.java.JavaManager;
 import determination.xenon.java.JavaRuntime;
 import determination.xenon.mindustry.MindustryImportFlow;
@@ -113,7 +112,6 @@ public final class Controllers {
         AccountListPage accountListPage = new AccountListPage();
         accountListPage.selectedAccountProperty().bindBidirectional(Accounts.selectedAccountProperty());
         accountListPage.accountsProperty().bindContent(Accounts.getAccounts());
-        accountListPage.authServersProperty().bindContentBidirectional(config().getAuthlibInjectorServers());
         return accountListPage;
     });
     private static LauncherSettingsPage settingsPage;

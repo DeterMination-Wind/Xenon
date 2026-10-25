@@ -17,7 +17,6 @@
  */
 package determination.xenon.util.i18n.translator;
 
-import determination.xenon.download.RemoteVersion;
 import determination.xenon.util.i18n.SupportedLocale;
 
 import java.io.IOException;
@@ -70,11 +69,6 @@ public class Translator_en_Qabs extends Translator {
 
     public Translator_en_Qabs(SupportedLocale locale) {
         super(locale);
-    }
-
-    @Override
-    public String getDisplayVersion(RemoteVersion remoteVersion) {
-        return translate(remoteVersion.getSelfVersion());
     }
 
     @Override

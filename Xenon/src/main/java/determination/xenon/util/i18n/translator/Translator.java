@@ -17,9 +17,7 @@
  */
 package determination.xenon.util.i18n.translator;
 
-import determination.xenon.download.RemoteVersion;
 import determination.xenon.util.i18n.SupportedLocale;
-import determination.xenon.util.versioning.GameVersionNumber;
 
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -42,14 +40,6 @@ public class Translator {
 
     public final Locale getDisplayLocale() {
         return displayLocale;
-    }
-
-    public String getDisplayVersion(RemoteVersion remoteVersion) {
-        return remoteVersion.getSelfVersion();
-    }
-
-    public String getDisplayVersion(GameVersionNumber versionNumber) {
-        return versionNumber.toNormalizedString();
     }
 
     /// @see [#formatDateTime(TemporalAccessor)]

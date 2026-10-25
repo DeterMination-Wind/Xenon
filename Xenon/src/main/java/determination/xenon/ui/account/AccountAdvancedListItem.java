@@ -17,7 +17,6 @@
  */
 package determination.xenon.ui.account;
 
-import javafx.beans.binding.Bindings;
 import javafx.beans.property.ObjectProperty;
 import javafx.beans.property.SimpleObjectProperty;
 import javafx.beans.value.ObservableValue;
@@ -25,53 +24,36 @@ import javafx.geometry.Pos;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.control.Tooltip;
 import determination.xenon.auth.Account;
-import determination.xenon.auth.authlibinjector.AuthlibInjectorAccount;
-import determination.xenon.auth.authlibinjector.AuthlibInjectorServer;
-import determination.xenon.auth.offline.OfflineAccount;
-import determination.xenon.auth.yggdrasil.YggdrasilAccount;
-import determination.xenon.game.TexturesLoader;
 import determination.xenon.mindustry.ui.MindustryGammaAvatar;
 import determination.xenon.setting.Accounts;
 import determination.xenon.ui.FXUtils;
 import determination.xenon.ui.construct.AdvancedListItem;
 import determination.xenon.util.javafx.BindingMapping;
 
-import static javafx.beans.binding.Bindings.createStringBinding;
-import static determination.xenon.setting.Accounts.getAccountFactory;
-import static determination.xenon.setting.Accounts.getLocalizedLoginTypeName;
 import static determination.xenon.util.i18n.I18n.i18n;
 
+/// Sidebar entry showing the selected Mindustry UID profile.
 public class AccountAdvancedListItem extends AdvancedListItem {
     private final Tooltip tooltip;
     private final Canvas canvas;
 
     private final ObjectProperty<Account> account = new SimpleObjectProperty<Account>() {
-
         @Override
         protected void invalidated() {
             Account account = get();
-            if (account == null || !(account instanceof OfflineAccount)) {
+            if (account == null) {
                 titleProperty().unbind();
                 subtitleProperty().unbind();
                 tooltip.textProperty().unbind();
                 setTitle(i18n("account.missing"));
                 setSubtitle(i18n("account.missing.add"));
                 tooltip.setText(i18n("account.create"));
-
-                TexturesLoader.unbindAvatar(canvas);
-                // Default Xenon avatar = Mindustry Gamma core machine, drawn
-                // procedurally instead of the HMCL Steve skin.
-                MindustryGammaAvatar.draw(canvas);
-
             } else {
-                // Xenon offline accounts represent a Mindustry UID + nickname,
-                // not a Minecraft player — show the Gamma sprite.
                 titleProperty().bind(BindingMapping.of(account, Account::getCharacter));
                 subtitleProperty().bind(accountSubtitle(account));
                 tooltip.textProperty().bind(accountTooltip(account));
-                TexturesLoader.unbindAvatar(canvas);
-                MindustryGammaAvatar.draw(canvas);
             }
+            MindustryGammaAvatar.draw(canvas);
         }
     };
 
@@ -103,27 +85,10 @@ public class AccountAdvancedListItem extends AdvancedListItem {
     }
 
     private static ObservableValue<String> accountSubtitle(Account account) {
-        if (account instanceof AuthlibInjectorAccount) {
-            return BindingMapping.of(((AuthlibInjectorAccount) account).getServer(), AuthlibInjectorServer::getName);
-        } else {
-            return createStringBinding(() -> getLocalizedLoginTypeName(getAccountFactory(account)));
-        }
+        return javafx.beans.binding.Bindings.createStringBinding(() -> i18n("account.methods.offline"));
     }
 
     private static ObservableValue<String> accountTooltip(Account account) {
-        if (account instanceof AuthlibInjectorAccount) {
-            AuthlibInjectorServer server = ((AuthlibInjectorAccount) account).getServer();
-            return Bindings.format("%s (%s) (%s)",
-                    BindingMapping.of(account, Account::getCharacter),
-                    account.getUsername(),
-                    BindingMapping.of(server, AuthlibInjectorServer::getName));
-        } else if (account instanceof YggdrasilAccount) {
-            return Bindings.format("%s (%s)",
-                    BindingMapping.of(account, Account::getCharacter),
-                    account.getUsername());
-        } else {
-            return BindingMapping.of(account, Account::getCharacter);
-        }
+        return BindingMapping.of(account, Account::getCharacter);
     }
-
 }

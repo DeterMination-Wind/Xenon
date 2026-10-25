@@ -1,6 +1,6 @@
 /*
  * Xenon Launcher
- * Copyright (C) 2020-2026  Xenon contributors
+ * Copyright (C) 2021-2026  Xenon contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,38 +19,33 @@ package determination.xenon.ui.account;
 
 import com.jfoenix.controls.JFXButton;
 import com.jfoenix.controls.JFXRadioButton;
-import com.jfoenix.effects.JFXDepthManager;
 import javafx.geometry.Pos;
-import javafx.scene.Cursor;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.control.Label;
 import javafx.scene.control.SkinBase;
-import javafx.scene.control.Tooltip;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import determination.xenon.auth.Account;
-import determination.xenon.auth.authlibinjector.AuthlibInjectorAccount;
-import determination.xenon.auth.authlibinjector.AuthlibInjectorServer;
-import determination.xenon.game.TexturesLoader;
+import determination.xenon.mindustry.ui.MindustryGammaAvatar;
 import determination.xenon.setting.Accounts;
-import determination.xenon.task.Schedulers;
-import determination.xenon.ui.Controllers;
 import determination.xenon.ui.FXUtils;
 import determination.xenon.ui.SVG;
+import determination.xenon.ui.Controllers;
 import determination.xenon.ui.construct.SpinnerPane;
-import determination.xenon.util.javafx.BindingMapping;
 
 import static determination.xenon.util.i18n.I18n.i18n;
 
-public final class AccountListItemSkin extends SkinBase<AccountListItem> {
+/// Row skin for [AccountListItem]: Gamma avatar, name, portable/global toggle,
+/// UUID copy and delete.
+final class AccountListItemSkin extends SkinBase<AccountListItem> {
 
-    public AccountListItemSkin(AccountListItem skinnable) {
+    AccountListItemSkin(AccountListItem skinnable) {
         super(skinnable);
 
         BorderPane root = new BorderPane();
-        root.setCursor(Cursor.HAND);
-        FXUtils.onClicked(root, skinnable::fire);
+        root.getStyleClass().add("md-list-cell");
+        root.setPadding(new javafx.geometry.Insets(8, 8, 8, 0));
 
         JFXRadioButton chkSelected = new JFXRadioButton();
         chkSelected.setMouseTransparent(true);
@@ -63,7 +58,7 @@ public final class AccountListItemSkin extends SkinBase<AccountListItem> {
         center.setAlignment(Pos.CENTER_LEFT);
 
         Canvas canvas = new Canvas(32, 32);
-        TexturesLoader.bindAvatar(canvas, skinnable.getAccount());
+        MindustryGammaAvatar.draw(canvas);
 
         Label title = new Label();
         title.getStyleClass().add("title");
@@ -71,12 +66,7 @@ public final class AccountListItemSkin extends SkinBase<AccountListItem> {
         Label subtitle = new Label();
         subtitle.getStyleClass().add("subtitle");
         subtitle.textProperty().bind(skinnable.subtitleProperty());
-        if (skinnable.getAccount() instanceof AuthlibInjectorAccount) {
-            Tooltip tooltip = new Tooltip();
-            AuthlibInjectorServer server = ((AuthlibInjectorAccount) skinnable.getAccount()).getServer();
-            tooltip.textProperty().bind(BindingMapping.of(server, AuthlibInjectorServer::toString));
-            FXUtils.installSlowTooltip(subtitle, tooltip);
-        }
+
         VBox item = new VBox(title, subtitle);
         item.getStyleClass().add("two-line-list-item");
         BorderPane.setAlignment(item, Pos.CENTER);
@@ -122,25 +112,6 @@ public final class AccountListItemSkin extends SkinBase<AccountListItem> {
         spinnerMove.setContent(btnMove);
         right.getChildren().add(spinnerMove);
 
-        JFXButton btnRefresh = FXUtils.newToggleButton4(SVG.REFRESH);
-        SpinnerPane spinnerRefresh = new SpinnerPane();
-        spinnerRefresh.getStyleClass().setAll("small-spinner-pane");
-        btnRefresh.setOnAction(e -> {
-            spinnerRefresh.showSpinner();
-            skinnable.refreshAsync()
-                    .whenComplete(Schedulers.javafx(), ex -> {
-                        spinnerRefresh.hideSpinner();
-
-                        if (ex != null) {
-                            Controllers.showToast(Accounts.localizeErrorMessage(ex));
-                        }
-                    })
-                    .start();
-        });
-        FXUtils.installFastTooltip(btnRefresh, i18n("button.refresh"));
-        spinnerRefresh.setContent(btnRefresh);
-        right.getChildren().add(spinnerRefresh);
-
         JFXButton btnCopyUUID = FXUtils.newToggleButton4(SVG.CONTENT_COPY);
         SpinnerPane spinnerCopyUUID = new SpinnerPane();
         spinnerCopyUUID.getStyleClass().add("small-spinner-pane");
@@ -150,7 +121,8 @@ public final class AccountListItemSkin extends SkinBase<AccountListItem> {
         right.getChildren().add(spinnerCopyUUID);
 
         JFXButton btnRemove = FXUtils.newToggleButton4(SVG.DELETE_FOREVER);
-        btnRemove.setOnAction(e -> Controllers.confirm(i18n("button.remove.confirm"), i18n("button.remove"), skinnable::remove, null));
+        btnRemove.setOnAction(e -> Controllers.confirm(
+                i18n("button.remove.confirm"), i18n("button.remove"), skinnable::remove, null));
         BorderPane.setAlignment(btnRemove, Pos.CENTER);
         FXUtils.installFastTooltip(btnRemove, i18n("button.delete"));
         right.getChildren().add(btnRemove);
@@ -158,7 +130,7 @@ public final class AccountListItemSkin extends SkinBase<AccountListItem> {
 
         root.getStyleClass().add("card");
         root.setStyle("-fx-padding: 8 8 8 0;");
-        JFXDepthManager.setDepth(root, 1);
+        com.jfoenix.effects.JFXDepthManager.setDepth(root, 1);
 
         getChildren().setAll(root);
     }

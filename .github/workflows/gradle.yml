@@ -34,8 +34,6 @@ jobs:
     - name: Build with Gradle
       run: ./gradlew -g .gradle-user-home build :Xenon:shadowJar --no-daemon --parallel
       env:
-        MICROSOFT_AUTH_ID: ${{ secrets.MICROSOFT_AUTH_ID }}
-        CURSEFORGE_API_KEY: ${{ secrets.CURSEFORGE_API_KEY }}
     - name: Get short SHA
       run: echo "SHORT_SHA=${GITHUB_SHA::7}" >> $GITHUB_ENV
     - name: Upload JAR
@@ -64,8 +62,6 @@ jobs:
       shell: pwsh
       run: .\gradlew.bat -g .gradle-user-home --no-daemon :Xenon:shadowJar :Xenon:packageWindowsSingleFileExe
       env:
-        MICROSOFT_AUTH_ID: ${{ secrets.MICROSOFT_AUTH_ID }}
-        CURSEFORGE_API_KEY: ${{ secrets.CURSEFORGE_API_KEY }}
     - name: Get short SHA
       shell: pwsh
       run: '"SHORT_SHA=$($env:GITHUB_SHA.Substring(0, 7))" | Out-File -FilePath $env:GITHUB_ENV -Append'

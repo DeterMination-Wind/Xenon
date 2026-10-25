@@ -45,16 +45,6 @@
     "externalLink" : "https://github.com/jenkinsci/constant-pool-scanner"
   },
   {
-    "title" : "HelloNBT",
-    "subtitle" : "Copyright © 2026 Glavo.\nLicensed under the Apache 2.0 License.",
-    "externalLink" : "https://github.com/HMCL-dev/HelloNBT"
-  },
-  {
-    "title" : "minecraft-jfx-skin",
-    "subtitle" : "Copyright © 2016 InfinityStudio.\nLicensed under the GPL 3.",
-    "externalLink" : "https://github.com/InfinityStudio/minecraft-jfx-skin"
-  },
-  {
     "title" : "SimplePNG",
     "subtitle" : "Copyright © 2023 Glavo.\nLicensed under the Apache 2.0 License.",
     "externalLink" : "https://github.com/Glavo/SimplePNG"
@@ -83,11 +73,6 @@
     "title": "MonetFX",
     "subtitle": "Copyright © 2025 Glavo.\nLicensed under the Apache 2.0 License.",
     "externalLink": "https://github.com/Glavo/MonetFX"
-  },
-  {
-    "title": "LWJGL Unsafe Agent",
-    "subtitle": "Copyright © 2026 Glavo.\nLicensed under the Apache 2.0 License.",
-    "externalLink": "https://github.com/HMCL-dev/lwjgl-unsafe-agent"
   },
   {
     "title": "TomlJ",

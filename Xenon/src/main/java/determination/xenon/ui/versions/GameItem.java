@@ -19,7 +19,7 @@ package determination.xenon.ui.versions;
 
 import javafx.beans.property.*;
 import javafx.scene.image.Image;
-import determination.xenon.game.TexturesLoader;
+import determination.xenon.ui.FXUtils;
 import determination.xenon.mindustry.MindustryImportFlow;
 import determination.xenon.mindustry.MindustryVersion;
 import determination.xenon.mindustry.MindustryVersionDisplay;
@@ -80,7 +80,7 @@ public class GameItem {
         tag = new SimpleStringProperty();
         subtitle = new SimpleStringProperty();
         image = new SimpleObjectProperty<>();
-        image.set(TexturesLoader.getDefaultSkinImage());
+        image.set(FXUtils.newBuiltinImage("/assets/img/mindustry/vanilla.png"));
 
         MindustryVersion version = MindustryRoutes.get(profile, id).orElse(null);
         if (version == null) {

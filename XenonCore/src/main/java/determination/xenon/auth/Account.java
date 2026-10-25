@@ -20,68 +20,39 @@ package determination.xenon.auth;
 import javafx.application.Platform;
 import javafx.beans.InvalidationListener;
 import javafx.beans.Observable;
-
-import javafx.beans.binding.Bindings;
-import javafx.beans.binding.ObjectBinding;
 import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.SimpleBooleanProperty;
-import determination.xenon.auth.yggdrasil.Texture;
-import determination.xenon.auth.yggdrasil.TextureType;
 import determination.xenon.util.ToStringBuilder;
 import determination.xenon.util.javafx.ObservableHelper;
 
-import java.nio.file.Path;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.UUID;
 
-/**
- *
- * @author huangyuhui
- */
+/// A local player identity.
+///
+/// Xenon only keeps offline identities: the username becomes the Mindustry
+/// nickname and the UUID is encoded into the `-Dmindustry.player.uuid` value at
+/// launch. Microsoft, Mojang and authlib-injector accounts belonged to the
+/// removed Minecraft launcher and are not part of this model.
 public abstract class Account implements Observable {
 
-    /**
-     * @return the name of the account who owns the character
-     */
+    /// @return the display name, used as the Mindustry nickname
     public abstract String getUsername();
 
-    /**
-     * @return the character name
-     */
-    public abstract String getCharacter();
+    /// @return the character name shown in the account list
+    public String getCharacter() {
+        return getUsername();
+    }
 
-    /**
-     * @return the character UUID
-     */
+    /// @return the identity UUID
     public abstract UUID getUUID();
 
-    /**
-     * Login with stored credentials.
-     *
-     * @throws CredentialExpiredException when the stored credentials has expired, in which case a password login will be performed
-     */
-    public abstract AuthInfo logIn() throws AuthenticationException;
+    /// @return the stable identifier stored in `config.json`
+    public abstract String getIdentifier();
 
-    /**
-     * Play offline.
-     * @return the specific offline player's info.
-     */
-    public abstract AuthInfo playOffline() throws AuthenticationException;
-
-    public boolean canUploadSkin() {
-        return false;
-    }
-
-    public void uploadSkin(boolean isSlim, Path file) throws AuthenticationException, UnsupportedOperationException {
-        throw new UnsupportedOperationException("Unsupported Operation");
-    }
-
+    /// @return the serialised form written to `accounts.json` / `config.json`
     public abstract Map<Object, Object> toStorage();
-
-    public void clearCache() {
-    }
 
     private final BooleanProperty portable = new SimpleBooleanProperty(false);
 
@@ -97,8 +68,6 @@ public abstract class Account implements Observable {
         this.portable.set(value);
     }
 
-    public abstract String getIdentifier();
-
     private final ObservableHelper helper = new ObservableHelper(this);
 
     @Override
@@ -111,16 +80,9 @@ public abstract class Account implements Observable {
         helper.removeListener(listener);
     }
 
-    /**
-     * Called when the account has changed.
-     * This method can be called from any thread.
-     */
+    /// Called when the account has changed. Safe to call from any thread.
     protected void invalidate() {
         Platform.runLater(helper::invalidate);
-    }
-
-    public ObjectBinding<Optional<Map<TextureType, Texture>>> getTextures() {
-        return Bindings.createObjectBinding(Optional::empty);
     }
 
     @Override
@@ -143,7 +105,6 @@ public abstract class Account implements Observable {
     public String toString() {
         return new ToStringBuilder(this)
                 .append("username", getUsername())
-                .append("character", getCharacter())
                 .append("uuid", getUUID())
                 .append("portable", isPortable())
                 .toString();

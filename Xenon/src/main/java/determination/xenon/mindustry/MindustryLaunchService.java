@@ -24,7 +24,6 @@ import determination.xenon.mindustry.uuid.MindustrySettingsBin;
 import determination.xenon.mindustry.uuid.UuidProfile;
 import determination.xenon.setting.Profile;
 import determination.xenon.setting.Profiles;
-import determination.xenon.setting.VersionSetting;
 import determination.xenon.util.platform.SystemInfo;
 import org.jetbrains.annotations.Nullable;
 
@@ -206,21 +205,9 @@ public final class MindustryLaunchService {
         if (MindustryMemoryPolicy.hasExplicitHeapLimit(jvmArgs)) {
             return;
         }
-        Profile profile = Profiles.getSelectedProfile();
-        VersionSetting setting = profile == null ? null : profile.getVersionSetting(version.getId());
-        if (setting != null && !setting.isAutoMemory()) {
-            builder.maxHeapMb(setting.getMaxMemory());
-            if (setting.getMinMemory() != null) {
-                builder.minHeapMb(setting.getMinMemory());
-            }
-            return;
-        }
         long totalMb = SystemInfo.getTotalMemorySize() / (1024L * 1024L);
         long availableMb = SystemInfo.getPhysicalMemoryStatus().getAvailable() / (1024L * 1024L);
         long modsBytes = MindustryMemoryPolicy.measureEnabledModsBytes(dataDir);
         builder.maxHeapMb(MindustryMemoryPolicy.suggestHeapMb(totalMb, availableMb, modsBytes));
-        if (setting != null && setting.getMinMemory() != null) {
-            builder.minHeapMb(setting.getMinMemory());
-        }
     }
 }

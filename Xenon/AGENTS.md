@@ -6,8 +6,8 @@ JavaFX UI module and the preserved HMCL shell. It depends on `XenonCore` and
 ## Shell and stage
 
 - Entry: `Launcher.start` -> `Controllers.initialize(stage)` -> `RootPage.Skin`
-  builds the sidebar. Mindustry entries sit alongside HMCL entries and navigate
-  through `Controllers.navigate(...)`.
+  builds the sidebar. The sidebar is Mindustry-only and navigates through
+  `Controllers.navigate(...)`.
 - The stage is `StageStyle.UNDECORATED` and transparent
   (`scene.setFill(Color.TRANSPARENT)`). After `primaryStage.show()`,
   `Launcher.start` calls `WindowsNativeUtils.ensureTaskbarVisible` (WS_EX_APPWINDOW)
