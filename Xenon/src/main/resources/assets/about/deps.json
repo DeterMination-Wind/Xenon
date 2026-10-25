@@ -35,21 +35,6 @@
     "externalLink" : "https://jsoup.org/"
   },
   {
-    "title" : "NanoHTTPD",
-    "subtitle" : "Copyright © 2012 - 2015 nanohttpd.\nLicensed under the BSD 3-clause License.",
-    "externalLink" : "https://github.com/NanoHttpd/nanohttpd"
-  },
-  {
-    "title" : "Constant Pool Scanner",
-    "subtitle" : "Copyright © 1997-2010 Oracle and/or its affiliates.\nLicensed under the GPL 2 or the CDDL.",
-    "externalLink" : "https://github.com/jenkinsci/constant-pool-scanner"
-  },
-  {
-    "title" : "SimplePNG",
-    "subtitle" : "Copyright © 2023 Glavo.\nLicensed under the Apache 2.0 License.",
-    "externalLink" : "https://github.com/Glavo/SimplePNG"
-  },
-  {
     "title" : "Java Native Access",
     "subtitle" : "Licensed under the LGPL 2.1 License or the Apache 2.0 License.",
     "externalLink" : "https://github.com/java-native-access/jna"
@@ -73,11 +58,6 @@
     "title": "MonetFX",
     "subtitle": "Copyright © 2025 Glavo.\nLicensed under the Apache 2.0 License.",
     "externalLink": "https://github.com/Glavo/MonetFX"
-  },
-  {
-    "title": "TomlJ",
-    "subtitle": "Licensed under the Apache 2.0 License.",
-    "externalLink": "https://github.com/tomlj/tomlj"
   },
   {
     "title": "WebURL for Java",

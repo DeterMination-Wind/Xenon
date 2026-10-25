@@ -297,10 +297,6 @@ public final class Launcher extends Application {
         if (Files.exists(Metadata.XENON_CURRENT_DIRECTORY))
             files.add(Metadata.XENON_CURRENT_DIRECTORY.toString());
 
-        Path mcDir = Paths.get(".minecraft").toAbsolutePath().normalize();
-        if (Files.exists(mcDir))
-            files.add(mcDir.toString());
-
         String command = new CommandBuilder().addAll("sudo", "chown", "-R", userName).addAll(files).toString();
         ButtonType copyAndExit = new ButtonType(i18n("button.copy_and_exit"));
 

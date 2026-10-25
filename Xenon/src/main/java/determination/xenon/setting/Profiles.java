@@ -219,6 +219,17 @@ public final class Profiles {
             if (profile == getSelectedProfile()) {
                 selectedVersion.bind(profile.selectedVersionProperty());
             }
+
+            // A selection can point at an instance that was deleted or renamed
+            // outside the launcher. Re-point it before the list and launch
+            // button read the value, mirroring what the old repository scan did.
+            java.util.List<determination.xenon.mindustry.MindustryVersion> versions =
+                    MindustryImportFlow.visibleVersions(profile);
+            String selected = profile.getSelectedVersion();
+            if (selected != null && versions.stream().noneMatch(version -> selected.equals(version.getId()))) {
+                profile.setSelectedVersion(versions.isEmpty() ? null : versions.get(0).getId());
+            }
+
             for (Consumer<Profile> listener : versionsListeners) {
                 listener.accept(profile);
             }
