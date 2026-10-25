@@ -25,9 +25,9 @@ JavaFX UI module and the preserved HMCL shell. It depends on `XenonCore` and
 
 ## Mindustry UI map
 
-- `determination.xenon.mindustry.ui.*` is the Mindustry surface. `MindustryRoutes`
-  detours HMCL `(profile, id)` calls (`Versions.*`/`GameItem` patches) when the id
-  is a Xenon/Mindustry version.
+- `determination.xenon.mindustry.ui.*` is the Mindustry surface. The version
+  list, sidebar and popup actions all delegate to `MindustryRoutes`; there is no
+  Minecraft repository behind them.
 - Detail-page pattern: `DecoratorAnimatedPage` + `AdvancedListBox` sidebar +
   `TabHeader` over `TransitionPane`. Examples: `MindustryVersionPage`
   (Mod/Save/Schematic/Crash/Health/Settings) and `MindustryServerDetailPage`

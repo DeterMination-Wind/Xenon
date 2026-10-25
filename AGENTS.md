@@ -1,9 +1,10 @@
 # AGENTS.md — Xenon
 
 Xenon is a Mindustry launcher carved out of an HMCL fork. The HMCL JavaFX shell
-(decorator, sidebar, wizard, animations, themes) is preserved; Minecraft-specific
-backends are replaced by Mindustry code under `determination.xenon.mindustry.*`.
-Per-instance isolation uses `-Dmindustry.data.dir`.
+(decorator, sidebar, wizard, animations, themes) is preserved; the Minecraft
+backend has been removed and all launcher behavior lives under
+`determination.xenon.mindustry.*`. Per-instance isolation uses
+`-Dmindustry.data.dir`.
 
 Java 17 bytecode for the launcher; `XenonBoot` main stays Java 8-compatible for
 bootstrap. Group is `determination`; version root comes from
