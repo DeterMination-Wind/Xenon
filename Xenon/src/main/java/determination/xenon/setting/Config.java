@@ -663,38 +663,6 @@ public final class Config extends ObservableSetting {
         this.ghCliAuth.set(ghCliAuth);
     }
 
-    // Game
-
-    @SerializedName("disableAutoGameOptions")
-    private final BooleanProperty disableAutoGameOptions = new SimpleBooleanProperty(false);
-
-    public BooleanProperty disableAutoGameOptionsProperty() {
-        return disableAutoGameOptions;
-    }
-
-    public boolean isDisableAutoGameOptions() {
-        return disableAutoGameOptions.get();
-    }
-
-    public void setDisableAutoGameOptions(boolean disableAutoGameOptions) {
-        this.disableAutoGameOptions.set(disableAutoGameOptions);
-    }
-
-    @SerializedName("allowAutoAgent")
-    private final BooleanProperty allowAutoAgent = new SimpleBooleanProperty(false);
-
-    public BooleanProperty allowAutoAgentProperty() {
-        return allowAutoAgent;
-    }
-
-    public boolean getAllowAutoAgent() {
-        return allowAutoAgent.get();
-    }
-
-    public void setAllowAutoAgent(boolean allowAutoAgent) {
-        this.allowAutoAgent.set(allowAutoAgent);
-    }
-
     // Accounts
 
     @SerializedName("selectedAccount")

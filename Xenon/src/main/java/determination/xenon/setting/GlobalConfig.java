@@ -60,21 +60,6 @@ public final class GlobalConfig extends ObservableSetting {
         this.agreementVersion.set(agreementVersion);
     }
 
-    @SerializedName("terracottaAgreementVersion")
-    private final IntegerProperty terracottaAgreementVersion = new SimpleIntegerProperty();
-
-    public IntegerProperty terracottaAgreementVersionProperty() {
-        return terracottaAgreementVersion;
-    }
-
-    public int getTerracottaAgreementVersion() {
-        return terracottaAgreementVersion.get();
-    }
-
-    public void setTerracottaAgreementVersion(int terracottaAgreementVersion) {
-        this.terracottaAgreementVersion.set(terracottaAgreementVersion);
-    }
-
     @SerializedName("platformPromptVersion")
     private final IntegerProperty platformPromptVersion = new SimpleIntegerProperty();
 

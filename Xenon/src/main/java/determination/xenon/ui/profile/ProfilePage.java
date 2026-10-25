@@ -155,7 +155,7 @@ public final class ProfilePage extends BorderPane implements DecoratorPage {
             }
 
             String folderName = FileUtils.getName(newPath);
-            if (!MindustryVersion.DATA_DIR_NAME.equals(folderName) && !".minecraft".equals(folderName))
+            if (!MindustryVersion.DATA_DIR_NAME.equals(folderName))
                 return;
             // The default Mindustry data directory is the OS-level home of the
             // game; naming a profile after its parent ("Roaming") helps nobody.
