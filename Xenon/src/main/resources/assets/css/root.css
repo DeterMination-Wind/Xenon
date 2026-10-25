@@ -379,10 +379,6 @@
     -fx-font-size: 15px;
 }
 
-.terracotta-hint Text {
-    -fx-fill: -monet-on-surface;
-}
-
 .game-crash-window {
     -fx-background-color: -monet-surface-container;
 }
