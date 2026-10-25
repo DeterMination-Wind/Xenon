@@ -59,7 +59,6 @@ import determination.xenon.ui.decorator.DecoratorController;
 import determination.xenon.ui.download.DownloadPage;
 import determination.xenon.ui.main.LauncherSettingsPage;
 import determination.xenon.ui.main.RootPage;
-import determination.xenon.ui.terracotta.TerracottaPage;
 import determination.xenon.ui.versions.GameListPage;
 import determination.xenon.ui.versions.VersionPage;
 import determination.xenon.ui.versions.Versions;
@@ -127,7 +126,6 @@ public final class Controllers {
         return accountListPage;
     });
     private static LauncherSettingsPage settingsPage;
-    private static Lazy<TerracottaPage> terracottaPage = new Lazy<>(TerracottaPage::new);
 
     private Controllers() {
     }
@@ -201,11 +199,6 @@ public final class Controllers {
             LOG.info("Prepare the download page");
             downloadPage = FXUtils.prepareNode(new DownloadPage());
         }
-    }
-
-    // FXThread
-    public static Node getTerracottaPage() {
-        return terracottaPage.get();
     }
 
     // FXThread
@@ -669,7 +662,6 @@ public final class Controllers {
         downloadPage = null;
         accountListPage = null;
         settingsPage = null;
-        terracottaPage = null;
         decorator = null;
         stage = null;
         scene = null;

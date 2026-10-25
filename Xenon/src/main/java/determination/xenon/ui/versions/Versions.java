@@ -314,16 +314,6 @@ public final class Versions {
         launch(profile, id, LauncherHelper::setTestMode);
     }
 
-    public static void launchAndEnterWorld(Profile profile, String id, String worldFolderName) {
-        launch(profile, id, launcherHelper ->
-                launcherHelper.setQuickPlayOption(new QuickPlayOption.SinglePlayer(worldFolderName)));
-    }
-
-    public static void generateLaunchScriptForQuickEnterWorld(Profile profile, String id, String worldFolderName) {
-        generateLaunchScript(profile, id, launcherHelper ->
-                launcherHelper.setQuickPlayOption(new QuickPlayOption.SinglePlayer(worldFolderName)));
-    }
-
     private static boolean checkVersionForLaunching(Profile profile, String id) {
         if (id == null || !profile.getRepository().isLoaded() || !profile.getRepository().hasVersion(id)) {
             JFXButton gotoDownload = new JFXButton(i18n("version.empty.launch.goto_download"));
