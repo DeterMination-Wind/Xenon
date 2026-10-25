@@ -19,7 +19,6 @@ dependencies {
     implementation(libs.hjson)
     api(libs.tomlj)
     api(libs.xz)
-    api(libs.lz4)
     api(libs.fx.gson)
     api(libs.constant.pool.scanner)
     api(libs.nanohttpd)

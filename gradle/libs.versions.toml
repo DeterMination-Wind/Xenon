@@ -7,7 +7,6 @@ gson = "2.13.2"
 hjson = "3.1.0"
 tomlj = "1.1.1"
 xz = "1.12"
-lz4 = "1.10.4.1"
 fx-gson = "5.0.0"
 constant-pool-scanner = "1.2"
 hello-nbt = "0.3.0"
@@ -44,7 +43,6 @@ gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
 hjson = { module = "org.hjson:hjson", version.ref = "hjson" }
 tomlj = { module = "org.tomlj:tomlj", version.ref = "tomlj" }
 xz = { module = "org.tukaani:xz", version.ref = "xz" }
-lz4 = { module = "org.glavo:lz4-java", version.ref = "lz4" }
 fx-gson = { module = "org.hildan.fxgson:fx-gson", version.ref = "fx-gson" }
 constant-pool-scanner = { module = "org.jenkins-ci:constant-pool-scanner", version.ref = "constant-pool-scanner" }
 hello-nbt = { module = "org.glavo:HelloNBT", version.ref = "hello-nbt" }

@@ -164,6 +164,7 @@ tasks.shadowJar {
 
     exclude("**/package-info.class")
     exclude("META-INF/maven/**")
+    exclude("org/checkerframework/**")
     exclude("META-INF/services/javax.imageio.spi.ImageReaderSpi")
     exclude("META-INF/services/javax.imageio.spi.ImageInputStreamSpi")
 
