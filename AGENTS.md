@@ -42,7 +42,7 @@ definitions live in `Xenon/build.gradle.kts`, root default tasks are `clean buil
 - `Xenon/` — JavaFX UI, HMCL shell, and packaging; the Windows single-file stub is `XenonBootstrap/`. Read `Xenon/AGENTS.md`.
 - `XenonBoot/` — Java-8 bootstrap stub; the packaged jar replaces its `EntryPoint` with `Xenon`'s. Read `XenonBoot/AGENTS.md`.
 - `minecraft/libraries/*` — two Minecraft loader libraries kept compiling; not on the Mindustry path. `buildSrc/` and `gradle/libs.versions.toml` own build logic and dependency pins.
-- `docs/` mixes inherited HMCL docs (Contributing, Localization, PLATFORM, ReleaseSchedule) with Xenon user docs (README, USAGE); it is not the agent entry point. Don't edit it in agent-doc refactors.
+- `docs/` holds Xenon user docs (README, USAGE, DEVELOPMENT); it is not the agent entry point. Don't edit it in agent-doc refactors.
 
 ## i18n
 
