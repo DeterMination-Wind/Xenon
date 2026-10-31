@@ -189,7 +189,7 @@ internal static class XenonBootstrap
 
             if (Directory.Exists(bundleDirectory))
             {
-                Directory.Move(bundleDirectory, backupDirectory);
+                MoveDirectoryWithRetry(bundleDirectory, backupDirectory);
             }
 
             Directory.Move(temporaryDirectory, bundleDirectory);
@@ -209,6 +209,40 @@ internal static class XenonBootstrap
             }
 
             throw;
+        }
+    }
+
+    private static void MoveDirectoryWithRetry(string source, string destination)
+    {
+        // The previous launcher runs from the bundle being replaced. It exits
+        // right after starting this process, but Windows keeps the directory
+        // locked until then, so retry the swap instead of failing the update.
+        DateTime deadline = DateTime.UtcNow.AddSeconds(30);
+        while (true)
+        {
+            try
+            {
+                Directory.Move(source, destination);
+                return;
+            }
+            catch (IOException)
+            {
+                if (DateTime.UtcNow >= deadline)
+                {
+                    throw;
+                }
+
+                Thread.Sleep(200);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                if (DateTime.UtcNow >= deadline)
+                {
+                    throw;
+                }
+
+                Thread.Sleep(200);
+            }
         }
     }
 

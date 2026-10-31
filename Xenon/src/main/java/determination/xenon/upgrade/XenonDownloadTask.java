@@ -19,16 +19,35 @@ package determination.xenon.upgrade;
 
 import determination.xenon.task.FileDownloadTask;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Locale;
 
+/// Downloads one launcher artifact of a release.
 final class XenonDownloadTask extends FileDownloadTask {
 
-    private final RemoteVersion.Type archiveFormat;
+    /// Artifact kind expected at the target path.
+    private final RemoteVersion.Type type;
 
-    public XenonDownloadTask(RemoteVersion version, Path target) {
-        super(version.url(), target, version.integrityCheck());
-        archiveFormat = version.type();
+    /// Creates a download task for the given release artifact.
+    ///
+    /// @param version release to download from
+    /// @param type    artifact kind to download
+    /// @param target  file the artifact is written to
+    /// @throws IllegalArgumentException when the release has no such artifact
+    public XenonDownloadTask(RemoteVersion version, RemoteVersion.Type type, Path target) {
+        super(requireUrl(version, type), target, version.integrityCheck());
+        this.type = type;
+    }
+
+    /// Resolves the download URL of one artifact.
+    private static String requireUrl(RemoteVersion version, RemoteVersion.Type type) {
+        String url = version.assetUrl(type);
+        if (url == null) {
+            throw new IllegalArgumentException("Release " + version.version() + " has no " + type + " asset");
+        }
+        return url;
     }
 
     @Override
@@ -36,12 +55,13 @@ final class XenonDownloadTask extends FileDownloadTask {
         super.execute();
 
         try {
-            Path target = getPath();
-            switch (archiveFormat) {
-                case JAR:
-                    break;
-                default:
-                    throw new IllegalArgumentException("Unknown format: " + archiveFormat);
+            String name = getPath().getFileName().toString().toLowerCase(Locale.ROOT);
+            String extension = switch (type) {
+                case JAR -> ".jar";
+                case EXE -> ".exe";
+            };
+            if (!name.endsWith(extension)) {
+                throw new IOException("Downloaded " + type + " asset has an unexpected name: " + name);
             }
         } catch (Throwable e) {
             try {
@@ -52,5 +72,4 @@ final class XenonDownloadTask extends FileDownloadTask {
             throw e;
         }
     }
-
 }
