@@ -27,6 +27,7 @@ import determination.xenon.mindustry.MindustryImportFlow;
 import determination.xenon.mindustry.MindustryInstallationDiscovery;
 import determination.xenon.mindustry.MindustryVersion;
 import determination.xenon.task.Schedulers;
+import org.jetbrains.annotations.Nullable;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -41,6 +42,7 @@ import static determination.xenon.setting.ConfigHolder.config;
 import static determination.xenon.ui.FXUtils.onInvalidating;
 import static determination.xenon.ui.FXUtils.runInFX;
 import static determination.xenon.util.i18n.I18n.i18n;
+import static determination.xenon.util.logging.Logger.LOG;
 
 /// Launcher profiles: named game directories that host Mindustry instances.
 ///
@@ -215,24 +217,38 @@ public final class Profiles {
     public static void notifyVersionsChanged(Profile profile) {
         if (profile == null)
             return;
-        runInFX(() -> {
-            if (profile == getSelectedProfile()) {
-                selectedVersion.bind(profile.selectedVersionProperty());
+        // The scan reads manifests and probes external installations on disk,
+        // so keep it off the FX thread and only apply the result there.
+        Schedulers.io().execute(() -> {
+            List<MindustryVersion> versions;
+            try {
+                versions = MindustryImportFlow.visibleVersions(profile);
+            } catch (RuntimeException ex) {
+                LOG.warning("Failed to scan the Mindustry versions of profile " + profile.getName(), ex);
+                versions = null;
             }
-
-            // A selection can point at an instance that was deleted or renamed
-            // outside the launcher. Re-point it before the list and launch
-            // button read the value, mirroring what the old repository scan did.
-            java.util.List<determination.xenon.mindustry.MindustryVersion> versions =
-                    MindustryImportFlow.visibleVersions(profile);
-            String selected = profile.getSelectedVersion();
-            if (selected != null && versions.stream().noneMatch(version -> selected.equals(version.getId()))) {
-                profile.setSelectedVersion(versions.isEmpty() ? null : versions.get(0).getId());
-            }
-
-            for (Consumer<Profile> listener : versionsListeners) {
-                listener.accept(profile);
-            }
+            List<MindustryVersion> scanned = versions;
+            runInFX(() -> applyVersionsChanged(profile, scanned));
         });
+    }
+
+    /// Applies a finished version scan on the FX thread.
+    private static void applyVersionsChanged(Profile profile, @Nullable List<MindustryVersion> versions) {
+        if (profile == getSelectedProfile()) {
+            selectedVersion.bind(profile.selectedVersionProperty());
+        }
+
+        // A selection can point at an instance that was deleted or renamed
+        // outside the launcher. Re-point it before the list and launch button
+        // read the value, mirroring what the old repository scan did.
+        String selected = profile.getSelectedVersion();
+        if (versions != null && selected != null
+                && versions.stream().noneMatch(version -> selected.equals(version.getId()))) {
+            profile.setSelectedVersion(versions.isEmpty() ? null : versions.get(0).getId());
+        }
+
+        for (Consumer<Profile> listener : versionsListeners) {
+            listener.accept(profile);
+        }
     }
 }
