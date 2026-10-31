@@ -50,6 +50,18 @@ public final class OfflineAccountTest {
     }
 
     @Test
+    public void equalAccountsShareTheSameHashCode() {
+        UUID uuid = UUID.randomUUID();
+        OfflineAccount first = new OfflineAccount("Steve", uuid);
+        OfflineAccount same = new OfflineAccount("Steve", uuid);
+        OfflineAccount other = new OfflineAccount("Steve", UUID.randomUUID());
+
+        assertEquals(first, same);
+        assertEquals(first.hashCode(), same.hashCode());
+        assertNotEquals(first, other);
+    }
+
+    @Test
     public void blankNicknameIsRejected() {
         assertThrows(IllegalArgumentException.class, () -> OfflineAccount.fromUsername(" "));
     }

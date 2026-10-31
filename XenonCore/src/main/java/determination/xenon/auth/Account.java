@@ -87,7 +87,7 @@ public abstract class Account implements Observable {
 
     @Override
     public int hashCode() {
-        return Objects.hash(getIdentifier(), portable);
+        return Objects.hash(getIdentifier(), isPortable());
     }
 
     @Override
