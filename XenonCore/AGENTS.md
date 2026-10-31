@@ -3,8 +3,7 @@
 Backend module. `Xenon` depends on it; `XenonCore` must not depend on `Xenon` or
 `XenonBoot`, and must not construct scenes/stages. `determination.xenon.mindustry.*`
 has zero JavaFX imports; legacy HMCL packages (`auth/`, `task/`, `util/javafx/`,
-`game/World`, `util/skin`) do import JavaFX and must not be copied into new
-Mindustry code.
+`game/World`) do import JavaFX and must not be copied into new Mindustry code.
 
 ## Package map (Mindustry path)
 
