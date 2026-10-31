@@ -23,6 +23,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.google.gson.JsonSyntaxException;
 import determination.xenon.mindustry.download.MirrorSelector;
+import determination.xenon.util.io.NetworkUtils;
 import determination.xenon.util.logging.Logger;
 
 import java.io.IOException;
@@ -40,11 +41,13 @@ import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Parser for the community-maintained {@code Anuken/mindustry-mods} index. The index is a single JSON array
@@ -79,6 +82,15 @@ public final class MindustryModsIndexRepository {
     /** Upstream URL of the community index (Anuken/MindustryMods, master branch). */
     public static final String INDEX_URL =
             "https://raw.githubusercontent.com/Anuken/MindustryMods/master/mods.json";
+
+    /**
+     * Pre-cached copy of the same index on the project mirror. The mirror answers this
+     * path as a static file, and {@link NetworkUtils#resolvePlayMirrorIp(URI)} rewrites
+     * the host to the current IPv4 address, so the request keeps working while the
+     * domain authority itself is intercepted.
+     */
+    public static final String MIRROR_INDEX_URL =
+            "http://play.mindustry.men/github/repos/Anuken/mindustry-mods/mods.json";
 
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(10);
     private static final Duration READ_TIMEOUT = Duration.ofSeconds(30);
@@ -191,8 +203,33 @@ public final class MindustryModsIndexRepository {
     // ------------------------------------------------------------------
 
     private String fetch() throws IOException {
-        String url = mirror.wrap(INDEX_URL);
-        HttpRequest req = HttpRequest.newBuilder(URI.create(url))
+        IOException lastError = null;
+        for (URI uri : fetchCandidates()) {
+            try {
+                return fetch(uri);
+            } catch (IOException e) {
+                if (lastError == null) lastError = e;
+                Logger.LOG.warning("mindustry-mods index source failed (" + uri.getHost()
+                        + "): " + e.getMessage());
+            }
+        }
+        throw lastError == null ? new IOException("No mod index source available") : lastError;
+    }
+
+    /// Index URLs tried in order: the project mirror's cached copy first (reachable
+    /// through the IP rewrite), then whichever GitHub mirror the selector picked, then
+    /// the upstream raw URL. Duplicates are dropped so `DIRECT` selection does not
+    /// request the same URL twice.
+    private List<URI> fetchCandidates() {
+        Set<URI> uris = new LinkedHashSet<>();
+        uris.add(NetworkUtils.resolvePlayMirrorIp(URI.create(MIRROR_INDEX_URL)));
+        uris.add(URI.create(mirror.wrap(INDEX_URL)));
+        uris.add(URI.create(INDEX_URL));
+        return List.copyOf(uris);
+    }
+
+    private String fetch(URI uri) throws IOException {
+        HttpRequest req = HttpRequest.newBuilder(uri)
                 .GET()
                 .timeout(READ_TIMEOUT)
                 .header("Accept", "application/json")
@@ -203,10 +240,10 @@ public final class MindustryModsIndexRepository {
             resp = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new IOException("Interrupted contacting " + url, e);
+            throw new IOException("Interrupted contacting " + uri, e);
         }
         if (resp.statusCode() / 100 != 2) {
-            throw new IOException("HTTP " + resp.statusCode() + " from " + url);
+            throw new IOException("HTTP " + resp.statusCode() + " from " + uri);
         }
         return resp.body();
     }
