@@ -54,8 +54,8 @@ import java.util.Properties;
 /// file for the resume.
 ///
 /// Every payload chunk passes through [DownloadThrottle#global()], so a
-/// configured speed limit is honoured here as well as in the racing and
-/// segmented downloaders. While a shaped wait blocks, a
+/// configured speed limit is honoured here as well as in the racing
+/// downloader. While a shaped wait blocks, a
 /// [DownloadControl#awaitGate()] callback keeps pause and cancel responsive.
 @NotNullByDefault
 public final class ResumableDownloader {

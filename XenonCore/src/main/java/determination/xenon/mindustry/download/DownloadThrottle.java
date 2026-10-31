@@ -29,7 +29,7 @@ import java.io.IOException;
 /// shares one instance also shares one byte budget. `acquire` blocks until the
 /// slot it reserved has arrived, which makes the observed average throughput
 /// converge to the configured rate regardless of how many streams — racing
-/// mirrors, segmented ranges, resumable single streams — run at once.
+/// mirrors and resumable single streams — run at once.
 ///
 /// The wait is sliced so it stays interruptible and so pause/cancel checks
 /// inside the download loops keep firing: no single [#sleepMillis] call lasts
@@ -162,8 +162,8 @@ public final class DownloadThrottle {
     /// Admits `bytes` into the shared shaper for one download loop.
     ///
     /// Every outbound read loop in the Mindustry download chain calls this
-    /// with the size of the chunk it is about to write, so racing mirrors,
-    /// segmented ranges and resumable streams all draw from one byte budget.
+    /// with the size of the chunk it is about to write, so racing mirrors and
+    /// resumable streams all draw from one byte budget.
     /// The fast path — the default, unlimited configuration — returns without
     /// locking, sleeping or allocating.
     ///

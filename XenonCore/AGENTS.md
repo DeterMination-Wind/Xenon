@@ -11,7 +11,7 @@ has zero JavaFX imports; legacy HMCL packages (`auth/`, `task/`, `util/javafx/`,
   `DataDirectoryPolicy`, `LaunchOptions`, `XenonLauncher`.
 - `mindustry/download/` — `MirrorDownloader` (races mirrors, falls back to
   upstream), `MirrorSelector` (candidate list/cache), `MindustryDownloadPolicy`
-  (manifest verification/retry/source switch), resumable/segmented downloads,
+  (manifest verification/retry/source switch), resumable downloads,
   GitHub release client/cache, `VanillaVersionList`, `BeVersionList`,
   `MindustryXVersionList`, `CnArcVersionList`, `FooVersionList`, MDTBBS
   mirror/list.
