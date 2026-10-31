@@ -71,9 +71,13 @@ public final class MirrorSelector {
      * mirror penalty.
      */
     private static final List<Mirror> CANDIDATES = List.of(
-            // Domestic cache proxy for Chinese users — faster than direct GitHub access
+            // Domestic cache proxy for Chinese users — faster than direct GitHub access.
+            // Its nginx only serves a whitelist: release metadata under /github/repos/...,
+            // the mod index, and release assets under /https://github.com/.... Anything
+            // else under /github/ is a 403, so only github.com download URLs are rewritten.
             new Mirror("cache-play.mindustry.men",
-                    "http://play.mindustry.men/github/", Strategy.PREFIX_FULL_URL, "http://play.mindustry.men/github/"),
+                    "http://play.mindustry.men/github/status", Strategy.PLAY_CACHE,
+                    "http://play.mindustry.men/"),
             // gh.tinylake.top first — TinyLake's own proxy, the same one
             // mindustry.top/download links to. Empirically the most
             // reliable mirror for users in mainland China.
@@ -202,21 +206,23 @@ public final class MirrorSelector {
         for (Mirror m : candidates) {
             futures.add(probe(m));
         }
-        @SuppressWarnings({"rawtypes", "unchecked"})
-        CompletableFuture<Object> any = CompletableFuture.anyOf(futures.toArray(new CompletableFuture[0]));
+        // Wait for the first *successful* probe. CompletableFuture.anyOf also
+        // completes on the first failure (a mirror whose DNS lookup fails is
+        // an instant CompletableFuture failure), which used to abort the whole
+        // race and fall back to DIRECT even when a healthy mirror answered a
+        // few milliseconds later.
+        CompletableFuture<Mirror> winner = new CompletableFuture<>();
+        for (CompletableFuture<Mirror> future : futures) {
+            future.whenComplete((mirror, error) -> {
+                if (error == null && mirror != null) winner.complete(mirror);
+            });
+        }
         try {
             // Outer timeout: longest single probe + small slack.
-            Object first = any.get(PROBE_TIMEOUT.toMillis() + 500, TimeUnit.MILLISECONDS);
-            if (first instanceof Mirror) return (Mirror) first;
+            return winner.get(PROBE_TIMEOUT.toMillis() + 500, TimeUnit.MILLISECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         } catch (ExecutionException | TimeoutException ignored) {
-        }
-        // Fallback: return any future that already completed successfully.
-        for (CompletableFuture<Mirror> f : futures) {
-            if (f.isDone() && !f.isCompletedExceptionally()) {
-                try { return f.getNow(null); } catch (Exception ignored) {}
-            }
         }
         return null;
     }
@@ -253,7 +259,13 @@ public final class MirrorSelector {
          * Substitute {@code github.com} with the mirror host
          * (and {@code raw.githubusercontent.com} with {@code raw.<host>/}).
          */
-        HOST_REPLACE
+        HOST_REPLACE,
+        /**
+         * Project cache host: {@code https://github.com/...} becomes
+         * {@code http://play.mindustry.men/https://github.com/...}. That host only
+         * proxies release assets this way; API/raw traffic uses dedicated clients.
+         */
+        PLAY_CACHE
     }
 
     private static final class Mirror {
@@ -275,6 +287,9 @@ public final class MirrorSelector {
                     return url;
                 case PREFIX_FULL_URL:
                     if (isGithubOrigin(url)) return prefix + url;
+                    return url;
+                case PLAY_CACHE:
+                    if (url.startsWith(GITHUB)) return prefix + url;
                     return url;
                 case HOST_REPLACE:
                     if (url.startsWith(GITHUB)) {
