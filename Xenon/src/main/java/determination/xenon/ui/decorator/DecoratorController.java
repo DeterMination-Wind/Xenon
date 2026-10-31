@@ -39,7 +39,6 @@ import determination.xenon.Metadata;
 import determination.xenon.setting.EnumBackgroundImage;
 import determination.xenon.task.Schedulers;
 import determination.xenon.task.Task;
-import determination.xenon.ui.Controllers;
 import determination.xenon.ui.DialogUtils;
 import determination.xenon.ui.FXUtils;
 import determination.xenon.ui.animation.ContainerAnimations;

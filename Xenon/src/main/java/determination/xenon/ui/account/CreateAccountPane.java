@@ -24,7 +24,6 @@ import javafx.scene.control.Label;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
-import determination.xenon.auth.offline.OfflineAccount;
 import determination.xenon.mindustry.steam.SteamAccount;
 import determination.xenon.mindustry.steam.SteamAccountDiscovery;
 import determination.xenon.mindustry.uuid.UuidGenerator;

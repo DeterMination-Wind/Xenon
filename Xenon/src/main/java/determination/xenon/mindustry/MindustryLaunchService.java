@@ -22,8 +22,6 @@ import determination.xenon.mindustry.save.MindustryLaunchSaveService;
 import determination.xenon.mindustry.uuid.MindustryPlayerLaunchHook;
 import determination.xenon.mindustry.uuid.MindustrySettingsBin;
 import determination.xenon.mindustry.uuid.UuidProfile;
-import determination.xenon.setting.Profile;
-import determination.xenon.setting.Profiles;
 import determination.xenon.util.platform.SystemInfo;
 import org.jetbrains.annotations.Nullable;
 

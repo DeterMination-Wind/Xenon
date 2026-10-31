@@ -17,7 +17,6 @@
  */
 package determination.xenon.util.platform;
 
-import determination.xenon.util.platform.StreamPump;
 import determination.xenon.util.Lang;
 
 import java.io.IOException;

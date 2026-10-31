@@ -28,23 +28,17 @@ import javafx.scene.layout.VBox;
 import determination.xenon.java.HMCLJavaRepository;
 import determination.xenon.java.JavaInfo;
 import determination.xenon.java.JavaManager;
-import determination.xenon.java.JavaRuntime;
-import determination.xenon.task.Task;
 import determination.xenon.ui.Controllers;
 import determination.xenon.ui.FXUtils;
 import determination.xenon.ui.construct.*;
 import determination.xenon.ui.wizard.WizardSinglePage;
 
-import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashSet;
-import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 
 import static determination.xenon.util.i18n.I18n.i18n;
-import static determination.xenon.util.logging.Logger.LOG;
 
 public final class JavaInstallPage extends WizardSinglePage {
 

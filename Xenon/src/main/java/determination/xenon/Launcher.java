@@ -54,8 +54,6 @@ import java.lang.management.MemoryPoolMXBean;
 import java.net.CookieHandler;
 import java.net.CookieManager;
 import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.Collections;

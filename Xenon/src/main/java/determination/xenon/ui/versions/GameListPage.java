@@ -52,7 +52,6 @@ import determination.xenon.ui.profile.ProfilePage;
 import determination.xenon.util.FXThread;
 import determination.xenon.util.javafx.MappedObservableList;
 
-import java.util.List;
 import java.util.Locale;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;

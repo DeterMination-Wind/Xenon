@@ -32,7 +32,6 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 import determination.xenon.auth.Account;
 import determination.xenon.auth.offline.OfflineAccount;
-import determination.xenon.setting.Accounts;
 import determination.xenon.ui.Controllers;
 import determination.xenon.ui.FXUtils;
 import determination.xenon.ui.SVG;

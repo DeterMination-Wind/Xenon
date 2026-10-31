@@ -25,7 +25,6 @@ import determination.xenon.task.Schedulers;
 import determination.xenon.task.Task;
 import determination.xenon.util.gson.JsonUtils;
 import determination.xenon.util.io.FileUtils;
-import determination.xenon.util.platform.Architecture;
 import determination.xenon.util.platform.OperatingSystem;
 import determination.xenon.util.platform.Platform;
 import org.jetbrains.annotations.Nullable;
