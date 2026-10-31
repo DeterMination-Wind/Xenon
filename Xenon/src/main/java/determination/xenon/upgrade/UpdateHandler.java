@@ -122,6 +122,9 @@ public final class UpdateHandler {
             return;
         }
 
+        // Show the changelog first. The download only starts from the
+        // dialog's Update button, which calls startUpdate(); cancelling or
+        // closing the dialog must not touch the network.
         Controllers.dialog(new UpgradeDialog(version, () -> startUpdate(version)));
     }
 
