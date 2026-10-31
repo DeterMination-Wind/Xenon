@@ -128,7 +128,7 @@ public final class JavaFXUtils {
             dependenciesJson.add(name, platformJson);
         });
 
-        Path outputFile = task.getProject().getRootProject().file("HMCL/src/main/resources/assets/openjfx-dependencies.json").toPath().toAbsolutePath().normalize();
+        Path outputFile = task.getProject().getRootProject().file("Xenon/src/main/resources/assets/openjfx-dependencies.json").toPath().toAbsolutePath().normalize();
         try {
             Files.createDirectories(outputFile.getParent());
             Files.writeString(outputFile, new GsonBuilder().setPrettyPrinting().create().toJson(dependenciesJson));
