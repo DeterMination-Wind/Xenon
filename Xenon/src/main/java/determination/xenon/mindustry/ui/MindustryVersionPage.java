@@ -25,6 +25,8 @@ import determination.xenon.mindustry.MindustryLaunchService;
 import determination.xenon.mindustry.XenonGameRepository;
 import determination.xenon.mindustry.trash.MindustryTrashService;
 import determination.xenon.mindustry.save.MindustryLaunchSaveService;
+import determination.xenon.setting.Profile;
+import determination.xenon.setting.Profiles;
 import determination.xenon.task.Schedulers;
 import determination.xenon.ui.Controllers;
 import determination.xenon.ui.FXUtils;
@@ -33,6 +35,7 @@ import determination.xenon.ui.animation.TransitionPane;
 import determination.xenon.ui.construct.AdvancedListBox;
 import determination.xenon.ui.construct.MessageDialogPane;
 import determination.xenon.ui.construct.PageAware;
+import org.jetbrains.annotations.Nullable;
 import determination.xenon.ui.construct.TabHeader;
 import determination.xenon.ui.decorator.DecoratorAnimatedPage;
 import determination.xenon.ui.decorator.DecoratorPage;
@@ -69,6 +72,8 @@ public final class MindustryVersionPage extends DecoratorAnimatedPage implements
             new TabHeader.Tab<>("settingsTab");
     private final TabHeader.Tab<MindustryDevPane> devTab = new TabHeader.Tab<>("devTab");
 
+    @Nullable
+    private final Profile profile;
     private final MindustryVersion version;
     private final Path versionRoot;
     private final Path workingDirectory;
@@ -79,7 +84,14 @@ public final class MindustryVersionPage extends DecoratorAnimatedPage implements
     private final Path launchDataDir;
     private final Runnable modPaneRefreshListener = this::refreshModPaneAfterProcessExit;
 
-    public MindustryVersionPage(MindustryVersion version) {
+    /// Creates the management page for one instance.
+    ///
+    /// @param profile the profile that owns the instance and whose version
+    ///                list is refreshed after the instance is deleted, or
+    ///                {@code null} when the page was opened without one
+    /// @param version the instance to manage
+    public MindustryVersionPage(@Nullable Profile profile, MindustryVersion version) {
+        this.profile = profile;
         this.version = version;
         XenonGameRepository repo = MindustryImportFlow.repositoryForVersion(version);
         this.versionRoot = repo.getVersionRoot(version);
@@ -201,7 +213,7 @@ public final class MindustryVersionPage extends DecoratorAnimatedPage implements
 
     /// Opens the local recycle bin for deleted instances.
     private void openTrash() {
-        MindustryTrashDialog.show(MindustryImportFlow.repositoryForVersion(version)
+        MindustryTrashDialog.show(profile, MindustryImportFlow.repositoryForVersion(version)
                 .getVersionsRoot().getParent());
     }
 
@@ -239,6 +251,9 @@ public final class MindustryVersionPage extends DecoratorAnimatedPage implements
         });
     }
 
+    /// Moves this instance to the recycle bin, then refreshes the owning
+    /// profile's version list so the removed row disappears and the selection
+    /// is re-pointed.
     private void deleteVersion() {
         JFXButton confirm = new JFXButton(i18n("button.delete"));
         confirm.getStyleClass().add("dialog-error");
@@ -251,6 +266,7 @@ public final class MindustryVersionPage extends DecoratorAnimatedPage implements
                 repository.refresh();
                 Platform.runLater(() -> {
                     Controllers.showToast(i18n("message.success"));
+                    Profiles.notifyVersionsChanged(profile);
                     fireEvent(new determination.xenon.ui.construct.PageCloseEvent());
                 });
             } catch (Throwable ex) {

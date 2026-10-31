@@ -17,6 +17,7 @@
  */
 package determination.xenon.mindustry.ui;
 
+import determination.xenon.setting.Profiles;
 import determination.xenon.ui.Controllers;
 import determination.xenon.ui.construct.MessageDialogPane;
 import org.jetbrains.annotations.NotNullByDefault;
@@ -103,7 +104,7 @@ public final class MdtbbsJoinIntentHandler {
                     i18n("xenon.join.launch.title"), MessageDialogPane.MessageType.WARNING);
             return;
         }
-        Controllers.navigate(new MindustryVersionPage(version));
+        Controllers.navigate(new MindustryVersionPage(Profiles.getSelectedProfile(), version));
     }
 
     /// Handles one join link.

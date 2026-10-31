@@ -42,8 +42,15 @@ public final class Versions {
     }
 
     /// Asks for confirmation and deletes the instance directory.
+    ///
+    /// The profile is forwarded so the version list is rebuilt and a selection
+    /// that pointed at the removed instance is re-pointed after the delete.
+    ///
+    /// @param profile the profile that owns the instance
+    /// @param version the instance id
     public static void deleteVersion(Profile profile, String version) {
-        MindustryRoutes.get(profile, version).ifPresent(MindustryRoutes::deleteVersion);
+        MindustryRoutes.get(profile, version).ifPresent(v ->
+                MindustryRoutes.deleteVersion(profile, v));
     }
 
     /// Prompts for a new instance id and renames the manifest.
@@ -79,7 +86,11 @@ public final class Versions {
     }
 
     /// Opens the instance detail page.
+    ///
+    /// @param profile the profile that owns the instance
+    /// @param version the instance id
     public static void modifyGameSettings(Profile profile, String version) {
-        MindustryRoutes.get(profile, version).ifPresent(MindustryRoutes::openVersionPage);
+        MindustryRoutes.get(profile, version).ifPresent(v ->
+                MindustryRoutes.openVersionPage(profile, v));
     }
 }

@@ -20,11 +20,14 @@ package determination.xenon.mindustry.ui;
 import com.jfoenix.controls.JFXButton;
 import com.jfoenix.controls.JFXDialogLayout;
 import determination.xenon.mindustry.trash.MindustryTrashService;
+import determination.xenon.setting.Profile;
+import determination.xenon.setting.Profiles;
 import determination.xenon.task.Schedulers;
 import determination.xenon.ui.Controllers;
 import determination.xenon.ui.FXUtils;
 import determination.xenon.ui.construct.DialogCloseEvent;
 import determination.xenon.ui.construct.MessageDialogPane;
+import org.jetbrains.annotations.Nullable;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -51,8 +54,10 @@ public final class MindustryTrashDialog {
 
     /// Opens the trash browser for one root.
     ///
+    /// @param profile the profile whose version list is refreshed after an
+    ///                entry is restored, or {@code null} when unknown
     /// @param root root whose `.trash/` is shown
-    public static void show(Path root) {
+    public static void show(@Nullable Profile profile, Path root) {
         MindustryTrashService service = new MindustryTrashService(root);
         JFXDialogLayout layout = new JFXDialogLayout();
         layout.setHeading(new Label(i18n("xenon.trash.title")));
@@ -62,15 +67,15 @@ public final class MindustryTrashDialog {
         close.setOnAction(e -> layout.fireEvent(new DialogCloseEvent()));
         layout.setActions(close);
         Controllers.dialog(layout);
-        reload(layout, service);
+        reload(layout, service, profile);
     }
 
     /// Reloads the entry list.
-    private static void reload(JFXDialogLayout layout, MindustryTrashService service) {
+    private static void reload(JFXDialogLayout layout, MindustryTrashService service, @Nullable Profile profile) {
         Schedulers.io().execute(() -> {
             try {
                 List<MindustryTrashService.Entry> entries = service.list();
-                Platform.runLater(() -> render(layout, service, entries));
+                Platform.runLater(() -> render(layout, service, profile, entries));
             } catch (IOException e) {
                 LOG.warning("Cannot list the recycle bin", e);
                 Platform.runLater(() -> layout.setBody(new Label(e.getMessage())));
@@ -79,7 +84,7 @@ public final class MindustryTrashDialog {
     }
 
     /// Renders the entries.
-    private static void render(JFXDialogLayout layout, MindustryTrashService service,
+    private static void render(JFXDialogLayout layout, MindustryTrashService service, @Nullable Profile profile,
                                List<MindustryTrashService.Entry> entries) {
         Label hint = new Label(i18n("xenon.trash.hint"));
         hint.getStyleClass().add("subtitle-label");
@@ -89,7 +94,7 @@ public final class MindustryTrashDialog {
             rows.getChildren().add(new Label(i18n("xenon.trash.empty")));
         }
         for (MindustryTrashService.Entry entry : entries) {
-            rows.getChildren().add(row(layout, service, entry));
+            rows.getChildren().add(row(layout, service, profile, entry));
         }
         ScrollPane scroll = new ScrollPane(rows);
         scroll.setFitToWidth(true);
@@ -100,7 +105,7 @@ public final class MindustryTrashDialog {
     }
 
     /// Builds one trash row.
-    private static HBox row(JFXDialogLayout layout, MindustryTrashService service,
+    private static HBox row(JFXDialogLayout layout, MindustryTrashService service, @Nullable Profile profile,
                             MindustryTrashService.Entry entry) {
         Label name = new Label(entry.original().getFileName().toString());
         name.getStyleClass().add("title-label");
@@ -116,7 +121,8 @@ public final class MindustryTrashDialog {
                 service.restore(entry);
                 Platform.runLater(() -> {
                     Controllers.showToast(i18n("xenon.trash.restored"));
-                    reload(layout, service);
+                    Profiles.notifyVersionsChanged(profile);
+                    reload(layout, service, profile);
                 });
             } catch (IOException ex) {
                 Platform.runLater(() -> Controllers.dialog(ex.getMessage(),
@@ -129,7 +135,7 @@ public final class MindustryTrashDialog {
                 i18n("xenon.trash.title"), () -> Schedulers.io().execute(() -> {
                     try {
                         service.deletePermanently(entry);
-                        Platform.runLater(() -> reload(layout, service));
+                        Platform.runLater(() -> reload(layout, service, profile));
                     } catch (IOException ex) {
                         Platform.runLater(() -> Controllers.dialog(ex.getMessage(),
                                 i18n("message.error"), MessageDialogPane.MessageType.ERROR));

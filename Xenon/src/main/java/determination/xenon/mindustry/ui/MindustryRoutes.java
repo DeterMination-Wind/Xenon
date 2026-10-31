@@ -180,9 +180,14 @@ public final class MindustryRoutes {
         Controllers.taskDialog(export, i18n("modpack.export"), TaskCancellationAction.NORMAL);
     }
 
-    /** Open the per-version Mindustry management page. */
-    public static void openVersionPage(MindustryVersion version) {
-        Controllers.navigate(new MindustryVersionPage(version));
+    /// Open the per-version Mindustry management page.
+    ///
+    /// @param profile the profile that owns the instance and whose list is
+    ///                refreshed after a delete, or {@code null} when the page
+    ///                was opened without a selected profile
+    /// @param version the instance to manage
+    public static void openVersionPage(@Nullable Profile profile, MindustryVersion version) {
+        Controllers.navigate(new MindustryVersionPage(profile, version));
     }
 
     /**
@@ -856,14 +861,24 @@ public final class MindustryRoutes {
         FXUtils.openFile(log);
     }
 
-    /** Confirm + delete a Mindustry version (clears its data dir as well). */
-    public static void deleteVersion(MindustryVersion version) {
+    /// Confirm + delete a Mindustry version (clears its data dir as well).
+    ///
+    /// After the delete succeeds the profile's version list is rebuilt on the
+    /// FX thread, so a selection pointing at the removed id is re-pointed by
+    /// {@link Profiles#notifyVersionsChanged(Profile)}.
+    ///
+    /// @param profile the profile whose list is refreshed
+    /// @param version the instance to delete
+    public static void deleteVersion(Profile profile, MindustryVersion version) {
         JFXButton confirm = new JFXButton(i18n("button.delete"));
         confirm.getStyleClass().add("dialog-error");
         confirm.setOnAction(e -> Schedulers.io().execute(() -> {
             try {
                 MindustryImportFlow.repositoryForVersion(version).delete(version.getId());
-                Platform.runLater(() -> Controllers.showToast(i18n("message.success")));
+                Platform.runLater(() -> {
+                    Controllers.showToast(i18n("message.success"));
+                    Profiles.notifyVersionsChanged(profile);
+                });
             } catch (Throwable ex) {
                 LOG.warning("Failed to delete Mindustry version " + version.getId(), ex);
                 Platform.runLater(() -> Controllers.dialog(ex.getMessage(),
