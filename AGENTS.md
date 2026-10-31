@@ -35,7 +35,7 @@ definitions live in `Xenon/build.gradle.kts`, root default tasks are `clean buil
 - Every class: `@NotNullByDefault`; every nullable type/field/parameter/return/local/type argument: `@Nullable`. Nullability is never implicit.
 - Immutable arrays/collections: `@Unmodifiable`/`@UnmodifiableView`; arrays use type-use syntax, e.g. `String @Unmodifiable []`.
 - Every class, field, method: `///` Markdown Javadoc that is accurate about behavior, constraints, and side effects; inline comments only for non-obvious behavior.
-- License header `config/checkstyle/license-header.txt`; checks live in `config/checkstyle/` (license/mechanical only). The build currently sets empty checkstyle source sets, so don't rely on `:Xenon:checkstyle` for Javadoc or annotation rules.
+- License header `config/checkstyle/license-header.txt`; checks live in `config/checkstyle/` (license/mechanical only, no Javadoc or annotation rules). `./gradlew checkstyle` does analyze the real sources — it is the `Check Codes` CI gate — so run it before pushing; it catches unused/redundant imports, missing trailing newlines, whitespace and the locale rules for `toLowerCase()`/`toUpperCase()`.
 
 ## Modules
 
