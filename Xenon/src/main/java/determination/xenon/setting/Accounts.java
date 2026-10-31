@@ -156,14 +156,15 @@ public final class Accounts {
                 selectedAccountIdentifier = selectedAccountIdentifier.substring(GLOBAL_PREFIX.length());
             }
 
-            for (Account account : accounts) {
-                if (selectedAccountIdentifier.equals(account.getIdentifier())) {
-                    if (portable == account.isPortable()) {
-                        selected = account;
-                        break;
-                    } else if (selected == null) {
-                        selected = account;
-                    }
+            selected = findAccountByIdentifier(selectedAccountIdentifier, portable);
+            if (selected == null) {
+                // Xenon <= 2.0 stored "username:username"; the identifier is
+                // now "username:uuid". Keep the old selection instead of
+                // silently falling back to the first account.
+                selected = findAccountByLegacyIdentifier(selectedAccountIdentifier, portable);
+                if (selected != null) {
+                    config().setSelectedAccount(
+                            (selected.isPortable() ? "" : GLOBAL_PREFIX) + selected.getIdentifier());
                 }
             }
         }
@@ -189,6 +190,38 @@ public final class Accounts {
         });
 
         initialized = true;
+    }
+
+    /// Finds the account whose identifier matches, preferring the storage the
+    /// configured id came from.
+    @Nullable
+    private static Account findAccountByIdentifier(String identifier, boolean portable) {
+        Account fallback = null;
+        for (Account account : accounts) {
+            if (!identifier.equals(account.getIdentifier()))
+                continue;
+            if (portable == account.isPortable())
+                return account;
+            if (fallback == null)
+                fallback = account;
+        }
+        return fallback;
+    }
+
+    /// Matches the identifier format written before accounts stored the UUID.
+    @Nullable
+    private static Account findAccountByLegacyIdentifier(String identifier, boolean portable) {
+        Account fallback = null;
+        for (Account account : accounts) {
+            String legacyIdentifier = account.getUsername() + ":" + account.getUsername();
+            if (!identifier.equals(legacyIdentifier))
+                continue;
+            if (portable == account.isPortable())
+                return account;
+            if (fallback == null)
+                fallback = account;
+        }
+        return fallback;
     }
 
     public static ObservableList<Account> getAccounts() {
