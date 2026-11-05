@@ -6,6 +6,8 @@
   <a href="https://github.com/DeterMination-Wind/Xenon"><img src="https://img.shields.io/github/stars/DeterMination-Wind/Xenon?style=flat&label=Star%20this%20project&color=yellow"></a>
 </h1>
 
+> [NOTE] 若有反馈，请发送反馈到bugsoc@qq.com / If you have any feedback, please send it to bugsoc@qq.com
+
 [中文](#中文) | [English](#english)
 
 > 把 Mindustry 的版本、内容与服务器，放进一个清晰的工作台。
