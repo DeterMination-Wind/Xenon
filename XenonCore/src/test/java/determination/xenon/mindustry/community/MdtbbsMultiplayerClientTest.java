@@ -21,7 +21,9 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import determination.xenon.mindustry.community.MdtbbsMultiplayerClient.Candidate;
 import determination.xenon.mindustry.community.MdtbbsMultiplayerClient.Capabilities;
+import determination.xenon.mindustry.community.MdtbbsMultiplayerClient.JoinRequestPage;
 import determination.xenon.mindustry.community.MdtbbsMultiplayerClient.Joined;
+import determination.xenon.mindustry.community.MdtbbsMultiplayerClient.Limits;
 import determination.xenon.mindustry.community.MdtbbsMultiplayerClient.Peer;
 import determination.xenon.mindustry.community.MdtbbsMultiplayerClient.RelayAllocation;
 import determination.xenon.mindustry.community.MdtbbsMultiplayerClient.Session;
@@ -34,6 +36,7 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -41,6 +44,8 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /// Tests the MDTBBS multiplayer REST surface against a fixture server.
@@ -78,6 +83,30 @@ public final class MdtbbsMultiplayerClientTest {
         }
     }
 
+    /// Advertised multiplayer limits parse field by field.
+    @Test
+    public void parsesCapabilityLimits() throws Exception {
+        try (Fixture server = Fixture.start()) {
+            Limits limits = server.client().capabilities().limits();
+            assertEquals(1L, limits.maxActiveSessionsPerUser());
+            assertEquals(8L, limits.maxPlayersPerSession());
+            assertEquals(20L, limits.maxPendingInvitesPerSender());
+            assertEquals(3L, limits.maxPendingInvitesPerSessionTarget());
+            assertEquals(2L, limits.maxPresenceConnectionsPerUser());
+            assertEquals(30L, limits.maxLobbyPageSize());
+            assertEquals(5L, limits.maxRealtimeSessionSubscriptions());
+        }
+    }
+
+    /// A deployment without a `limits` object reports unknown limits.
+    @Test
+    public void missingLimitsDefaultsToNone() throws Exception {
+        try (Fixture server = Fixture.start()) {
+            server.legacyCapabilities = true;
+            assertEquals(Limits.NONE, server.client().capabilities().limits());
+        }
+    }
+
     /// Session creation sends `require_approval` and echoes it back.
     @Test
     public void createsSessionWithApproval() throws Exception {
@@ -109,6 +138,49 @@ public final class MdtbbsMultiplayerClientTest {
             assertTrue(page.hasMore());
             assertTrue(server.sawQuery("page=2"), () -> "query was " + server.lastQuery());
             assertTrue(server.sawQuery("limit=10"));
+        }
+    }
+
+    /// Pending join requests parse with pagination, id and requester fallbacks.
+    @Test
+    public void listsJoinRequestsWithPagination() throws Exception {
+        try (Fixture server = Fixture.start()) {
+            JoinRequestPage page = server.client().joinRequests("ses_1", 1, 10);
+
+            assertEquals(1, page.requests().size());
+            assertEquals("jr_1", page.requests().get(0).id());
+            assertEquals(Instant.parse("2026-11-08T10:00:00Z"),
+                    page.requests().get(0).createdAt());
+            assertEquals(Instant.parse("2026-11-08T10:05:00Z"),
+                    page.requests().get(0).expiresAt());
+            assertEquals(9L, page.requests().get(0).userId());
+            assertEquals("alice", page.requests().get(0).username());
+            assertEquals(1, page.page());
+            assertEquals(2, page.totalPages());
+            assertTrue(page.hasMore());
+            assertTrue(server.sawQuery("page=1"), () -> "query was " + server.lastQuery());
+
+            JoinRequestPage second = server.client().joinRequests("ses_1", 2, 10);
+            assertEquals(1, second.requests().size());
+            assertEquals("jr_2", second.requests().get(0).id());
+            assertEquals(10L, second.requests().get(0).userId());
+            assertEquals("bob", second.requests().get(0).username());
+            assertEquals(2, second.page());
+            assertEquals(2, second.totalPages());
+            assertFalse(second.hasMore());
+            assertTrue(server.sawQuery("page=2"));
+            assertTrue(server.sawQuery("limit=10"));
+            assertTrue(server.sawPath("/multiplayer/sessions/ses_1/join-requests"));
+        }
+    }
+
+    /// An envelope without a `data` array or `data.requests` is rejected.
+    @Test
+    public void rejectsUnexpectedJoinRequestEnvelope() throws Exception {
+        try (Fixture server = Fixture.start()) {
+            server.joinRequestsBody = "{\"data\":{}}";
+            assertThrows(IOException.class,
+                    () -> server.client().joinRequests("ses_1", 1, 10));
         }
     }
 
@@ -210,6 +282,63 @@ public final class MdtbbsMultiplayerClientTest {
         }
     }
 
+    /// The 1.8.0 lobby snapshot carries join eligibility and its reason.
+    @Test
+    public void parsesLobbyJoinEligibility() throws Exception {
+        try (Fixture server = Fixture.start()) {
+            server.lobbyBody = Fixture.blockedLobbyJson();
+            SessionPage page = server.client().sessions(1, 10);
+
+            assertEquals(1, page.sessions().size());
+            Session session = page.sessions().get(0);
+            assertFalse(session.joinable());
+            assertFalse(session.joinableDirectly());
+            assertFalse(session.canRequestJoin());
+            assertTrue(session.blocked());
+            assertEquals("SESSION_FULL", session.blockedReason());
+        }
+    }
+
+    /// Sessions without the 1.8.0 fields keep the documented 1.7.0 join rules.
+    @Test
+    public void infersLobbyJoinEligibilityForLegacySessions() throws Exception {
+        try (Fixture server = Fixture.start()) {
+            server.lobbyBody = Fixture.legacyLobbyJson();
+            SessionPage page = server.client().sessions(1, 10);
+
+            assertEquals(4, page.sessions().size());
+
+            Session direct = page.sessions().get(0);
+            assertEquals("active", direct.status());
+            assertFalse(direct.requireApproval());
+            assertTrue(direct.joinable());
+            assertTrue(direct.joinableDirectly());
+            assertFalse(direct.canRequestJoin());
+            assertNull(direct.blockedReason());
+            assertFalse(direct.blocked());
+
+            Session approval = page.sessions().get(1);
+            assertTrue(approval.requireApproval());
+            assertFalse(approval.joinable());
+            assertFalse(approval.joinableDirectly());
+            assertTrue(approval.canRequestJoin());
+            assertNull(approval.blockedReason());
+            assertFalse(approval.blocked());
+
+            Session inactive = page.sessions().get(2);
+            assertFalse(inactive.joinable());
+            assertFalse(inactive.canRequestJoin());
+            assertTrue(inactive.blocked());
+
+            Session noStatus = page.sessions().get(3);
+            assertTrue(noStatus.status().isBlank());
+            assertFalse(noStatus.requireApproval());
+            assertTrue(noStatus.joinable());
+            assertFalse(noStatus.canRequestJoin());
+            assertFalse(noStatus.blocked());
+        }
+    }
+
     /// Local fixture server serving the multiplayer routes.
     private static final class Fixture implements AutoCloseable {
         private final HttpServer server;
@@ -217,6 +346,8 @@ public final class MdtbbsMultiplayerClientTest {
         private final AtomicReference<String> lastQuery = new AtomicReference<>("");
         private final List<String> paths = Collections.synchronizedList(new ArrayList<>());
         private volatile boolean legacyCapabilities;
+        private volatile String lobbyBody = lobbyJson();
+        private volatile String joinRequestsBody = "";
 
         private Fixture(HttpServer server) {
             this.server = server;
@@ -267,13 +398,17 @@ public final class MdtbbsMultiplayerClientTest {
                 case "/api/v1/multiplayer/capabilities" ->
                     legacyCapabilities ? legacyCapabilitiesJson() : capabilitiesJson();
                 case "/api/v1/multiplayer/sessions" -> "GET".equals(method)
-                    ? lobbyJson() : createdSessionJson();
+                    ? lobbyBody : createdSessionJson();
                 case "/api/v1/multiplayer/preferences" -> preferencesJson();
                 case "/api/v1/multiplayer/join-intents/intent_1/consume" -> consumedIntentJson();
                 case "/api/v1/multiplayer/sessions/resolve-code" -> resolvedSessionJson();
                 case "/api/v1/multiplayer/sessions/ses_1/join" -> joinedMemberJson();
                 case "/api/v1/multiplayer/sessions/ses_1" -> "{\"data\":{\"session\":" + sessionJson() + "}}";
                 case "/api/v1/multiplayer/sessions/ses_1/peers" -> peersJson();
+                case "/api/v1/multiplayer/sessions/ses_1/join-requests" ->
+                    joinRequestsBody.isEmpty()
+                            ? (sawQuery("page=2") ? joinRequestsPage2Json() : joinRequestsJson())
+                            : joinRequestsBody;
                 case "/api/v1/multiplayer/sessions/ses_1/candidates" -> candidateCreatedJson();
                 case "/api/v1/multiplayer/sessions/ses_1/peers/peer_owner/candidates" -> candidatesJson();
                 case "/api/v1/multiplayer/sessions/ses_1/relay" -> relayJson();
@@ -287,7 +422,7 @@ public final class MdtbbsMultiplayerClientTest {
             }
         }
 
-        /// Capability response fixture for the 1.7.0 contract.
+        /// Capability response fixture for the 1.8.0 contract.
         private static String capabilitiesJson() {
             return "{\"data\":{\"sessions_v1\":true,\"invites_v1\":true,\"relay_v1\":true,"
                     + "\"third_party_multiplayer\":true,\"relay_credential_ttl_seconds\":120,"
@@ -297,7 +432,13 @@ public final class MdtbbsMultiplayerClientTest {
                     + "\"private+invite_only\",\"private+friends\",\"private+public\","
                     + "\"friends+invite_only\",\"friends+friends\",\"friends+public\","
                     + "\"public+invite_only\",\"public+friends\",\"public+public\"],"
-                    + "\"require_approval\":true,\"transports\":[\"udp\",\"tcp\",\"quic\",\"custom\"]}}";
+                    + "\"require_approval\":true,\"transports\":[\"udp\",\"tcp\",\"quic\",\"custom\"],"
+                    + "\"limits\":{\"max_active_sessions_per_user\":1,"
+                    + "\"max_players_per_session\":8,\"max_pending_invites_per_sender\":20,"
+                    + "\"max_pending_invites_per_session_target\":3,"
+                    + "\"max_presence_connections_per_user\":2,"
+                    + "\"max_lobby_page_size\":30,"
+                    + "\"max_realtime_session_subscriptions\":5}}}";
         }
 
         /// Capability response fixture of an older deployment.
@@ -323,6 +464,40 @@ public final class MdtbbsMultiplayerClientTest {
                     + "\"status\":\"active\"}],"
                     + "\"meta\":{\"pagination\":{\"page\":2,\"limit\":10,\"total\":11,"
                     + "\"total_pages\":2,\"has_more\":true}}}";
+        }
+
+        /// Lobby response fixture carrying the 1.8.0 eligibility fields.
+        private static String blockedLobbyJson() {
+            return "{\"data\":[{\"id\":\"ses_blocked\",\"owner_user_id\":7,\"visibility\":\"friends\","
+                    + "\"join_policy\":\"public\",\"require_approval\":false,"
+                    + "\"game\":{\"id\":\"mindustry\",\"version\":\"build 160\"},"
+                    + "\"activity_name\":\"Mindustry\",\"current_players\":8,\"max_players\":8,"
+                    + "\"status\":\"active\",\"joinable\":false,"
+                    + "\"blocked_reason\":\"SESSION_FULL\",\"can_request_join\":false}],"
+                    + "\"meta\":{\"pagination\":{\"page\":1,\"limit\":10,\"total\":1,"
+                    + "\"total_pages\":1,\"has_more\":false}}}";
+        }
+
+        /// Lobby response fixture of a deployment without the 1.8.0 fields.
+        private static String legacyLobbyJson() {
+            return "{\"data\":["
+                    + "{\"id\":\"ses_direct\",\"owner_user_id\":7,\"visibility\":\"public\","
+                    + "\"join_policy\":\"public\",\"require_approval\":false,"
+                    + "\"activity_name\":\"Direct\",\"current_players\":1,\"max_players\":8,"
+                    + "\"status\":\"active\"},"
+                    + "{\"id\":\"ses_approval\",\"owner_user_id\":7,\"visibility\":\"friends\","
+                    + "\"join_policy\":\"friends\",\"require_approval\":true,"
+                    + "\"activity_name\":\"Approval\",\"current_players\":1,\"max_players\":8,"
+                    + "\"status\":\"active\"},"
+                    + "{\"id\":\"ses_closed\",\"owner_user_id\":7,\"visibility\":\"friends\","
+                    + "\"join_policy\":\"friends\",\"require_approval\":true,"
+                    + "\"activity_name\":\"Closed\",\"current_players\":1,\"max_players\":8,"
+                    + "\"status\":\"expired\"},"
+                    + "{\"id\":\"ses_nostatus\",\"owner_user_id\":7,\"visibility\":\"public\","
+                    + "\"join_policy\":\"public\",\"require_approval\":false,"
+                    + "\"activity_name\":\"NoStatus\",\"current_players\":1,\"max_players\":8}"
+                    + "],\"meta\":{\"pagination\":{\"page\":1,\"limit\":10,\"total\":4,"
+                    + "\"total_pages\":1,\"has_more\":false}}}";
         }
 
         /// Session creation response fixture.
@@ -356,6 +531,25 @@ public final class MdtbbsMultiplayerClientTest {
         private static String peersJson() {
             return "{\"data\":[{\"peer_id\":\"peer_owner\",\"user_id\":7,\"role\":\"owner\",\"status\":\"active\"},"
                     + "{\"peer_id\":\"peer_member\",\"user_id\":9,\"role\":\"member\",\"status\":\"active\"}]}";
+        }
+
+        /// First page of the host-side pending join-request fixture.
+        private static String joinRequestsJson() {
+            return "{\"data\":["
+                    + "{\"id\":\"jr_1\",\"created_at\":\"2026-11-08T10:00:00Z\","
+                    + "\"expires_at\":\"2026-11-08T10:05:00Z\","
+                    + "\"user\":{\"id\":9,\"username\":\"alice\","
+                    + "\"avatar_url\":\"https://example.invalid/a.png\"}}],"
+                    + "\"meta\":{\"pagination\":{\"page\":1,\"total_pages\":2,\"has_more\":true}}}";
+        }
+
+        /// Second page of the host-side pending join-request fixture.
+        private static String joinRequestsPage2Json() {
+            return "{\"data\":["
+                    + "{\"join_request_id\":\"jr_2\",\"created_at\":\"2026-11-08T10:01:00Z\","
+                    + "\"expires_at\":\"2026-11-08T10:06:00Z\","
+                    + "\"requester\":{\"id\":10,\"username\":\"bob\"}}],"
+                    + "\"meta\":{\"pagination\":{\"page\":2,\"total_pages\":2,\"has_more\":false}}}";
         }
 
         /// Candidate creation response fixture.

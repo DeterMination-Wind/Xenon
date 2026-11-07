@@ -83,6 +83,14 @@ public final class MdtbbsSocialClient {
     public record Invite(String id, String sessionId, String inviter, Instant expiresAt) {
     }
 
+    /// One user returned by a directory search.
+    ///
+    /// @param id        user id
+    /// @param username  display name
+    /// @param avatarUrl avatar URL, or empty when the user has none
+    public record UserSummary(long id, String username, String avatarUrl) {
+    }
+
     /// Creates a presence connection for this client instance.
     ///
     /// @param platform platform token such as `launcher`
@@ -179,6 +187,42 @@ public final class MdtbbsSocialClient {
                     MdtbbsJson.instantOf(object, "expires_at")));
         }
         return result;
+    }
+
+    /// Searches users by name.
+    ///
+    /// The authenticated account needs the existing `friends.read` scope; this
+    /// client does not add its own scope gate.
+    ///
+    /// @param query search text; must not be blank
+    /// @param limit page size, clamped to 1..50
+    /// @return matching users
+    /// @throws IllegalArgumentException when the query is blank
+    /// @throws IOException when the request fails
+    public List<UserSummary> searchUsers(String query, int limit) throws IOException {
+        String text = query == null ? "" : query.trim();
+        if (text.isEmpty()) {
+            throw new IllegalArgumentException("a user search query is required");
+        }
+        Map<String, String> parameters = new LinkedHashMap<>();
+        parameters.put("q", text);
+        parameters.put("limit", Integer.toString(Math.max(1, Math.min(50, limit))));
+        JsonObject root = api.getAuth("/users/search", parameters);
+        JsonArray array = MdtbbsJson.dataArray(root);
+        if (array.isEmpty()) {
+            array = MdtbbsJson.arrayOf(MdtbbsJson.dataObject(root), "users");
+        }
+        List<UserSummary> result = new ArrayList<>();
+        for (JsonElement element : array) {
+            JsonObject object = MdtbbsJson.asObject(element);
+            if (object == null) continue;
+            String avatarUrl = MdtbbsJson.stringOf(object, "avatar_url");
+            result.add(new UserSummary(
+                    MdtbbsJson.longOf(object, "id", 0L),
+                    MdtbbsJson.stringOf(object, "username"),
+                    avatarUrl.isBlank() ? "" : avatarUrl));
+        }
+        return List.copyOf(result);
     }
 
     /// Accepts an invite.

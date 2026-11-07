@@ -18,6 +18,7 @@
 package determination.xenon.mindustry.community;
 
 import determination.xenon.mindustry.community.MdtbbsMultiplayerClient.Capabilities;
+import determination.xenon.mindustry.community.MdtbbsMultiplayerClient.JoinRequestPage;
 import determination.xenon.mindustry.community.MdtbbsMultiplayerClient.Joined;
 import determination.xenon.mindustry.community.MdtbbsMultiplayerClient.Peer;
 import determination.xenon.mindustry.community.MdtbbsMultiplayerClient.RelayAllocation;
@@ -135,6 +136,15 @@ public interface MdtbbsMultiplayerApi {
     /// @return the server-side join request id, or empty when omitted
     /// @throws IOException when the request fails
     String createJoinRequest(String sessionId) throws IOException;
+
+    /// Lists the pending join requests of a hosted session.
+    ///
+    /// @param sessionId session owned by this peer
+    /// @param page      1-based page number
+    /// @param limit     page size
+    /// @return one page of pending join requests
+    /// @throws IOException when the request fails
+    JoinRequestPage joinRequests(String sessionId, int page, int limit) throws IOException;
 
     /// Approves one join request.
     ///

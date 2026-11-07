@@ -20,7 +20,10 @@ package determination.xenon.mindustry.netplay;
 import determination.xenon.mindustry.community.MdtbbsApiException;
 import determination.xenon.mindustry.community.MdtbbsMultiplayerApi;
 import determination.xenon.mindustry.community.MdtbbsMultiplayerClient.Capabilities;
+import determination.xenon.mindustry.community.MdtbbsMultiplayerClient.JoinRequestEntry;
+import determination.xenon.mindustry.community.MdtbbsMultiplayerClient.JoinRequestPage;
 import determination.xenon.mindustry.community.MdtbbsMultiplayerClient.Joined;
+import determination.xenon.mindustry.community.MdtbbsMultiplayerClient.Limits;
 import determination.xenon.mindustry.community.MdtbbsMultiplayerClient.Peer;
 import determination.xenon.mindustry.community.MdtbbsMultiplayerClient.RelayAllocation;
 import determination.xenon.mindustry.community.MdtbbsMultiplayerClient.Session;
@@ -30,10 +33,12 @@ import org.jetbrains.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
+import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.IntConsumer;
@@ -205,12 +210,14 @@ public final class MdtbbsNetplayManagerTest {
         MdtbbsNetplayManager manager = new MdtbbsNetplayManager(() -> true, fake, tunnels, 30);
 
         manager.inviteFriend(9);
-        assertEquals(MdtbbsNetplayManager.Phase.ERROR, manager.phase());
-        assertEquals("SESSION_NOT_FOUND", manager.errorCode());
+        assertEquals(MdtbbsNetplayManager.Phase.IDLE, manager.phase());
+        assertEquals("SESSION_NOT_FOUND", manager.lastInviteError());
+        assertEquals("9", manager.lastInviteTarget());
 
         fake.created = ownerJoined();
         manager.createRoom("friends", "friends", "");
         assertTrue(await(5000, () -> manager.phase() == MdtbbsNetplayManager.Phase.HOSTING));
+        assertNull(manager.lastInviteError());
         manager.inviteFriend(9);
         assertTrue(await(5000, () -> fake.invited.contains("ses_1:9")));
         manager.leave();
@@ -445,6 +452,332 @@ public final class MdtbbsNetplayManagerTest {
         manager.leave();
     }
 
+    /// A zombie session is closed and the create is retried exactly once.
+    @Test
+    public void sessionAlreadyActiveClosesZombieAndRetries() throws Exception {
+        FakeMultiplayer fake = new FakeMultiplayer();
+        fake.createConflict = sessionActiveException("ses_zombie");
+        fake.created = ownerJoined();
+        FakeTunnels tunnels = new FakeTunnels();
+        MdtbbsNetplayManager manager = new MdtbbsNetplayManager(() -> true, fake, tunnels, 30);
+
+        manager.createRoom("friends", "friends", "");
+
+        assertTrue(await(5000, () -> manager.phase() == MdtbbsNetplayManager.Phase.HOSTING));
+        assertEquals(2, fake.createAttempts.get());
+        assertTrue(fake.left.contains("ses_zombie"),
+                () -> "the zombie session must be left: " + fake.calls);
+        assertEquals("ses_zombie", manager.conflictSessionId());
+        assertNotNull(tunnels.lastConfig);
+        manager.leave();
+    }
+
+    /// A refused zombie cleanup is visible and never retried.
+    @Test
+    public void sessionAlreadyActiveLeaveFailureIsVisible() throws Exception {
+        FakeMultiplayer fake = new FakeMultiplayer();
+        fake.createConflict = sessionActiveException("ses_zombie");
+        fake.created = ownerJoined();
+        fake.leaveError = new MdtbbsApiException(403, "FORBIDDEN", "not the session owner", false);
+        FakeTunnels tunnels = new FakeTunnels();
+        MdtbbsNetplayManager manager = new MdtbbsNetplayManager(() -> true, fake, tunnels, 30);
+
+        manager.createRoom("friends", "friends", "");
+
+        assertTrue(await(5000, () -> manager.phase() == MdtbbsNetplayManager.Phase.ERROR
+                && "SESSION_ALREADY_ACTIVE".equals(manager.errorCode())
+                && "ses_zombie".equals(manager.statusDetail())));
+        assertEquals(1, fake.createAttempts.get());
+        assertFalse(fake.left.contains("ses_zombie"));
+        assertEquals("SESSION_ALREADY_ACTIVE", manager.errorCode());
+        assertEquals("ses_zombie", manager.statusDetail());
+        assertEquals("ses_zombie", manager.conflictSessionId());
+        assertNull(tunnels.lastConfig);
+    }
+
+    /// A 404 on the zombie cleanup counts as success and the create retries.
+    @Test
+    public void missingZombieSessionStillRetriesCreate() throws Exception {
+        FakeMultiplayer fake = new FakeMultiplayer();
+        fake.createConflict = sessionActiveException("ses_zombie");
+        fake.created = ownerJoined();
+        fake.leaveError = new MdtbbsApiException(404, "SESSION_NOT_FOUND",
+                "the session is already gone", false);
+        FakeTunnels tunnels = new FakeTunnels();
+        MdtbbsNetplayManager manager = new MdtbbsNetplayManager(() -> true, fake, tunnels, 30);
+
+        manager.createRoom("friends", "friends", "");
+
+        assertTrue(await(5000, () -> manager.phase() == MdtbbsNetplayManager.Phase.HOSTING));
+        assertEquals(2, fake.createAttempts.get());
+        assertEquals("ses_zombie", manager.conflictSessionId());
+        assertFalse(fake.left.contains("ses_zombie"));
+        assertNotNull(tunnels.lastConfig);
+        manager.leave();
+    }
+
+    /// The host list is rebuilt from the server join-request snapshot.
+    @Test
+    public void refreshJoinRequestsUsesServerSnapshot() throws Exception {
+        FakeMultiplayer fake = new FakeMultiplayer();
+        fake.created = ownerJoined();
+        FakeTunnels tunnels = new FakeTunnels();
+        MdtbbsNetplayManager manager = new MdtbbsNetplayManager(() -> true, fake, tunnels, 30);
+
+        manager.createRoom("friends", "friends", "");
+        assertTrue(await(5000, () -> manager.phase() == MdtbbsNetplayManager.Phase.HOSTING));
+        fake.joinRequestEntries = List.of(new JoinRequestEntry("jr_1",
+                Instant.parse("2026-11-08T10:00:00Z"), Instant.parse("2026-11-08T10:05:00Z"),
+                9L, "alice"));
+
+        manager.refreshJoinRequests();
+
+        assertTrue(await(5000, () -> manager.joinRequests().size() == 1),
+                () -> "join requests: " + manager.joinRequests());
+        MdtbbsNetplayManager.JoinRequest request = manager.joinRequests().get(0);
+        assertEquals("jr_1", request.id());
+        assertEquals("ses_1", request.sessionId());
+        assertEquals(9L, request.userId());
+        assertEquals("alice", request.username());
+        manager.leave();
+    }
+
+    /// An approved request disappears from the host list on the next refresh.
+    @Test
+    public void approvedJoinRequestDisappearsAfterRefresh() throws Exception {
+        FakeMultiplayer fake = new FakeMultiplayer();
+        fake.created = ownerJoined();
+        FakeTunnels tunnels = new FakeTunnels();
+        MdtbbsNetplayManager manager = new MdtbbsNetplayManager(() -> true, fake, tunnels, 30);
+
+        manager.createRoom("friends", "friends", "");
+        assertTrue(await(5000, () -> manager.phase() == MdtbbsNetplayManager.Phase.HOSTING));
+        fake.joinRequestEntries = List.of(joinRequestEntry("jr_1", 9L, "alice"));
+        manager.refreshJoinRequests();
+        assertTrue(await(5000, () -> manager.joinRequests().size() == 1));
+
+        // The host approved the request, so the server no longer lists it.
+        fake.joinRequestEntries = List.of();
+        manager.refreshJoinRequests();
+
+        assertTrue(await(5000, () -> manager.joinRequests().isEmpty()),
+                () -> "join requests: " + manager.joinRequests());
+        manager.leave();
+    }
+
+    /// A realtime insert survives a server snapshot that has not caught up yet.
+    @Test
+    public void joinRequestCreatedEventSurvivesServerLag() throws Exception {
+        FakeMultiplayer fake = new FakeMultiplayer();
+        fake.created = ownerJoined();
+        FakeTunnels tunnels = new FakeTunnels();
+        MdtbbsNetplayManager manager = new MdtbbsNetplayManager(() -> true, fake, tunnels, 30);
+        AtomicLong clock = new AtomicLong();
+        manager.setNanoTimeSource(clock::get);
+
+        manager.createRoom("friends", "friends", "");
+        assertTrue(await(5000, () -> manager.phase() == MdtbbsNetplayManager.Phase.HOSTING));
+
+        manager.handleRealtimeEvent(createdEvent("jr_local", "ses_1", 9L, "alice"));
+
+        assertTrue(await(5000, () -> manager.joinRequests().size() == 1),
+                () -> "join requests: " + manager.joinRequests());
+        MdtbbsNetplayManager.JoinRequest request = manager.joinRequests().get(0);
+        assertEquals("jr_local", request.id());
+        assertEquals("ses_1", request.sessionId());
+        assertEquals(9L, request.userId());
+        assertEquals("alice", request.username());
+        manager.leave();
+    }
+
+    /// A local insert is dropped once the grace window elapses.
+    @Test
+    public void localJoinRequestExpiresAfterGraceWindow() throws Exception {
+        FakeMultiplayer fake = new FakeMultiplayer();
+        fake.created = ownerJoined();
+        FakeTunnels tunnels = new FakeTunnels();
+        MdtbbsNetplayManager manager = new MdtbbsNetplayManager(() -> true, fake, tunnels, 30);
+        AtomicLong clock = new AtomicLong();
+        manager.setNanoTimeSource(clock::get);
+
+        manager.createRoom("friends", "friends", "");
+        assertTrue(await(5000, () -> manager.phase() == MdtbbsNetplayManager.Phase.HOSTING));
+        manager.handleRealtimeEvent(createdEvent("jr_local", "ses_1", 9L, "alice"));
+        assertTrue(await(5000, () -> manager.joinRequests().size() == 1));
+
+        clock.set(TimeUnit.SECONDS.toNanos(5L));
+        int before = fake.joinRequestsCalls.get();
+        manager.refreshJoinRequests();
+        assertTrue(await(2000, () -> fake.joinRequestsCalls.get() > before));
+        Thread.sleep(100);
+        assertEquals(1, manager.joinRequests().size(),
+                "a request younger than the grace window must survive");
+
+        clock.set(TimeUnit.SECONDS.toNanos(11L));
+        manager.refreshJoinRequests();
+        assertTrue(await(5000, () -> manager.joinRequests().isEmpty()),
+                () -> "join requests: " + manager.joinRequests());
+        manager.leave();
+    }
+
+    /// A failed refresh keeps the previous authoritative list.
+    @Test
+    public void failedJoinRequestRefreshKeepsPreviousList() throws Exception {
+        FakeMultiplayer fake = new FakeMultiplayer();
+        fake.created = ownerJoined();
+        FakeTunnels tunnels = new FakeTunnels();
+        MdtbbsNetplayManager manager = new MdtbbsNetplayManager(() -> true, fake, tunnels, 30);
+
+        manager.createRoom("friends", "friends", "");
+        assertTrue(await(5000, () -> manager.phase() == MdtbbsNetplayManager.Phase.HOSTING));
+        fake.joinRequestEntries = List.of(joinRequestEntry("jr_1", 9L, "alice"));
+        manager.refreshJoinRequests();
+        assertTrue(await(5000, () -> manager.joinRequests().size() == 1));
+
+        fake.failJoinRequests = true;
+        int before = fake.joinRequestsCalls.get();
+        manager.refreshJoinRequests();
+        assertTrue(await(2000, () -> fake.joinRequestsCalls.get() > before));
+        Thread.sleep(100);
+
+        assertEquals(1, manager.joinRequests().size(),
+                "a failed refresh must not clear the previous list");
+        manager.leave();
+    }
+
+    /// The refresh merges server pages and requests the capped page size.
+    @Test
+    public void refreshJoinRequestsMergesServerPages() throws Exception {
+        FakeMultiplayer fake = new FakeMultiplayer();
+        fake.capabilities = new Capabilities(true, true, true, true, 120,
+                List.of(), List.of(), true, List.of(), List.of(),
+                new Limits(0, 0, 0, 0, 0, 10, 0));
+        fake.created = ownerJoined();
+        fake.joinRequestEntries = List.of(joinRequestEntry("jr_1", 9L, "alice"));
+        fake.joinRequestPage2 = List.of(joinRequestEntry("jr_2", 10L, "bob"));
+        fake.joinRequestHasMore = true;
+        FakeTunnels tunnels = new FakeTunnels();
+        MdtbbsNetplayManager manager = new MdtbbsNetplayManager(() -> true, fake, tunnels, 30);
+
+        manager.createRoom("friends", "friends", "");
+        assertTrue(await(5000, () -> manager.phase() == MdtbbsNetplayManager.Phase.HOSTING));
+        manager.refreshJoinRequests();
+
+        assertTrue(await(5000, () -> manager.joinRequests().size() == 2),
+                () -> "join requests: " + manager.joinRequests());
+        assertTrue(manager.joinRequests().stream()
+                .anyMatch(request -> request.id().equals("jr_1")));
+        assertTrue(manager.joinRequests().stream()
+                .anyMatch(request -> request.id().equals("jr_2")));
+        assertEquals(2, fake.lastJoinRequestPage);
+        assertEquals(10, manager.lobbyPageSize());
+        assertEquals(Math.min(50, manager.lobbyPageSize()), fake.lastJoinRequestLimit);
+        manager.leave();
+    }
+
+    /// Approving drops the row and a pre-approval snapshot cannot land it back.
+    @Test
+    public void approveDropsRowAndOldSnapshotCannotResurrect() throws Exception {
+        FakeMultiplayer fake = new FakeMultiplayer();
+        fake.created = ownerJoined();
+        FakeTunnels tunnels = new FakeTunnels();
+        MdtbbsNetplayManager manager = new MdtbbsNetplayManager(() -> true, fake, tunnels, 30);
+
+        manager.createRoom("friends", "friends", "");
+        assertTrue(await(5000, () -> manager.phase() == MdtbbsNetplayManager.Phase.HOSTING));
+        fake.joinRequestEntries = List.of(joinRequestEntry("jr_1", 9L, "alice"));
+        manager.refreshJoinRequests();
+        assertTrue(await(5000, () -> manager.joinRequests().size() == 1));
+
+        // Freeze a snapshot that still contains the request.
+        fake.joinRequestsGate = new CountDownLatch(1);
+        int calls = fake.joinRequestsCalls.get();
+        manager.refreshJoinRequests();
+        assertTrue(await(2000, () -> fake.joinRequestsCalls.get() > calls),
+                "the pre-approval snapshot must be in flight");
+
+        // The server approved the request while the old snapshot is frozen.
+        fake.joinRequestEntries = List.of();
+        manager.approveJoinRequest("jr_1");
+        assertTrue(await(5000, () -> manager.joinRequests().isEmpty()),
+                () -> "join requests: " + manager.joinRequests());
+
+        fake.joinRequestsGate.countDown();
+        Thread.sleep(300);
+        assertTrue(manager.joinRequests().isEmpty(),
+                "a pre-approval snapshot must not resurrect the row");
+        manager.leave();
+    }
+
+    /// Two heartbeat ticks 30 s apart trigger exactly one join-request refresh.
+    @Test
+    public void heartbeatRefreshesJoinRequestsAtMostOncePerMinute() throws Exception {
+        FakeMultiplayer fake = new FakeMultiplayer();
+        fake.created = ownerJoined();
+        FakeTunnels tunnels = new FakeTunnels();
+        MdtbbsNetplayManager manager = new MdtbbsNetplayManager(() -> true, fake, tunnels, 1);
+        AtomicLong clock = new AtomicLong();
+        manager.setNanoTimeSource(clock::get);
+
+        manager.createRoom("friends", "friends", "");
+        assertTrue(await(5000, () -> manager.phase() == MdtbbsNetplayManager.Phase.HOSTING));
+        assertTrue(await(3000, () -> fake.joinRequestsCalls.get() >= 1));
+        int before = fake.joinRequestsCalls.get();
+
+        clock.set(TimeUnit.SECONDS.toNanos(30L));
+        awaitHeartbeatTick(fake);
+        assertEquals(before, fake.joinRequestsCalls.get(),
+                "the 60 s heartbeat throttle must still hold at 30 s");
+
+        clock.set(TimeUnit.SECONDS.toNanos(60L));
+        awaitHeartbeatTick(fake);
+        assertTrue(await(3000, () -> fake.joinRequestsCalls.get() == before + 1),
+                () -> "join request calls: " + fake.joinRequestsCalls.get());
+
+        clock.set(TimeUnit.SECONDS.toNanos(90L));
+        awaitHeartbeatTick(fake);
+        Thread.sleep(100);
+        assertEquals(before + 1, fake.joinRequestsCalls.get(),
+                "a second tick inside the window must not refresh again");
+        manager.leave();
+    }
+
+    /// Waits for the next heartbeat tick recorded by the fake.
+    private static void awaitHeartbeatTick(FakeMultiplayer fake) throws InterruptedException {
+        int beats = fake.heartbeatCalls.size();
+        assertTrue(await(3000, () -> fake.heartbeatCalls.size() > beats),
+                "the heartbeat tick must run");
+    }
+
+    /// One pending join request fixture.
+    private static JoinRequestEntry joinRequestEntry(String id, long userId, String username) {
+        return new JoinRequestEntry(id, Instant.EPOCH, Instant.EPOCH, userId, username);
+    }
+
+    /// Builds a `multiplayer.join_request.created` event.
+    private static determination.xenon.mindustry.community.MdtbbsRealtimeEvent createdEvent(
+            String requestId, String sessionId, long userId, String username) {
+        com.google.gson.JsonObject data = new com.google.gson.JsonObject();
+        data.addProperty("join_request_id", requestId);
+        data.addProperty("session_id", sessionId);
+        com.google.gson.JsonObject requester = new com.google.gson.JsonObject();
+        requester.addProperty("id", userId);
+        requester.addProperty("username", username);
+        data.add("requester", requester);
+        return new determination.xenon.mindustry.community.MdtbbsRealtimeEvent(
+                "evt-" + requestId, "multiplayer.join_request.created", 1L, data);
+    }
+
+    /// Builds the `SESSION_ALREADY_ACTIVE` failure naming a zombie session.
+    private static MdtbbsApiException sessionActiveException(String zombieId) {
+        com.google.gson.JsonObject detail = new com.google.gson.JsonObject();
+        detail.addProperty("session_id", zombieId);
+        com.google.gson.JsonArray details = new com.google.gson.JsonArray();
+        details.add(detail);
+        return new MdtbbsApiException(409, "SESSION_ALREADY_ACTIVE",
+                "the account already has an active session", false, details);
+    }
+
     /// Polls a condition until it holds or the timeout expires.
     private static boolean await(long timeoutMs, BooleanSupplier condition) throws InterruptedException {
         long deadline = System.currentTimeMillis() + timeoutMs;
@@ -487,6 +820,10 @@ public final class MdtbbsNetplayManagerTest {
         RelayAllocation relay = new RelayAllocation("rly_1", "official-eu-1",
                 "wss://relay.example/relay/v1", "cred_1", 120);
         @Nullable IOException heartbeatError;
+        @Nullable MdtbbsApiException createConflict;
+        @Nullable MdtbbsApiException leaveError;
+        final java.util.concurrent.atomic.AtomicInteger createAttempts =
+                new java.util.concurrent.atomic.AtomicInteger();
         @Nullable CountDownLatch createGate;
         final CountDownLatch createStarted = new CountDownLatch(1);
         @Nullable CountDownLatch joinGate;
@@ -505,6 +842,15 @@ public final class MdtbbsNetplayManagerTest {
         volatile String createdVisibility = "";
         volatile String createdJoinPolicy = "";
         volatile boolean createdRequireApproval;
+        volatile List<JoinRequestEntry> joinRequestEntries = List.of();
+        volatile List<JoinRequestEntry> joinRequestPage2 = List.of();
+        volatile boolean joinRequestHasMore;
+        volatile boolean failJoinRequests;
+        @Nullable CountDownLatch joinRequestsGate;
+        volatile int lastJoinRequestPage;
+        volatile int lastJoinRequestLimit = -1;
+        final java.util.concurrent.atomic.AtomicInteger joinRequestsCalls =
+                new java.util.concurrent.atomic.AtomicInteger();
         final List<String> left = new CopyOnWriteArrayList<>();
         final List<String> invited = new CopyOnWriteArrayList<>();
         final List<String> calls = new CopyOnWriteArrayList<>();
@@ -519,6 +865,7 @@ public final class MdtbbsNetplayManagerTest {
                                     String activityName, String gameVersion,
                                     boolean requireApproval) throws IOException {
             calls.add("create");
+            int attempt = createAttempts.incrementAndGet();
             createdVisibility = visibility;
             createdJoinPolicy = joinPolicy;
             createdRequireApproval = requireApproval;
@@ -531,6 +878,11 @@ public final class MdtbbsNetplayManagerTest {
                     Thread.currentThread().interrupt();
                     throw new IOException("interrupted", e);
                 }
+            }
+            MdtbbsApiException conflict = createConflict;
+            if (conflict != null && attempt == 1) {
+                createConflict = null;
+                throw conflict;
             }
             if (created == null) {
                 throw new IOException("no create result");
@@ -569,8 +921,13 @@ public final class MdtbbsNetplayManagerTest {
         }
 
         @Override
-        public void leave(String sessionId) {
+        public void leave(String sessionId) throws IOException {
             calls.add("leave:" + sessionId);
+            MdtbbsApiException error = leaveError;
+            if (error != null) {
+                leaveError = null;
+                throw error;
+            }
             left.add(sessionId);
         }
 
@@ -624,6 +981,24 @@ public final class MdtbbsNetplayManagerTest {
                 throw new IOException("first request failed");
             }
             return "jr_" + call;
+        }
+
+        @Override
+        public JoinRequestPage joinRequests(String sessionId, int page, int limit) throws IOException {
+            calls.add("join-requests:" + sessionId + ":" + page);
+            joinRequestsCalls.incrementAndGet();
+            lastJoinRequestPage = page;
+            lastJoinRequestLimit = limit;
+            if (failJoinRequests) {
+                throw new IOException("join requests unavailable");
+            }
+            boolean firstPage = page <= 1;
+            List<JoinRequestEntry> entries = firstPage ? joinRequestEntries : joinRequestPage2;
+            // Capture the page before an optional test gate so an in-flight
+            // snapshot really represents the pre-approval server state.
+            waitGate(joinRequestsGate);
+            boolean hasMore = firstPage && joinRequestHasMore;
+            return new JoinRequestPage(entries, page, joinRequestHasMore ? 2 : 1, hasMore);
         }
 
         @Override

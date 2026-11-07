@@ -44,16 +44,20 @@ import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.TextField;
+import javafx.scene.control.Tooltip;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 import org.jetbrains.annotations.NotNullByDefault;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static determination.xenon.util.i18n.I18n.i18n;
 import static determination.xenon.util.logging.Logger.LOG;
@@ -102,6 +106,22 @@ public final class MindustryNetplayPane extends BorderPane {
     private final JFXButton mdtbbsCopyAddress = FXUtils.newRaisedButton(i18n("xenon.netplay.mdtbbs.copy_address"));
     private final JFXButton mdtbbsCopyCode = FXUtils.newRaisedButton(i18n("xenon.netplay.mdtbbs.copy_code"));
     private final JFXButton mdtbbsLobbyRefresh = FXUtils.newRaisedButton(i18n("button.refresh"));
+
+    /// Reloads the server-authoritative pending join-request list.
+    private final JFXButton mdtbbsApprovalRefresh = FXUtils.newRaisedButton(i18n("button.refresh"));
+
+    /// Feedback label of the open invite dialog, or `null` when it is closed.
+    private @Nullable Label mdtbbsInviteFeedback;
+
+    /// Friend name targeted by the last invite click in the open dialog.
+    private String mdtbbsInviteTarget = "";
+
+    /// User id targeted by the last invite click in the open dialog.
+    private String mdtbbsInviteTargetId = "";
+
+    /// Retry affordance for the `SESSION_ALREADY_ACTIVE` zombie-session recovery.
+    private final JFXButton mdtbbsRetryCreate =
+            FXUtils.newRaisedButton(i18n("xenon.netplay.mdtbbs.session_active.retry"));
 
     /// Returns the process-wide EasyTier runtime, installing the shutdown
     /// hook that stops the room when the launcher exits.
@@ -153,19 +173,21 @@ public final class MindustryNetplayPane extends BorderPane {
         refreshServers();
         updateRoomStatus();
         refreshMdtbbs();
-        refreshMdtbbsLobby();
     }
 
     /// Builds the host-side join-request block.
     private VBox mdtbbsApprovalSection() {
         Label title = new Label(i18n("xenon.netplay.mdtbbs.approval.title"));
         title.setStyle("-fx-font-weight: BOLD;");
+        mdtbbsApprovalRefresh.setOnAction(e -> mdtbbs.refreshJoinRequests());
+        HBox header = new HBox(8, title, mdtbbsApprovalRefresh);
+        header.setAlignment(Pos.CENTER_LEFT);
         ScrollPane scroll = new ScrollPane(mdtbbsApprovalBox);
         scroll.setFitToWidth(true);
         scroll.setPrefHeight(120);
         scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
         FXUtils.smoothScrolling(scroll);
-        return new VBox(4, title, scroll);
+        return new VBox(4, header, scroll);
     }
 
     /// Renders the pending join requests of the hosted room.
@@ -251,7 +273,10 @@ public final class MindustryNetplayPane extends BorderPane {
         mdtbbsLobbyStatus.setText(i18n("message.doing"));
         Schedulers.io().execute(() -> {
             try {
-                SessionPage page = CommunityServices.multiplayer().sessions(1, 20);
+                // Cache the advertised limits before the first page size is
+                // chosen, so lobbyPageSize() reflects the server values.
+                mdtbbs.preloadCapabilities();
+                SessionPage page = CommunityServices.multiplayer().sessions(1, mdtbbs.lobbyPageSize());
                 Platform.runLater(() -> showMdtbbsLobby(page));
             } catch (IOException e) {
                 LOG.warning("Cannot load the MDTBBS public lobby", e);
@@ -277,28 +302,59 @@ public final class MindustryNetplayPane extends BorderPane {
         }
     }
 
-    /// Builds one lobby row with a join action.
+    /// Builds one lobby row with the join action the server snapshot allows.
+    ///
+    /// A session is joined directly, joined through a host approval request, or
+    /// shown as unavailable when the server refused both. Blocked rows append
+    /// the localized reason so the raw protocol code never reaches the player.
     private AdvancedListItem mdtbbsLobbyItem(Session session) {
         AdvancedListItem item = new AdvancedListItem();
         String name = session.activityName().isBlank() ? session.id() : session.activityName();
         item.setTitle(name);
-        item.setSubtitle(i18n("xenon.netplay.mdtbbs.lobby.players",
+        boolean direct = session.joinable() && !session.requireApproval();
+        // An explicit `can_request_join:false` must win over a joinable room
+        // that still requires approval.
+        boolean request = session.canRequestJoin();
+        boolean blocked = !direct && !request;
+        String subtitle = i18n("xenon.netplay.mdtbbs.lobby.players",
                 session.currentPlayers(), session.maxPlayers())
                 + "  ·  " + sessionVisibilityLabel(session.visibility())
-                + (session.gameVersion().isBlank() ? "" : "  ·  " + session.gameVersion()));
-        JFXButton join = FXUtils.newRaisedButton(session.requireApproval()
-                ? i18n("xenon.netplay.mdtbbs.lobby.request")
-                : i18n("xenon.netplay.mdtbbs.lobby.join"));
-        join.setDisable(mdtbbs.hasSession() || mdtbbs.awaitingApproval());
-        join.setOnAction(e -> {
-            if (session.requireApproval()) {
-                mdtbbs.requestJoin(session.id());
-            } else {
-                mdtbbs.joinByCode(session.id());
-            }
-        });
+                + (session.gameVersion().isBlank() ? "" : "  ·  " + session.gameVersion());
+        @Nullable String blockedReason = session.blockedReason();
+        if (blocked && blockedReason != null && !blockedReason.isBlank()) {
+            subtitle = subtitle + "  ·  " + blockedReasonLabel(blockedReason);
+        }
+        item.setSubtitle(subtitle);
+        JFXButton join;
+        if (direct) {
+            join = FXUtils.newRaisedButton(i18n("xenon.netplay.mdtbbs.lobby.join"));
+            join.setOnAction(e -> mdtbbs.joinByCode(session.id()));
+        } else if (request) {
+            join = FXUtils.newRaisedButton(i18n("xenon.netplay.mdtbbs.lobby.request"));
+            join.setOnAction(e -> mdtbbs.requestJoin(session.id()));
+        } else {
+            join = FXUtils.newRaisedButton(i18n("xenon.netplay.mdtbbs.lobby.join.blocked"));
+        }
+        join.setDisable(blocked || mdtbbs.hasSession() || mdtbbs.awaitingApproval());
         item.setRightGraphic(join);
         return item;
+    }
+
+    /// Maps a lobby `blocked_reason` code to a localized explanation.
+    ///
+    /// Unknown and blank codes fall back to a generic explanation, so a raw
+    /// protocol value is never shown to the player.
+    private static String blockedReasonLabel(@Nullable String reason) {
+        String code = reason == null ? "" : reason.trim().toUpperCase(java.util.Locale.ROOT);
+        return switch (code) {
+            case "ALREADY_IN_SESSION" -> i18n("xenon.netplay.mdtbbs.lobby.blocked.ALREADY_IN_SESSION");
+            case "PRIVACY_DENIED" -> i18n("xenon.netplay.mdtbbs.lobby.blocked.PRIVACY_DENIED");
+            case "SESSION_NOT_JOINABLE" -> i18n("xenon.netplay.mdtbbs.lobby.blocked.SESSION_NOT_JOINABLE");
+            case "FRIEND_REQUIRED" -> i18n("xenon.netplay.mdtbbs.lobby.blocked.FRIEND_REQUIRED");
+            case "SESSION_FULL" -> i18n("xenon.netplay.mdtbbs.lobby.blocked.SESSION_FULL");
+            case "JOIN_REQUEST_REQUIRED" -> i18n("xenon.netplay.mdtbbs.lobby.blocked.JOIN_REQUEST_REQUIRED");
+            default -> i18n("xenon.netplay.mdtbbs.lobby.blocked.unknown");
+        };
     }
 
     /// Maps a visibility value to its localized label.
@@ -354,6 +410,9 @@ public final class MindustryNetplayPane extends BorderPane {
         invite.setOnAction(e -> openInviteDialog());
         JFXButton leave = mdtbbsLeave;
         leave.setOnAction(e -> mdtbbs.leave());
+        mdtbbsRetryCreate.setOnAction(e -> mdtbbs.retryCreateRoom());
+        mdtbbsRetryCreate.setTooltip(
+                new Tooltip(i18n("xenon.netplay.mdtbbs.session_active.body")));
         mdtbbsCopyCode.setOnAction(e -> {
             String code = mdtbbs.joinCode();
             if (!code.isBlank()) {
@@ -390,8 +449,11 @@ public final class MindustryNetplayPane extends BorderPane {
         hint.setWrapText(true);
         mdtbbsStatus.setWrapText(true);
         mdtbbsAddress.setWrapText(true);
+        HBox statusRow = new HBox(8, mdtbbsStatus, mdtbbsRetryCreate);
+        statusRow.setAlignment(Pos.CENTER_LEFT);
+        HBox.setHgrow(mdtbbsStatus, Priority.ALWAYS);
 
-        return new VBox(6, title, axisRow, createRow, joinRow, mdtbbsStatus, mdtbbsAddress, hint);
+        return new VBox(6, title, axisRow, createRow, joinRow, statusRow, mdtbbsAddress, hint);
     }
 
     /// Creates a room from the two orthogonal choices.
@@ -418,6 +480,12 @@ public final class MindustryNetplayPane extends BorderPane {
         boolean busy = working || mdtbbs.awaitingApproval();
         boolean attached = mdtbbs.hasSession();
         boolean ready = mdtbbs.isLoggedIn();
+        boolean sessionActive = mdtbbs.phase() == MdtbbsNetplayManager.Phase.ERROR
+                && "SESSION_ALREADY_ACTIVE".equals(mdtbbs.errorCode());
+        boolean canRetryCreate = sessionActive
+                && mdtbbs.conflictSessionId() != null
+                && !mdtbbs.hasSession();
+        @Nullable String detail = mdtbbs.statusDetail();
         if (ready && !lobbyLoaded) {
             refreshMdtbbsLobby();
         }
@@ -428,7 +496,10 @@ public final class MindustryNetplayPane extends BorderPane {
         mdtbbsCopyAddress.setDisable(mdtbbs.localAddress().isBlank());
         mdtbbsCopyCode.setDisable(mdtbbs.joinCode().isBlank());
         mdtbbsDefaultClient.setDisable(!ready || busy);
+        mdtbbsApprovalRefresh.setDisable(!mdtbbs.hosting());
+        mdtbbsRetryCreate.setDisable(!canRetryCreate);
         refreshApprovals();
+        refreshInviteFeedback();
         if (!ready) {
             mdtbbsStatus.setText(i18n("xenon.netplay.mdtbbs.login"));
             mdtbbsAddress.setText("");
@@ -446,8 +517,11 @@ public final class MindustryNetplayPane extends BorderPane {
                     ? i18n("xenon.netplay.mdtbbs.lobby.waiting")
                     : i18n("xenon.netplay.mdtbbs.waiting"));
             case GUEST_READY -> mdtbbsStatus.setText(i18n("xenon.netplay.mdtbbs.ready"));
-            case ERROR -> mdtbbsStatus.setText(i18n("xenon.netplay.mdtbbs.failed",
-                    mdtbbsErrorText(mdtbbs.errorCode(), mdtbbs.statusDetail())));
+            case ERROR -> mdtbbsStatus.setText(sessionActive
+                    ? i18n("xenon.netplay.mdtbbs.error.session_active",
+                            detail == null ? "" : detail)
+                    : i18n("xenon.netplay.mdtbbs.failed",
+                            mdtbbsErrorText(mdtbbs.errorCode(), detail)));
             default -> mdtbbsStatus.setText(i18n("xenon.netplay.mdtbbs.idle"));
         }
         mdtbbsAddress.setText(mdtbbs.localAddress().isBlank()
@@ -465,9 +539,12 @@ public final class MindustryNetplayPane extends BorderPane {
             case "JOIN_CODE_INVALID" -> "xenon.netplay.mdtbbs.error.code";
             case "JOIN_REQUEST_REQUIRED" -> "xenon.netplay.mdtbbs.error.approval";
             case "SESSION_FULL" -> "xenon.netplay.mdtbbs.error.full";
+            case "SESSION_ALREADY_ACTIVE" -> "xenon.netplay.mdtbbs.error.session_active";
             case "SESSION_NOT_FOUND", "SESSION_EXPIRED", "SESSION_CLOSED" -> "xenon.netplay.mdtbbs.error.missing";
             case "SESSION_NOT_JOINABLE", "PRIVACY_DENIED", "FRIEND_REQUIRED" -> "xenon.netplay.mdtbbs.error.closed";
             case "RELAY_UNAVAILABLE", "RELAY_LIMIT_REACHED", "RELAY_ERROR" -> "xenon.netplay.mdtbbs.error.relay";
+            case "INVITE_LIMIT_REACHED" -> "xenon.netplay.mdtbbs.error.invite_limit";
+            case "PRESENCE_CONNECTION_LIMIT_REACHED" -> "xenon.netplay.mdtbbs.error.presence_limit";
             case "JOIN_INTENT_CLIENT_MISMATCH" -> "xenon.netplay.mdtbbs.error.client";
             case "JOIN_INTENT_EXPIRED", "JOIN_INTENT_RECOVERY_EXPIRED", "JOIN_INTENT_INVALID" -> "xenon.netplay.mdtbbs.error.intent";
             case "PEER_EXPIRED", "PEER_RESUME_INVALID", "PEER_UNAVAILABLE" -> "xenon.netplay.mdtbbs.error.peer";
@@ -507,11 +584,43 @@ public final class MindustryNetplayPane extends BorderPane {
         });
     }
 
-    /// Shows the friend list with invite buttons.
+    /// Shows the friend list with invite buttons and a non-friend user search.
+    ///
+    /// The dialog stays open after an invite so several friends can be invited
+    /// at once. Each attempt is counted conservatively against the advertised
+    /// pending-invite limit, and an asynchronous server failure is surfaced in
+    /// the dialog by [#refreshInviteFeedback()]. Search results reuse the same
+    /// invite buttons and feedback label as the friend rows.
     private void showInviteDialog(List<MdtbbsSocialClient.FriendPresence> friends) {
         JFXDialogLayout layout = new JFXDialogLayout();
         layout.setHeading(new Label(i18n("xenon.netplay.mdtbbs.invite.title")));
         VBox body = new VBox(6);
+        long inviteLimit = mdtbbs.maxPendingInvites();
+        Label feedback = new Label();
+        feedback.setWrapText(true);
+        Label limitNotice = new Label();
+        limitNotice.setWrapText(true);
+        mdtbbsInviteFeedback = feedback;
+        mdtbbsInviteTarget = "";
+        mdtbbsInviteTargetId = "";
+        List<JFXButton> inviteButtons = new ArrayList<>();
+        AtomicInteger attempts = new AtomicInteger();
+        AtomicInteger searchToken = new AtomicInteger();
+
+        TextField searchField = new TextField();
+        searchField.setPromptText(i18n("xenon.netplay.mdtbbs.invite.search.prompt"));
+        FXUtils.setLimitWidth(searchField, 240);
+        JFXButton search = FXUtils.newRaisedButton(
+                i18n("xenon.netplay.mdtbbs.invite.search.action"));
+        VBox searchResults = new VBox(2);
+        HBox searchRow = new HBox(6, searchField, search);
+        searchRow.setAlignment(Pos.CENTER_LEFT);
+        search.setOnAction(e -> searchMdtbbsUsers(searchField.getText(), searchResults,
+                inviteLimit, feedback, limitNotice, inviteButtons, attempts, searchToken));
+        searchField.setOnAction(e -> searchMdtbbsUsers(searchField.getText(), searchResults,
+                inviteLimit, feedback, limitNotice, inviteButtons, attempts, searchToken));
+        body.getChildren().addAll(searchRow, searchResults);
+
         if (friends.isEmpty()) {
             body.getChildren().add(new Label(i18n("xenon.netplay.mdtbbs.invite.empty")));
         }
@@ -519,13 +628,15 @@ public final class MindustryNetplayPane extends BorderPane {
             AdvancedListItem item = new AdvancedListItem();
             item.setTitle(friend.username());
             item.setSubtitle(friend.status());
-            JFXButton invite = FXUtils.newRaisedButton(i18n("xenon.netplay.mdtbbs.invite.send"));
-            invite.setOnAction(e -> {
-                mdtbbs.inviteFriend(friend.userId());
-                layout.fireEvent(new determination.xenon.ui.construct.DialogCloseEvent());
-            });
-            item.setRightGraphic(invite);
+            item.setRightGraphic(mdtbbsInviteButton(friend.username(), friend.userId(),
+                    inviteLimit, feedback, limitNotice, inviteButtons, attempts));
             body.getChildren().add(item);
+        }
+        // Search results can also send invites, so the shared feedback stays
+        // visible even when the friend list is empty.
+        body.getChildren().add(feedback);
+        if (inviteLimit > 0) {
+            body.getChildren().add(limitNotice);
         }
         ScrollPane scroll = new ScrollPane(body);
         scroll.setFitToWidth(true);
@@ -536,7 +647,121 @@ public final class MindustryNetplayPane extends BorderPane {
         close.setOnAction(e -> layout.fireEvent(
                 new determination.xenon.ui.construct.DialogCloseEvent()));
         layout.setActions(close);
+        layout.addEventHandler(determination.xenon.ui.construct.DialogCloseEvent.CLOSE,
+                event -> {
+                    mdtbbsInviteFeedback = null;
+                    mdtbbsInviteTarget = "";
+                    mdtbbsInviteTargetId = "";
+                });
         Controllers.dialog(layout);
+    }
+
+    /// Creates one invite button bound to the dialog's shared limit state.
+    private JFXButton mdtbbsInviteButton(String username, long userId, long inviteLimit,
+                                         Label feedback, Label limitNotice,
+                                         List<JFXButton> inviteButtons, AtomicInteger attempts) {
+        JFXButton invite = FXUtils.newRaisedButton(i18n("xenon.netplay.mdtbbs.invite.send"));
+        invite.setOnAction(e -> {
+            mdtbbsInviteTarget = username;
+            mdtbbsInviteTargetId = Long.toString(userId);
+            feedback.setText(i18n("xenon.netplay.mdtbbs.invite.sent", username));
+            mdtbbs.inviteFriend(userId);
+            int count = attempts.incrementAndGet();
+            if (inviteLimit > 0 && count >= inviteLimit) {
+                for (JFXButton button : inviteButtons) {
+                    button.setDisable(true);
+                }
+                limitNotice.setText(i18n("xenon.netplay.mdtbbs.invite.limit"));
+            }
+        });
+        if (inviteLimit > 0 && attempts.get() >= inviteLimit) {
+            invite.setDisable(true);
+        }
+        inviteButtons.add(invite);
+        return invite;
+    }
+
+    /// Runs one non-friend user search and replaces only the result rows.
+    ///
+    /// A blank query clears the previous results without a request. Each call
+    /// takes a new token so an older, slower response cannot overwrite newer
+    /// results.
+    private void searchMdtbbsUsers(@Nullable String query, VBox results, long inviteLimit,
+                                   Label feedback, Label limitNotice,
+                                   List<JFXButton> inviteButtons, AtomicInteger attempts,
+                                   AtomicInteger searchToken) {
+        int token = searchToken.incrementAndGet();
+        String text = query == null ? "" : query.trim();
+        results.getChildren().clear();
+        if (text.isEmpty()) {
+            return;
+        }
+        Schedulers.io().execute(() -> {
+            try {
+                List<MdtbbsSocialClient.UserSummary> users =
+                        CommunityServices.social().searchUsers(text, 20);
+                Platform.runLater(() -> {
+                    if (searchToken.get() != token) {
+                        return;
+                    }
+                    results.getChildren().clear();
+                    if (users.isEmpty()) {
+                        results.getChildren().add(new Label(
+                                i18n("xenon.netplay.mdtbbs.invite.search.empty")));
+                        return;
+                    }
+                    for (MdtbbsSocialClient.UserSummary user : users) {
+                        AdvancedListItem item = new AdvancedListItem();
+                        item.setTitle(user.username());
+                        item.setSubtitle(i18n("xenon.netplay.mdtbbs.invite.search.non_friend"));
+                        item.setRightGraphic(mdtbbsInviteButton(user.username(), user.id(),
+                                inviteLimit, feedback, limitNotice, inviteButtons, attempts));
+                        results.getChildren().add(item);
+                    }
+                });
+            } catch (IOException e) {
+                LOG.warning("Cannot search MDTBBS users", e);
+                Platform.runLater(() -> {
+                    if (searchToken.get() != token) {
+                        return;
+                    }
+                    results.getChildren().clear();
+                    results.getChildren().add(new Label(
+                            i18n("xenon.netplay.mdtbbs.invite.search.failed",
+                                    MdtbbsMessages.describe(e))));
+                });
+            }
+        });
+    }
+
+    /// Surfaces an asynchronous invite failure in the open invite dialog.
+    ///
+    /// Runs from the manager state listener on the FX thread; a successful
+    /// invite leaves the optimistic "sent" text in place.
+    private void refreshInviteFeedback() {
+        @Nullable Label feedback = mdtbbsInviteFeedback;
+        if (feedback == null || mdtbbsInviteTarget.isBlank()) {
+            return;
+        }
+        @Nullable String error = mdtbbs.lastInviteError();
+        if (error == null) {
+            return;
+        }
+        if (!mdtbbsInviteTargetId.equals(mdtbbs.lastInviteTarget())) {
+            // The failure belongs to an earlier attempt for another user;
+            // keep the neutral "sent" text for the current target.
+            return;
+        }
+        feedback.setText(i18n("xenon.netplay.mdtbbs.invite.failed",
+                mdtbbsInviteTarget, mdtbbsInviteErrorLabel(error)));
+    }
+
+    /// Maps a stable invite failure code to readable text.
+    private static String mdtbbsInviteErrorLabel(String code) {
+        if ("INVITE_LIMIT_REACHED".equals(code)) {
+            return i18n("xenon.netplay.mdtbbs.invite.limit");
+        }
+        return mdtbbsErrorText(code, null);
     }
 
     /// Wraps one list section with a title and a fixed-height scroll area.

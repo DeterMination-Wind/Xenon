@@ -20,6 +20,7 @@ package determination.xenon.mindustry.community;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import determination.xenon.mindustry.community.MdtbbsSocialClient.FriendPresence;
+import determination.xenon.mindustry.community.MdtbbsSocialClient.UserSummary;
 import org.jetbrains.annotations.NotNullByDefault;
 import org.junit.jupiter.api.Test;
 
@@ -32,6 +33,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /// Tests friend presence parsing against the current MDTBBS social shape.
@@ -71,11 +73,51 @@ public final class MdtbbsSocialClientTest {
         }
     }
 
+    /// User search parses ids, names and optional avatars.
+    @Test
+    public void searchUsersParsesResults() throws Exception {
+        try (SocialServer server = SocialServer.start()) {
+            List<UserSummary> users = server.client().searchUsers("alice", 2);
+
+            assertEquals(2, users.size());
+            assertEquals(7L, users.get(0).id());
+            assertEquals("alice", users.get(0).username());
+            assertEquals("https://example.invalid/a.png", users.get(0).avatarUrl());
+            assertEquals(8L, users.get(1).id());
+            assertEquals("bob", users.get(1).username());
+            assertEquals("", users.get(1).avatarUrl());
+        }
+    }
+
+    /// A blank search never reaches the server.
+    @Test
+    public void searchUsersRejectsBlankQuery() throws Exception {
+        try (SocialServer server = SocialServer.start()) {
+            assertThrows(IllegalArgumentException.class,
+                    () -> server.client().searchUsers("   ", 10));
+
+            assertEquals("", server.lastQuery);
+        }
+    }
+
+    /// User search sends the query and the requested limit.
+    @Test
+    public void searchUsersSendsQueryAndLimit() throws Exception {
+        try (SocialServer server = SocialServer.start()) {
+            server.client().searchUsers("alice", 7);
+
+            assertTrue(server.sawQuery("q=alice"), () -> "query was " + server.lastQuery);
+            assertTrue(server.sawQuery("limit=7"), () -> "query was " + server.lastQuery);
+        }
+    }
+
     /// Local fixture server serving the social routes.
     private static final class SocialServer implements AutoCloseable {
         private final HttpServer server;
         /// When set, the presence route answers with the legacy flat shape.
         volatile boolean legacy;
+        /// Raw query string of the most recent request.
+        volatile String lastQuery = "";
 
         private SocialServer(HttpServer server) {
             this.server = server;
@@ -97,12 +139,24 @@ public final class MdtbbsSocialClientTest {
             return new MdtbbsSocialClient(api);
         }
 
+        /// Whether the most recent request query contained the fragment.
+        boolean sawQuery(String fragment) {
+            return lastQuery.contains(fragment);
+        }
+
         private void handle(HttpExchange exchange) throws IOException {
             String path = exchange.getRequestURI().getPath();
+            String query = exchange.getRequestURI().getRawQuery();
+            lastQuery = query == null ? "" : query;
             exchange.getRequestBody().readAllBytes();
-            String body = path.equals("/api/v1/social/friends/presence")
-                    ? (legacy ? LEGACY_JSON : AGGREGATE_JSON)
-                    : "{\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"missing\"}}";
+            String body;
+            if (path.equals("/api/v1/social/friends/presence")) {
+                body = legacy ? LEGACY_JSON : AGGREGATE_JSON;
+            } else if (path.equals("/api/v1/users/search")) {
+                body = SEARCH_JSON;
+            } else {
+                body = "{\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"missing\"}}";
+            }
             byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().add("Content-Type", "application/json");
             exchange.sendResponseHeaders(body.contains("\"error\"") ? 404 : 200, bytes.length);
@@ -135,5 +189,12 @@ public final class MdtbbsSocialClientTest {
               "user":{"id":9,"username":"friend"},
               "status":"idle"
             }]}
+            """;
+
+    private static final String SEARCH_JSON = """
+            {"data":[
+              {"id":7,"username":"alice","avatar_url":"https://example.invalid/a.png"},
+              {"id":8,"username":"bob","avatar_url":null}
+            ]}
             """;
 }

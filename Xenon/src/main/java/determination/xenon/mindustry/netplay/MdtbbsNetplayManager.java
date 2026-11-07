@@ -24,6 +24,8 @@ import determination.xenon.mindustry.community.MdtbbsJson;
 import determination.xenon.mindustry.community.MdtbbsMultiplayerApi;
 import determination.xenon.mindustry.community.MdtbbsMultiplayerClient;
 import determination.xenon.mindustry.community.MdtbbsMultiplayerClient.Capabilities;
+import determination.xenon.mindustry.community.MdtbbsMultiplayerClient.JoinRequestEntry;
+import determination.xenon.mindustry.community.MdtbbsMultiplayerClient.JoinRequestPage;
 import determination.xenon.mindustry.community.MdtbbsMultiplayerClient.Joined;
 import determination.xenon.mindustry.community.MdtbbsMultiplayerClient.Peer;
 import determination.xenon.mindustry.community.MdtbbsMultiplayerClient.RelayAllocation;
@@ -38,10 +40,14 @@ import org.jetbrains.annotations.NotNullByDefault;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -51,6 +57,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.IntConsumer;
+import java.util.function.LongSupplier;
 
 /// Orchestrates one MDTBBS multiplayer session and its relay tunnel.
 ///
@@ -74,6 +81,19 @@ public final class MdtbbsNetplayManager {
 
     /// Default peer heartbeat interval required by the platform.
     private static final long DEFAULT_HEARTBEAT_SECONDS = 30L;
+
+    /// How long a locally inserted join request survives a server snapshot
+    /// that has not published it yet.
+    private static final long JOIN_REQUEST_GRACE_NANOS = TimeUnit.SECONDS.toNanos(10L);
+
+    /// Minimum interval between heartbeat-driven join-request refreshes.
+    private static final long JOIN_REQUEST_REFRESH_NANOS = TimeUnit.SECONDS.toNanos(60L);
+
+    /// Minimum interval between realtime-event join-request refreshes.
+    private static final long JOIN_REQUEST_EVENT_THROTTLE_NANOS = TimeUnit.SECONDS.toNanos(2L);
+
+    /// Upper bound of join-request pages merged into one authoritative snapshot.
+    private static final int JOIN_REQUEST_MAX_PAGES = 3;
 
     /// Creates a relay tunnel; injectable so the manager can be tested.
     @FunctionalInterface
@@ -127,12 +147,47 @@ public final class MdtbbsNetplayManager {
     public record JoinRequest(String id, String sessionId, long userId, String username) {
     }
 
+    /// Normalised parameters of one create request, retained so a stale
+    /// `SESSION_ALREADY_ACTIVE` failure can be retried without asking the UI.
+    ///
+    /// @param visibility      normalised `visibility` value
+    /// @param joinPolicy      normalised `join_policy` value
+    /// @param requireApproval whether the host must approve join requests
+    /// @param gameVersion     version text shown to friends, or empty
+    private record CreateRequest(String visibility, String joinPolicy,
+                                 boolean requireApproval, String gameVersion) {
+    }
+
     private final BooleanSupplier loggedIn;
     private final BooleanSupplier lanDiscovery;
     private final MdtbbsMultiplayerApi multiplayer;
     private final TunnelFactory tunnelFactory;
     private final @Nullable MdtbbsRealtimeClient realtime;
     private final List<JoinRequest> joinRequests = new CopyOnWriteArrayList<>();
+
+    /// Grace deadlines of locally inserted join requests, keyed by id.
+    ///
+    /// Values are `System.nanoTime()` deadlines, so wall-clock steps cannot
+    /// extend or shorten the grace window.
+    private final ConcurrentHashMap<String, Long> joinRequestSeenNanos = new ConcurrentHashMap<>();
+
+    /// Serialises the local insert with the server-snapshot merge, so a request
+    /// that arrives while a refresh is in flight cannot be dropped.
+    private final Object joinRequestLock = new Object();
+
+    /// Monotonic refresh counter; only the newest issued snapshot is applied,
+    /// so a slow older refresh cannot overwrite a newer result.
+    private final AtomicLong joinRequestRefreshSequence = new AtomicLong();
+
+    /// Nano-time source of the join-request grace window and refresh throttle.
+    private volatile LongSupplier nanoClock = System::nanoTime;
+
+    /// Nano timestamp of the last join-request refresh that was scheduled.
+    private volatile long lastJoinRequestRefreshNanos;
+
+    /// Nano timestamp of the last realtime-event join-request refresh.
+    private volatile long lastJoinRequestEventRefreshNanos;
+
     private volatile boolean realtimeStarted;
     private final long heartbeatSeconds;
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(runnable -> {
@@ -177,6 +232,21 @@ public final class MdtbbsNetplayManager {
     private volatile @Nullable Capabilities capabilities;
     private volatile @Nullable MdtbbsRelayTunnel tunnel;
     private volatile @Nullable ScheduledFuture<?> heartbeat;
+
+    /// Last create request, replayed by [#retryCreateRoom()].
+    private volatile @Nullable CreateRequest lastCreateRequest;
+
+    /// Zombie session named by the last `SESSION_ALREADY_ACTIVE` failure, or `null`.
+    private volatile @Nullable String conflictSessionId;
+
+    /// Stable code of the last failed invite attempt, or `null`.
+    ///
+    /// Invite failures are published here instead of moving a live hosted
+    /// session into [`Phase#ERROR`].
+    private volatile @Nullable String lastInviteError;
+
+    /// Target user id of [#lastInviteError], or `null`.
+    private volatile @Nullable String lastInviteTarget;
 
     /// Creates the manager over the shared account coordinator.
     ///
@@ -325,6 +395,92 @@ public final class MdtbbsNetplayManager {
         return List.copyOf(joinRequests);
     }
 
+    /// Replaces the pending join-request list with the server snapshot.
+    ///
+    /// Only a host with an attached session refreshes; guests and idle
+    /// managers ignore the call. Up to three pages are merged so the snapshot
+    /// is complete, and a locally inserted request survives the snapshot for a
+    /// short grace window while the server catches up. A failed refresh keeps
+    /// the previous list instead of clearing it.
+    public void refreshJoinRequests() {
+        if (!hosting) {
+            return;
+        }
+        String id = sessionId;
+        if (id.isEmpty()) {
+            return;
+        }
+        long token = generation.get();
+        int pageSize = Math.max(1, Math.min(50, lobbyPageSize()));
+        long sequence = joinRequestRefreshSequence.incrementAndGet();
+        lastJoinRequestRefreshNanos = nanoClock.getAsLong();
+        Schedulers.io().execute(() -> {
+            List<JoinRequestEntry> entries = new ArrayList<>();
+            int fetched = 0;
+            int pageNumber = 1;
+            while (fetched < JOIN_REQUEST_MAX_PAGES) {
+                JoinRequestPage page;
+                try {
+                    page = multiplayer.joinRequests(id, pageNumber, pageSize);
+                } catch (IOException | RuntimeException e) {
+                    Logger.LOG.info("MDTBBS join request refresh failed: " + e.getMessage());
+                    // A failed fetch must not suppress the next heartbeat retry
+                    // for a whole minute; rewind the throttle instead.
+                    lastJoinRequestRefreshNanos =
+                            nanoClock.getAsLong() - JOIN_REQUEST_REFRESH_NANOS;
+                    return;
+                }
+                entries.addAll(page.requests());
+                fetched++;
+                if (!page.hasMore()) {
+                    break;
+                }
+                pageNumber++;
+            }
+            if (isStale(token) || !hosting || !id.equals(sessionId)) {
+                return;
+            }
+            long now = nanoClock.getAsLong();
+            synchronized (joinRequestLock) {
+                if (joinRequestRefreshSequence.get() != sequence) {
+                    // A newer snapshot was issued while this one was in flight.
+                    return;
+                }
+                Set<String> serverIds = new HashSet<>();
+                List<JoinRequest> merged = new ArrayList<>(entries.size());
+                for (JoinRequestEntry entry : entries) {
+                    if (entry.id().isBlank() || !serverIds.add(entry.id())) {
+                        continue;
+                    }
+                    merged.add(new JoinRequest(entry.id(), id, entry.userId(), entry.username()));
+                }
+                for (JoinRequest local : joinRequests) {
+                    if (!local.sessionId().equals(id) || serverIds.contains(local.id())) {
+                        continue;
+                    }
+                    @Nullable Long deadline = joinRequestSeenNanos.get(local.id());
+                    if (deadline != null && now - deadline < 0L) {
+                        merged.add(local);
+                    }
+                }
+                joinRequestSeenNanos.values().removeIf(deadline -> now - deadline >= 0L);
+                joinRequests.clear();
+                joinRequests.addAll(merged);
+            }
+            notifyStateChange();
+        });
+    }
+
+    /// Replaces the nano-time source used by the join-request grace window and
+    /// the heartbeat refresh throttle.
+    ///
+    /// Package-private test hook; passing `null` restores `System.nanoTime()`.
+    ///
+    /// @param source nano-time supplier, or `null` for the system clock
+    void setNanoTimeSource(@Nullable LongSupplier source) {
+        nanoClock = source == null ? System::nanoTime : source;
+    }
+
     /// Whether the account is logged in.
     public boolean isLoggedIn() {
         return loggedIn.getAsBoolean();
@@ -335,12 +491,85 @@ public final class MdtbbsNetplayManager {
         return capabilities;
     }
 
+    /// Probes and caches the multiplayer capabilities before the first lobby load.
+    ///
+    /// Blocks on the HTTP call, so callers must run it off the FX thread. The
+    /// cached snapshot is kept; failures are logged and the documented
+    /// defaults stay in place so the lobby keeps working.
+    public void preloadCapabilities() {
+        if (capabilities != null) {
+            return;
+        }
+        try {
+            capabilities = multiplayer.capabilities();
+            notifyStateChange();
+        } catch (IOException | RuntimeException e) {
+            Logger.LOG.info("MDTBBS capability preload failed: " + e.getMessage());
+        }
+    }
+
+    /// Zombie session id named by the last `SESSION_ALREADY_ACTIVE` failure.
+    ///
+    /// The id is kept after a successful recovery so the UI can still explain
+    /// which stale session was closed.
+    ///
+    /// @return the session id, or `null` when no conflict happened yet
+    public @Nullable String conflictSessionId() {
+        return conflictSessionId;
+    }
+
+    /// Stable code of the last failed invite attempt, or `null`.
+    ///
+    /// A failed invite never moves a live hosted session into
+    /// [`Phase#ERROR`]; the invite dialog reads this code instead.
+    ///
+    /// @return the failure code, or `null` when the last invite succeeded
+    public @Nullable String lastInviteError() {
+        return lastInviteError;
+    }
+
+    /// Target user id of the last failed invite attempt, or `null`.
+    ///
+    /// Stored as a decimal string so the invite dialog can reject a failure
+    /// that belongs to an earlier attempt for another user.
+    ///
+    /// @return the target user id, or `null` when no invite failed
+    public @Nullable String lastInviteTarget() {
+        return lastInviteTarget;
+    }
+
+    /// Page size requested for the public lobby snapshot.
+    ///
+    /// Uses the advertised `max_lobby_page_size` when the server reported a
+    /// positive value, otherwise the fixed default of `20`.
+    ///
+    /// @return the lobby page size
+    public int lobbyPageSize() {
+        Capabilities caps = capabilities;
+        long limit = caps == null ? 0L : caps.limits().maxLobbyPageSize();
+        return limit > 0 ? (int) Math.min(20L, limit) : 20;
+    }
+
+    /// Advertised limit of pending invites per sender.
+    ///
+    /// @return the limit, or `0` when the server did not advertise one
+    public long maxPendingInvites() {
+        Capabilities caps = capabilities;
+        return caps == null ? 0L : caps.limits().maxPendingInvitesPerSender();
+    }
+
     /// Creates a hosted session and starts the owner relay bridge.
     ///
     /// Deprecated enum values are normalised instead of being sent to the
     /// server: `unlisted` becomes `private`, `open` becomes `public` and
     /// `request` becomes `friends` plus host approval. `invite_only` always
     /// clears the approval flag because it has no request path.
+    ///
+    /// When the account still owns a zombie session from an earlier crash or
+    /// another device, the server refuses with `SESSION_ALREADY_ACTIVE`; the
+    /// named session is left and the create is retried exactly once. A failed
+    /// cleanup surfaces as [#errorCode()] `SESSION_ALREADY_ACTIVE` with the
+    /// zombie id in [#statusDetail()].
     ///
     /// @param visibility      `private`, `friends` or `public`
     /// @param joinPolicy      `invite_only`, `friends` or `public`
@@ -354,6 +583,40 @@ public final class MdtbbsNetplayManager {
         String requestedJoin = normalizeJoinPolicy(joinPolicy);
         String requestedVisibility = normalizeVisibility(visibility);
         boolean approval = normalizeApproval(requestedJoin, requireApproval);
+        CreateRequest request = new CreateRequest(requestedVisibility, requestedJoin,
+                approval, gameVersion == null ? "" : gameVersion);
+        lastCreateRequest = request;
+        startCreate(request);
+    }
+
+    /// Creates a hosted session without an approval step.
+    ///
+    /// @param visibility  `private`, `friends` or `public`
+    /// @param joinPolicy  `invite_only`, `friends` or `public`
+    /// @param gameVersion version text shown to friends, or empty
+    public void createRoom(String visibility, String joinPolicy, String gameVersion) {
+        createRoom(visibility, joinPolicy, false, gameVersion);
+    }
+
+    /// Replays the last [#createRoom(String, String, boolean, String)] request.
+    ///
+    /// Intended only for the `SESSION_ALREADY_ACTIVE` recovery affordance: the
+    /// call is a no-op unless the manager is in that exact error state, no
+    /// session is attached and a create request was stored. The request keeps
+    /// the same one-shot zombie cleanup rule.
+    public void retryCreateRoom() {
+        CreateRequest request = lastCreateRequest;
+        if (request == null
+                || phase != Phase.ERROR
+                || !"SESSION_ALREADY_ACTIVE".equals(errorCode)
+                || hasSession()) {
+            return;
+        }
+        startCreate(request);
+    }
+
+    /// Runs one stored create request, including the one-shot zombie recovery.
+    private void startCreate(CreateRequest request) {
         long token;
         String previous;
         synchronized (approvalLock) {
@@ -366,15 +629,22 @@ public final class MdtbbsNetplayManager {
                 awaitCleanup();
                 leaveQuietly(previous);
                 requireCapabilities();
-                Joined joined = multiplayer.createSession(requestedVisibility, requestedJoin, 8,
-                        "Mindustry", gameVersion, approval);
-                if (isStale(token)) {
+                Joined joined;
+                try {
+                    joined = requestCreate(request);
+                } catch (MdtbbsApiException conflict) {
+                    joined = recoverConflict(token, request, conflict);
+                    if (joined == null) {
+                        return;
+                    }
+                }
+                if (!attachIfCurrent(token, joined, true)) {
                     // The user left while the session was being created; do not
                     // leave an orphan session behind.
                     enqueueCleanup(joined.session().id());
                     return;
                 }
-                attach(joined, true);
+                refreshJoinRequests();
                 startOwnerTunnel(token);
             } catch (IOException | RuntimeException e) {
                 fail(token, e);
@@ -382,13 +652,93 @@ public final class MdtbbsNetplayManager {
         });
     }
 
-    /// Creates a hosted session without an approval step.
+    /// Sends one create request with the advertised player limit.
+    private Joined requestCreate(CreateRequest request) throws IOException {
+        return multiplayer.createSession(request.visibility(), request.joinPolicy(),
+                createMaxPlayers(), "Mindustry", request.gameVersion(),
+                request.requireApproval());
+    }
+
+    /// Player limit requested for a new session.
     ///
-    /// @param visibility  `private`, `friends` or `public`
-    /// @param joinPolicy  `invite_only`, `friends` or `public`
-    /// @param gameVersion version text shown to friends, or empty
-    public void createRoom(String visibility, String joinPolicy, String gameVersion) {
-        createRoom(visibility, joinPolicy, false, gameVersion);
+    /// Uses the advertised `max_players_per_session` when it is positive,
+    /// otherwise the historical default of `8`.
+    private int createMaxPlayers() {
+        Capabilities caps = capabilities;
+        long limit = caps == null ? 0L : caps.limits().maxPlayersPerSession();
+        return limit > 0 ? (int) Math.min(8L, limit) : 8;
+    }
+
+    /// Closes the zombie session behind a `SESSION_ALREADY_ACTIVE` failure and
+    /// retries the create exactly once.
+    ///
+    /// A retry is attempted only when the failure names a session and the
+    /// operation token is still current. Failures of the cleanup itself are
+    /// published instead of being retried, because a second create would fail
+    /// the same way. Failures of the retried create propagate so the caller's
+    /// normal failure path reports them.
+    ///
+    /// @param token    lifecycle token of the create operation
+    /// @param request  stored create request
+    /// @param conflict the `SESSION_ALREADY_ACTIVE` failure
+    /// @return the retried join result, or `null` when the outcome was already published
+    /// @throws IOException when the failure is unrelated or the retried create fails
+    private @Nullable Joined recoverConflict(long token, CreateRequest request,
+                                             MdtbbsApiException conflict) throws IOException {
+        String zombieId = "SESSION_ALREADY_ACTIVE".equals(conflict.getErrorCode())
+                ? conflict.detailString("session_id").trim() : "";
+        if (zombieId.isEmpty()) {
+            throw conflict;
+        }
+        conflictSessionId = zombieId;
+        if (isStale(token)) {
+            throw conflict;
+        }
+        if (!leaveConflict(token, zombieId)) {
+            // The cleanup failure is already published; never retry blindly.
+            return null;
+        }
+        if (isStale(token)) {
+            throw conflict;
+        }
+        return requestCreate(request);
+    }
+
+    /// Leaves the stale session named by a conflict, publishing real failures.
+    ///
+    /// Unlike [#leaveQuietly(String)] a failure here is user-visible: the UI
+    /// must offer a retry instead of silently creating a second session. A
+    /// session that is already gone counts as a successful cleanup.
+    ///
+    /// @param token       lifecycle token of the create operation
+    /// @param sessionId   zombie session id
+    /// @return whether the session was left and the create can be retried
+    private boolean leaveConflict(long token, String sessionId) {
+        try {
+            multiplayer.leave(sessionId);
+            Logger.LOG.info("MDTBBS stale session " + sessionId + " closed before retrying");
+            return true;
+        } catch (IOException | RuntimeException e) {
+            if (e instanceof MdtbbsApiException apiException && missingSession(apiException)) {
+                // Already gone: the account no longer owns a live session, so
+                // the cleanup goal is met and the create can be retried.
+                Logger.LOG.info("MDTBBS stale session " + sessionId + " was already gone");
+                return true;
+            }
+            if (!isStale(token)) {
+                setPhase(Phase.ERROR, "SESSION_ALREADY_ACTIVE", sessionId);
+            }
+            Logger.LOG.info("MDTBBS stale session " + sessionId
+                    + " could not be closed: " + e.getMessage());
+            return false;
+        }
+    }
+
+    /// Whether an API failure means the session no longer exists.
+    private static boolean missingSession(MdtbbsApiException e) {
+        return e.getStatusCode() == 404
+                || "SESSION_NOT_FOUND".equals(e.getErrorCode())
+                || "SESSION_EXPIRED".equals(e.getErrorCode());
     }
 
     /// Normalises a visibility value to the 1.7.0 enum.
@@ -457,11 +807,10 @@ public final class MdtbbsNetplayManager {
                     code = text;
                 }
                 Joined joined = multiplayer.join(id, code);
-                if (isStale(token)) {
+                if (!attachIfCurrent(token, joined, false)) {
                     enqueueCleanup(joined.session().id());
                     return;
                 }
-                attach(joined, false);
                 startGuestTunnel(token);
             } catch (IOException | RuntimeException e) {
                 fail(token, e);
@@ -589,8 +938,8 @@ public final class MdtbbsNetplayManager {
         Schedulers.io().execute(() -> {
             try {
                 multiplayer.approveJoinRequest(requestId);
-                joinRequests.removeIf(request -> request.id().equals(requestId));
-                notifyStateChange();
+                dropPendingJoinRequest(requestId);
+                refreshJoinRequests();
             } catch (IOException | RuntimeException e) {
                 Logger.LOG.info("MDTBBS approve join request failed: " + e.getMessage());
             }
@@ -604,12 +953,23 @@ public final class MdtbbsNetplayManager {
         Schedulers.io().execute(() -> {
             try {
                 multiplayer.rejectJoinRequest(requestId);
-                joinRequests.removeIf(request -> request.id().equals(requestId));
-                notifyStateChange();
+                dropPendingJoinRequest(requestId);
+                refreshJoinRequests();
             } catch (IOException | RuntimeException e) {
                 Logger.LOG.info("MDTBBS reject join request failed: " + e.getMessage());
             }
         });
+    }
+
+    /// Drops one request from the pending list and invalidates in-flight
+    /// snapshots so a pre-removal snapshot cannot land it back.
+    private void dropPendingJoinRequest(String requestId) {
+        synchronized (joinRequestLock) {
+            joinRequestSeenNanos.remove(requestId);
+            joinRequests.removeIf(request -> request.id().equals(requestId));
+            joinRequestRefreshSequence.incrementAndGet();
+        }
+        notifyStateChange();
     }
 
     /// Consumes a Join Intent and joins the bound session as a guest.
@@ -641,11 +1001,10 @@ public final class MdtbbsNetplayManager {
                 leaveQuietly(previous);
                 requireCapabilities();
                 Joined joined = multiplayer.consumeJoinIntent(intentId);
-                if (isStale(token)) {
+                if (!attachIfCurrent(token, joined, false)) {
                     enqueueCleanup(joined.session().id());
                     return;
                 }
-                attach(joined, false);
                 startGuestTunnel(token);
             } catch (IOException | RuntimeException e) {
                 fail(token, e);
@@ -655,20 +1014,42 @@ public final class MdtbbsNetplayManager {
 
     /// Invites one friend into the hosted session.
     ///
+    /// A failure is published through [#lastInviteError()] only: a live hosted
+    /// session keeps its [`Phase#HOSTING`] banner and tunnel while the invite
+    /// dialog explains the problem.
+    ///
     /// @param targetUserId forum user id
     public void inviteFriend(long targetUserId) {
         String id = sessionId;
         if (!hosting || id.isEmpty()) {
-            setPhase(Phase.ERROR, "SESSION_NOT_FOUND", "invite without a hosted session");
+            lastInviteError = "SESSION_NOT_FOUND";
+            lastInviteTarget = Long.toString(targetUserId);
+            notifyStateChange();
             return;
         }
+        long token = generation.get();
+        lastInviteError = null;
         Schedulers.io().execute(() -> {
             try {
                 String inviteId = multiplayer.createInvite(id, targetUserId);
+                if (isStale(token) || !hosting || !id.equals(sessionId)) {
+                    return;
+                }
+                lastInviteError = null;
                 statusDetail = inviteId.isEmpty() ? null : inviteId;
                 notifyStateChange();
             } catch (IOException | RuntimeException e) {
                 Logger.LOG.info("MDTBBS invite failed: " + e.getMessage());
+                if (isStale(token) || !hosting || !id.equals(sessionId)) {
+                    return;
+                }
+                String code = e instanceof MdtbbsApiException apiException
+                        ? apiException.getErrorCode() : null;
+                // Write the target before the code so a reader that sees the
+                // code also sees which attempt it belongs to.
+                lastInviteTarget = Long.toString(targetUserId);
+                lastInviteError = code == null ? "INVITE_FAILED" : code;
+                notifyStateChange();
             }
         });
     }
@@ -682,6 +1063,7 @@ public final class MdtbbsNetplayManager {
             previous = detachLocalSession();
             setPhase(Phase.IDLE, null, null);
         }
+        clearJoinRequests();
         publishActivity();
         if (previous.isEmpty()) {
             return;
@@ -696,8 +1078,22 @@ public final class MdtbbsNetplayManager {
             generation.incrementAndGet();
             detachLocalSession();
         }
+        clearJoinRequests();
         closeRealtime();
         scheduler.shutdownNow();
+    }
+
+    /// Clears the host-side join-request list and its grace deadlines.
+    ///
+    /// Runs after the approval lock is released so the two locks are never
+    /// nested in the opposite order.
+    private void clearJoinRequests() {
+        synchronized (joinRequestLock) {
+            joinRequests.clear();
+            joinRequestSeenNanos.clear();
+            joinRequestRefreshSequence.incrementAndGet();
+        }
+        notifyStateChange();
     }
 
     /// Closes the active tunnel/heartbeat, clears session state and returns the
@@ -727,15 +1123,15 @@ public final class MdtbbsNetplayManager {
             joinPolicy = "";
             requireApproval = false;
             activityName = "";
-            synchronized (approvalLock) {
-                requestedSessionId = "";
-                pendingApprovedIntent = "";
-                approvalInFlight = false;
-                approvalRejected = false;
-                awaitingApproval = false;
-            }
+            requestedSessionId = "";
+            pendingApprovedIntent = "";
+            approvalInFlight = false;
+            approvalRejected = false;
+            awaitingApproval = false;
             playerCount = 0;
             maxPlayers = 0;
+            lastInviteError = null;
+            lastInviteTarget = null;
             return previous;
         }
     }
@@ -835,7 +1231,9 @@ public final class MdtbbsNetplayManager {
                     return;
                 }
                 if (session == null) {
-                    detachLocalSession();
+                    if (!detachIfCurrent(token, id)) {
+                        return;
+                    }
                     setPhase(Phase.ERROR, "SESSION_CLOSED", null);
                     publishActivity();
                     return;
@@ -843,6 +1241,7 @@ public final class MdtbbsNetplayManager {
                 maxPlayers = session.maxPlayers();
                 playerCount = peers.isEmpty() ? session.currentPlayers() : peers.size();
                 notifyStateChange();
+                refreshJoinRequests();
             } catch (IOException e) {
                 Logger.LOG.info("MDTBBS snapshot refresh failed: " + e.getMessage());
             }
@@ -868,12 +1267,21 @@ public final class MdtbbsNetplayManager {
         switch (name) {
             case "multiplayer.join_request.created" -> handleJoinRequestCreated(event);
             case "multiplayer.join_request.approved" -> {
+                if (hosting) {
+                    // The request left the pending list; re-read the host view.
+                    refreshJoinRequests();
+                    return;
+                }
                 String intentId = event.string("intent_id");
                 if (!intentId.isBlank() && matchesJoinRequest(event)) {
                     onJoinApproved(intentId);
                 }
             }
             case "multiplayer.join_request.rejected" -> {
+                if (hosting) {
+                    refreshJoinRequests();
+                    return;
+                }
                 if (!matchesJoinRequest(event)) {
                     return;
                 }
@@ -921,6 +1329,10 @@ public final class MdtbbsNetplayManager {
 
     /// Adds one pending join request from a realtime event.
     private void handleJoinRequestCreated(MdtbbsRealtimeEvent event) {
+        if (!hosting) {
+            // Guests never own the approval list; do not accumulate entries.
+            return;
+        }
         String requestId = event.string("join_request_id");
         if (requestId.isBlank()) {
             requestId = event.string("id");
@@ -938,10 +1350,15 @@ public final class MdtbbsNetplayManager {
                 ? event.string("username")
                 : MdtbbsJson.stringOf(requester, "username");
         String finalRequestId = requestId;
-        joinRequests.removeIf(request -> request.id().equals(finalRequestId));
-        joinRequests.add(new JoinRequest(finalRequestId, target.isEmpty() ? sessionId : target,
-                userId, username));
+        synchronized (joinRequestLock) {
+            joinRequestSeenNanos.put(finalRequestId,
+                    nanoClock.getAsLong() + JOIN_REQUEST_GRACE_NANOS);
+            joinRequests.removeIf(request -> request.id().equals(finalRequestId));
+            joinRequests.add(new JoinRequest(finalRequestId,
+                    target.isEmpty() ? sessionId : target, userId, username));
+        }
         notifyStateChange();
+        refreshJoinRequestsOnEvent();
     }
 
     /// Adjusts the player count, keeping it within the advertised limit.
@@ -978,6 +1395,43 @@ public final class MdtbbsNetplayManager {
         }
     }
 
+    /// Attaches a joined session only while the operation token is current.
+    ///
+    /// The staleness re-check and the attach run under the approval lock, so a
+    /// concurrent leave or newer operation cannot interleave between them.
+    ///
+    /// @param token  lifecycle token of the operation
+    /// @param joined joined session response
+    /// @param owner  whether this client owns the session
+    /// @return whether the session was attached
+    private boolean attachIfCurrent(long token, Joined joined, boolean owner) {
+        synchronized (approvalLock) {
+            if (isStale(token)) {
+                return false;
+            }
+            attach(joined, owner);
+            return true;
+        }
+    }
+
+    /// Detaches the local session only while the token and session id match.
+    ///
+    /// The check and the detach run under the approval lock, so a concurrent
+    /// leave or newer operation cannot interleave between them.
+    ///
+    /// @param token lifecycle token of the operation
+    /// @param id    session id the caller observed
+    /// @return whether the session was detached
+    private boolean detachIfCurrent(long token, String id) {
+        synchronized (approvalLock) {
+            if (isStale(token) || !id.equals(sessionId)) {
+                return false;
+            }
+            detachLocalSession();
+            return true;
+        }
+    }
+
     /// Stores the joined session and starts the heartbeat.
     private void attach(Joined joined, boolean owner) {
         // Any previous tunnel must not outlive the new session; the caller
@@ -1001,9 +1455,20 @@ public final class MdtbbsNetplayManager {
         maxPlayers = joined.session().maxPlayers();
         errorCode = null;
         statusDetail = null;
+        lastInviteError = null;
+        lastInviteTarget = null;
+        // A successful attach consumes the remembered create request; a later
+        // retry must not replay it over the live session.
+        lastCreateRequest = null;
         if (sessionId.isEmpty() || peerId.isEmpty()) {
             throw new IllegalStateException("MDTBBS session response is incomplete");
         }
+        // The caller refreshes right after attaching; remember that so the
+        // first heartbeat tick does not issue a duplicate refresh. The event
+        // throttle starts expired so the first created event refreshes.
+        long now = nanoClock.getAsLong();
+        lastJoinRequestRefreshNanos = now;
+        lastJoinRequestEventRefreshNanos = now - JOIN_REQUEST_EVENT_THROTTLE_NANOS;
         startHeartbeat();
         publishActivity();
         startRealtime();
@@ -1026,13 +1491,24 @@ public final class MdtbbsNetplayManager {
                 allocation.agentId(), id, peer, null, true,
                 MINDUSTRY_PORT, 0, allocation.expiresInSeconds(),
                 activityName, maxPlayers, playerCount, lanDiscovery.getAsBoolean());
-        tunnel = tunnelFactory.create(config, this::renewRelay,
+        MdtbbsRelayTunnel created = tunnelFactory.create(config, this::renewRelay,
                 detail -> updateDetail(token, detail),
                 message -> handleTunnelFailure(token, message),
                 port -> {
                     // The owner bridge does not expose a local port.
                 });
-        setPhase(Phase.HOSTING, null, null);
+        synchronized (approvalLock) {
+            if (isStale(token)) {
+                // The user left while the tunnel was being created; close it
+                // instead of leaving an orphan behind.
+                if (created != null) {
+                    created.close();
+                }
+                return;
+            }
+            tunnel = created;
+            setPhase(Phase.HOSTING, null, null);
+        }
     }
 
     /// Joins the session as a guest and starts the loopback proxy.
@@ -1058,24 +1534,42 @@ public final class MdtbbsNetplayManager {
             enqueueCleanup(id);
             return;
         }
-        ownerPeerId = owner;
-        playerCount = peers.size();
-        setPhase(Phase.GUEST_WAITING, null, null);
+        int guestPlayers = peers.size();
         MdtbbsRelayTunnel.Config config = new MdtbbsRelayTunnel.Config(
                 allocation.endpoint(), allocation.credential(), allocation.allocationId(),
                 allocation.agentId(), id, peer, owner, false,
                 0, MINDUSTRY_PORT, allocation.expiresInSeconds(),
-                activityName, maxPlayers, playerCount, lanDiscovery.getAsBoolean());
-        tunnel = tunnelFactory.create(config, this::renewRelay,
+                activityName, maxPlayers, guestPlayers, lanDiscovery.getAsBoolean());
+        MdtbbsRelayTunnel created = tunnelFactory.create(config, this::renewRelay,
                 detail -> updateDetail(token, detail),
                 message -> handleTunnelFailure(token, message),
                 port -> {
-                    if (isStale(token)) {
-                        return;
+                    synchronized (approvalLock) {
+                        if (isStale(token) || !id.equals(sessionId)) {
+                            return;
+                        }
+                        localAddress = "127.0.0.1:" + port;
+                        setPhase(Phase.GUEST_READY, null, null);
                     }
-                    localAddress = "127.0.0.1:" + port;
-                    setPhase(Phase.GUEST_READY, null, null);
                 });
+        synchronized (approvalLock) {
+            if (isStale(token)) {
+                // The user left while the tunnel was being created; close it
+                // instead of leaving an orphan behind.
+                if (created != null) {
+                    created.close();
+                }
+                return;
+            }
+            ownerPeerId = owner;
+            playerCount = guestPlayers;
+            tunnel = created;
+            // A synchronous GUEST_READY callback may already have advanced the
+            // phase; never overwrite it with the waiting banner.
+            if (phase == Phase.WORKING) {
+                setPhase(Phase.GUEST_WAITING, null, null);
+            }
+        }
     }
 
     /// Renews the relay allocation for the current peer.
@@ -1128,6 +1622,34 @@ public final class MdtbbsNetplayManager {
         } catch (IOException e) {
             Logger.LOG.info("MDTBBS peer heartbeat failed: " + e.getMessage());
         }
+        refreshJoinRequestsOnHeartbeat();
+    }
+
+    /// Refreshes the pending join-request list on the heartbeat tick.
+    ///
+    /// Runs at most once per minute and reuses the existing heartbeat
+    /// scheduler; no extra timer is created.
+    private void refreshJoinRequestsOnHeartbeat() {
+        if (!hosting) {
+            return;
+        }
+        if (nanoClock.getAsLong() - lastJoinRequestRefreshNanos < JOIN_REQUEST_REFRESH_NANOS) {
+            return;
+        }
+        refreshJoinRequests();
+    }
+
+    /// Refreshes the pending list after a realtime create event, throttled.
+    ///
+    /// A burst of created events must not trigger one full 1–3 page refresh
+    /// each; the local insert already keeps the new row visible.
+    private void refreshJoinRequestsOnEvent() {
+        long now = nanoClock.getAsLong();
+        if (now - lastJoinRequestEventRefreshNanos < JOIN_REQUEST_EVENT_THROTTLE_NANOS) {
+            return;
+        }
+        lastJoinRequestEventRefreshNanos = now;
+        refreshJoinRequests();
     }
 
     /// Restores the peer inside its 60-second recovery window.
@@ -1209,8 +1731,27 @@ public final class MdtbbsNetplayManager {
         }
         String code = throwable instanceof MdtbbsApiException apiException
                 ? apiException.getErrorCode() : null;
-        setPhase(Phase.ERROR, code, throwable.getMessage());
+        setPhase(Phase.ERROR, code, failureDetail(throwable));
         Logger.LOG.info("MDTBBS multiplayer operation failed: " + throwable.getMessage());
+    }
+
+    /// Builds the player-facing detail of a failure, keeping the server's
+    /// `retry_after_seconds` hint instead of dropping it.
+    ///
+    /// `MdtbbsApiException#retryAfterSeconds()` ignores non-primitive or
+    /// malformed details, so this never throws on an unexpected payload.
+    private static String failureDetail(Throwable throwable) {
+        @Nullable String message = throwable.getMessage();
+        String text = message == null ? "" : message;
+        if (throwable instanceof MdtbbsApiException apiException) {
+            long retryAfter = apiException.retryAfterSeconds();
+            if (retryAfter > 0L) {
+                return text.isBlank()
+                        ? "retry after " + retryAfter + "s"
+                        : text + " (retry after " + retryAfter + "s)";
+            }
+        }
+        return text;
     }
 
     /// Whether an async operation was superseded.
