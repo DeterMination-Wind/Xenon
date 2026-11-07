@@ -39,6 +39,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
@@ -63,9 +64,24 @@ public final class MindustryCloudArchiveInstaller {
     private static final Set<String> ALLOWED_DIRECTORIES =
             Set.of("saves", "maps", "schematics", "mods");
 
+    /// Windows device names that can never be used as file or directory names.
+    private static final Set<String> WINDOWS_DEVICE_NAMES = Set.of(
+            "CON", "PRN", "AUX", "NUL",
+            "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+            "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9");
+
     /// Timestamp format for backup directories.
-    private static final DateTimeFormatter STAMP =
+    static final DateTimeFormatter STAMP =
             DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss").withZone(ZoneId.systemDefault());
+
+    /// Running suffix that keeps backup names unique within one process.
+    private static final AtomicLong BACKUP_SEQUENCE = new AtomicLong();
+
+    /// Builds a unique backup directory name with the `yyyyMMdd-HHmmss` prefix.
+    static String backupName(Instant now) {
+        return STAMP.format(now) + "-" + Long.toHexString(System.nanoTime()) + "-"
+                + Long.toHexString(BACKUP_SEQUENCE.incrementAndGet());
+    }
 
     /// Result of one restore.
     ///
@@ -92,11 +108,12 @@ public final class MindustryCloudArchiveInstaller {
         MindustryCloudArchiveManifest manifest = readManifest(archive);
         Files.createDirectories(dataDir);
         Path staging = dataDir.resolve(".xenon-cloud-staging-" + System.nanoTime());
-        Path backup = backupRoot.resolve(STAMP.format(Instant.now()));
+        Path backup = backupRoot.resolve(backupName(Instant.now()));
         try {
             Files.createDirectories(staging);
             extract(archive, staging);
             verifyHashes(staging, manifest);
+            MindustryCloudManifestInstaller.rejectUndeclaredFiles(staging, manifest.files());
             backupExisting(dataDir, backup);
             replaceTrees(staging, dataDir);
             return new RestoreResult(manifest, backup, missingMods(dataDir, manifest));
@@ -126,9 +143,13 @@ public final class MindustryCloudArchiveInstaller {
     }
 
     /// Validates every entry and extracts it into the staging directory.
+    ///
+    /// The declared entry size is a cheap early reject; the bytes actually
+    /// copied are counted separately so a lying header cannot bypass the cap.
     private static void extract(Path archive, Path staging) throws IOException {
         int entries = 0;
-        long total = 0;
+        long declaredTotal = 0;
+        long copiedTotal = 0;
         try (ZipFile zip = new ZipFile(archive.toFile())) {
             var enumeration = zip.entries();
             while (enumeration.hasMoreElements()) {
@@ -141,10 +162,11 @@ public final class MindustryCloudArchiveInstaller {
                 if (entry.isDirectory()) {
                     continue;
                 }
-                total += Math.max(0, entry.getSize());
-                if (total > MAX_TOTAL_BYTES) {
+                long declaredSize = Math.max(0, entry.getSize());
+                if (declaredSize > MAX_TOTAL_BYTES - declaredTotal) {
                     throw new IOException("cloud archive is too large");
                 }
+                declaredTotal += declaredSize;
                 if (MindustryCloudArchiveManifest.ENTRY_NAME.equals(name)) {
                     continue;
                 }
@@ -156,19 +178,31 @@ public final class MindustryCloudArchiveInstaller {
                 if (parent != null) Files.createDirectories(parent);
                 try (InputStream input = zip.getInputStream(entry);
                      OutputStream output = Files.newOutputStream(target)) {
-                    input.transferTo(output);
+                    byte[] buffer = new byte[64 * 1024];
+                    int read;
+                    while ((read = input.read(buffer)) > 0) {
+                        if (read > MAX_TOTAL_BYTES - copiedTotal) {
+                            throw new IOException("cloud archive is too large");
+                        }
+                        copiedTotal += read;
+                        output.write(buffer, 0, read);
+                    }
                 }
             }
         }
     }
 
     /// Rejects absolute, traversing and non-whitelisted entry names.
-    private static void validateEntryName(String name) throws IOException {
+    ///
+    /// Windows-reserved device names and path segments ending in `.` or a space
+    /// are rejected as well, because the restore target cannot represent them.
+    static void validateEntryName(String name) throws IOException {
         if (name == null || name.isBlank() || name.startsWith("/") || name.startsWith("\\")
-                || name.contains("..") || name.contains("\\") || name.contains(":")
+                || name.contains("\\") || name.contains(":")
                 || name.indexOf('\0') >= 0) {
             throw new IOException("cloud archive entry is unsafe: " + name);
         }
+        validateSegments(name);
         if (MindustryCloudArchiveManifest.ENTRY_NAME.equals(name)) {
             return;
         }
@@ -183,27 +217,81 @@ public final class MindustryCloudArchiveInstaller {
         throw new IOException("cloud archive entry is not restorable: " + name);
     }
 
+    /// Rejects Windows-reserved device names, parent segments and trailing dots/spaces.
+    private static void validateSegments(String name) throws IOException {
+        int start = 0;
+        while (start < name.length()) {
+            int slash = name.indexOf('/', start);
+            int end = slash < 0 ? name.length() : slash;
+            if (end > start) {
+                String segment = name.substring(start, end);
+                if ("..".equals(segment)) {
+                    throw new IOException("cloud archive entry is unsafe: " + name);
+                }
+                validateSegment(segment, name);
+            }
+            if (slash < 0) {
+                return;
+            }
+            start = slash + 1;
+        }
+    }
+
+    /// Rejects one unsafe path segment.
+    private static void validateSegment(String segment, String name) throws IOException {
+        char last = segment.charAt(segment.length() - 1);
+        if (last == '.' || last == ' ') {
+            throw new IOException("cloud archive entry is unsafe: " + name);
+        }
+        int dot = segment.indexOf('.');
+        String stem = (dot < 0 ? segment : segment.substring(0, dot))
+                .toUpperCase(Locale.ROOT);
+        if (WINDOWS_DEVICE_NAMES.contains(stem)) {
+            throw new IOException("cloud archive entry is unsafe: " + name);
+        }
+    }
+
     /// Verifies the extracted files against the manifest hashes.
     private static void verifyHashes(Path staging, MindustryCloudArchiveManifest manifest)
             throws IOException {
         for (MindustryCloudArchiveManifest.FileEntry expected : manifest.files()) {
-            Path file = staging.resolve(expected.path()).normalize();
-            if (!Files.isRegularFile(file)) {
-                throw new IOException("cloud archive is missing " + expected.path());
-            }
-            long size = Files.size(file);
-            if (expected.size() > 0 && size != expected.size()) {
-                throw new IOException("cloud archive size mismatch for " + expected.path());
-            }
-            if (!expected.sha256().isBlank()
-                    && !expected.sha256().equalsIgnoreCase(sha256(file))) {
-                throw new IOException("cloud archive hash mismatch for " + expected.path());
-            }
+            verifyEntry(staging, expected);
+        }
+    }
+
+    /// Verifies one staged file against its manifest entry.
+    ///
+    /// The file must exist inside `staging`; a positive expected size and a
+    /// non-blank expected hash are enforced, while zero/blank values mean
+    /// "not recorded".
+    ///
+    /// @param staging  directory holding the extracted files
+    /// @param expected manifest entry to check
+    /// @throws IOException when the path escapes `staging`, the file is missing
+    ///                     or does not match
+    static void verifyEntry(Path staging, MindustryCloudArchiveManifest.FileEntry expected)
+            throws IOException {
+        Path root = staging.normalize();
+        Path file = root.resolve(expected.path()).normalize();
+        if (!file.startsWith(root)) {
+            throw new IOException("cloud manifest entry escapes the staging directory: "
+                    + expected.path());
+        }
+        if (!Files.isRegularFile(file)) {
+            throw new IOException("cloud archive is missing " + expected.path());
+        }
+        long size = Files.size(file);
+        if (expected.size() > 0 && size != expected.size()) {
+            throw new IOException("cloud archive size mismatch for " + expected.path());
+        }
+        if (!expected.sha256().isBlank()
+                && !expected.sha256().equalsIgnoreCase(sha256(file))) {
+            throw new IOException("cloud archive hash mismatch for " + expected.path());
         }
     }
 
     /// Computes the lowercase hex SHA-256 of one file.
-    private static String sha256(Path file) throws IOException {
+    static String sha256(Path file) throws IOException {
         try (InputStream input = Files.newInputStream(file)) {
             java.security.MessageDigest digest;
             try {
@@ -221,12 +309,9 @@ public final class MindustryCloudArchiveInstaller {
     }
 
     /// Copies existing top-level data into the backup directory.
-    private static void backupExisting(Path dataDir, Path backup) throws IOException {
+    static void backupExisting(Path dataDir, Path backup) throws IOException {
         boolean copied = false;
         for (String directory : ALLOWED_DIRECTORIES) {
-            if ("mods".equals(directory)) {
-                continue;
-            }
             Path source = dataDir.resolve(directory);
             if (Files.isDirectory(source)) {
                 copyTree(source, backup.resolve(directory));
@@ -246,7 +331,7 @@ public final class MindustryCloudArchiveInstaller {
     }
 
     /// Replaces the restored trees in the data directory.
-    private static void replaceTrees(Path staging, Path dataDir) throws IOException {
+    static void replaceTrees(Path staging, Path dataDir) throws IOException {
         for (String directory : List.of("saves", "maps", "schematics")) {
             Path source = staging.resolve(directory);
             Path target = dataDir.resolve(directory);
@@ -268,7 +353,7 @@ public final class MindustryCloudArchiveInstaller {
     }
 
     /// Lists Mods that the archive did not pack and the instance still lacks.
-    private static List<String> missingMods(Path dataDir, MindustryCloudArchiveManifest manifest) {
+    static List<String> missingMods(Path dataDir, MindustryCloudArchiveManifest manifest) {
         Set<String> installed = new HashSet<>();
         Path modsDir = dataDir.resolve("mods");
         if (Files.isDirectory(modsDir)) {
@@ -293,7 +378,7 @@ public final class MindustryCloudArchiveInstaller {
     }
 
     /// Copies a tree, replacing files with the same name.
-    private static void copyTree(Path source, Path target) throws IOException {
+    static void copyTree(Path source, Path target) throws IOException {
         List<Path> paths;
         try (Stream<Path> stream = Files.walk(source)) {
             paths = stream.sorted(Comparator.comparing(Path::toString)).toList();
@@ -312,7 +397,7 @@ public final class MindustryCloudArchiveInstaller {
     }
 
     /// Deletes a tree, ignoring a missing path.
-    private static void deleteTree(Path root) throws IOException {
+    static void deleteTree(Path root) throws IOException {
         if (!Files.exists(root)) {
             return;
         }

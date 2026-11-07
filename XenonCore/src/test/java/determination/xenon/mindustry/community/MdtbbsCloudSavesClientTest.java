@@ -17,15 +17,24 @@
  */
 package determination.xenon.mindustry.community;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import determination.xenon.mindustry.community.MdtbbsCloudSavesClient.Slot;
 import determination.xenon.mindustry.community.MdtbbsCloudSavesClient.SlotPage;
+import determination.xenon.mindustry.community.MdtbbsCloudSavesClient.BlobCheck;
+import determination.xenon.mindustry.community.MdtbbsCloudSavesClient.BlobUpload;
+import determination.xenon.mindustry.community.MdtbbsCloudSavesClient.BlobUrl;
 import determination.xenon.mindustry.community.MdtbbsCloudSavesClient.DownloadResult;
 import determination.xenon.mindustry.community.MdtbbsCloudSavesClient.GameInfo;
+import determination.xenon.mindustry.community.MdtbbsCloudSavesClient.ManifestEntry;
+import determination.xenon.mindustry.community.MdtbbsCloudSavesClient.ManifestSnapshot;
 import determination.xenon.mindustry.community.MdtbbsCloudSavesClient.ModInfo;
 import determination.xenon.mindustry.community.MdtbbsCloudSavesClient.Quota;
+import determination.xenon.mindustry.community.MdtbbsCloudSavesClient.RemoteManifest;
 import determination.xenon.mindustry.community.MdtbbsCloudSavesClient.SaveInfo;
+import determination.xenon.mindustry.community.MdtbbsCloudSavesClient.Snapshot;
 import determination.xenon.mindustry.community.MdtbbsCloudSavesClient.UploadMetadata;
 import determination.xenon.mindustry.community.MdtbbsCloudSavesClient.UploadOptions;
 import determination.xenon.mindustry.community.MdtbbsCloudSavesClient.UploadResult;
@@ -39,17 +48,22 @@ import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/// Tests cloud-save listing, upload URL resolution and verified downloads.
+/// Tests cloud-save listing, upload URL resolution, verified downloads and the
+/// delta manifest/blob API.
 @NotNullByDefault
 public final class MdtbbsCloudSavesClientTest {
     /// Slot fields come from `current_snapshot`, and a non-blank `next_cursor`
@@ -273,6 +287,342 @@ public final class MdtbbsCloudSavesClientTest {
         }
     }
 
+    /// Delta metadata is parsed tolerantly, and a legacy response still means
+    /// `format=zip` with no manifest file count.
+    @Test
+    public void parsesManifestSnapshotAndQuotaMetadata() throws Exception {
+        try (CloudServer server = CloudServer.start()) {
+            List<Snapshot> snapshots = server.client().snapshots("slot1");
+
+            Snapshot legacy = snapshots.get(0);
+            assertEquals("zip", legacy.format());
+            assertEquals(0, legacy.fileCount());
+            assertFalse(legacy.manifest());
+            assertEquals(2, legacy.modCount());
+            assertEquals(2, legacy.mods().size());
+            assertEquals("a", legacy.mods().get(0).id());
+
+            Snapshot delta = snapshots.get(1);
+            assertEquals("manifest", delta.format());
+            assertTrue(delta.manifest());
+            assertEquals(3, delta.fileCount());
+            assertEquals(5, delta.modCount());
+            assertEquals(1, delta.mods().size());
+            assertEquals("example-mod", delta.mods().get(0).id());
+            assertEquals("Example", delta.mods().get(0).name());
+            assertEquals("1.2.0", delta.mods().get(0).version());
+            assertEquals("abc", delta.mods().get(0).sha256());
+
+            Quota quota = server.client().quota();
+            assertEquals(4096, quota.logicalBytes());
+            assertEquals(List.of("zip", "manifest"), quota.formats());
+            assertEquals(512, quota.maxManifestFiles());
+            assertEquals(4_000_000, quota.maxManifestBytes());
+        }
+    }
+
+    /// A server-side format mismatch keeps its stable error code.
+    @Test
+    public void surfacesManifestFormatMismatch() throws Exception {
+        try (CloudServer server = CloudServer.start()) {
+            server.formatMismatch = true;
+
+            MdtbbsApiException failure = assertThrows(MdtbbsApiException.class,
+                    () -> server.client().createManifestSnapshot("slot1", "snap0", "manifest",
+                            List.of(new ManifestEntry("saves/a.msav", 11, "a".repeat(64))),
+                            UploadOptions.normal("snap0")));
+
+            assertEquals("SAVE_SNAPSHOT_FORMAT_MISMATCH", failure.getErrorCode());
+        }
+    }
+
+    /// Blob existence is split into `existing` and `missing`.
+    @Test
+    public void checksExistingBlobs() throws Exception {
+        try (CloudServer server = CloudServer.start()) {
+            BlobCheck check = server.client().checkBlobs(List.of("aaa", "bbb"));
+
+            assertEquals(List.of("aaa"), check.existing());
+            assertEquals(List.of("bbb"), check.missing());
+            assertTrue(server.lastBlobCheckBody().contains("\"sha256\":[\"aaa\",\"bbb\"]"));
+        }
+    }
+
+    /// A blob the server already holds is never PUT again.
+    @Test
+    public void skipsBlobUploadWhenServerAlreadyHasContent() throws Exception {
+        try (CloudServer server = CloudServer.start()) {
+            server.blobNoUpload = true;
+            Path file = Files.createTempFile("xenon-cloud-blob", ".bin");
+            Files.writeString(file, "blob-bytes");
+
+            BlobUpload blob = server.client().createBlob("abc", Files.size(file));
+            server.client().uploadBlobBytes(blob, file, null);
+
+            assertTrue(blob.noUploadRequired());
+            assertEquals("", server.lastBlobUpload());
+        }
+    }
+
+    /// Manifest commits send the manifest block, base head and full metadata.
+    @Test
+    public void createsManifestSnapshotWithMetadata() throws Exception {
+        try (CloudServer server = CloudServer.start()) {
+            UploadMetadata metadata = new UploadMetadata(
+                    new GameInfo("v157", 157),
+                    new SaveInfo("Salt Flats", 7, 90),
+                    List.of(new ModInfo("example-mod", "Example", "1.2.0", "d".repeat(64))),
+                    "device-1");
+            UploadOptions options = new UploadOptions("manual", "snap0", "normal",
+                    null, metadata);
+            ManifestSnapshot snapshot = server.client().createManifestSnapshot("slot1", "snap0",
+                    "manifest",
+                    List.of(new ManifestEntry("saves/a.msav", 11, "a".repeat(64))),
+                    options);
+
+            assertEquals("snap-manifest", snapshot.snapshotId());
+            assertEquals("manifest", snapshot.format());
+            assertEquals(1, snapshot.fileCount());
+            String body = server.lastManifestBody();
+            assertTrue(body.contains("\"format\":\"manifest\""));
+            assertTrue(body.contains("\"path\":\"saves/a.msav\""));
+            assertTrue(body.contains("\"size\":11"));
+            assertTrue(body.contains("\"sha256\":\"" + "a".repeat(64) + "\""));
+            assertTrue(body.contains("\"base_snapshot_id\":\"snap0\""));
+            assertTrue(body.contains("\"conflict_resolution\":\"normal\""));
+            assertTrue(body.contains("\"map_name\":\"Salt Flats\""));
+            assertTrue(body.contains("\"device_id\":\"device-1\""));
+        }
+    }
+
+    /// A remote manifest exposes each entry's path, size and hash.
+    @Test
+    public void parsesRemoteManifest() throws Exception {
+        try (CloudServer server = CloudServer.start()) {
+            RemoteManifest manifest = server.client().manifest("slot1", "snap1");
+
+            assertEquals("snap1", manifest.snapshotId());
+            assertEquals("manifest", manifest.format());
+            assertEquals(2, manifest.files().size());
+            assertEquals("saves/a.msav", manifest.files().get(0).path());
+            assertEquals(11, manifest.files().get(0).size());
+            assertEquals("a".repeat(64), manifest.files().get(0).sha256());
+            assertEquals("settings.bin", manifest.files().get(1).path());
+        }
+    }
+
+    /// A blob download with the wrong hash deletes the target and fails.
+    @Test
+    public void deletesBlobWhenHashDoesNotMatch() throws Exception {
+        try (CloudServer server = CloudServer.start()) {
+            List<BlobUrl> urls = server.client().blobDownloadUrls("slot1", "snap1",
+                    List.of("c".repeat(64)));
+
+            assertEquals(1, urls.size());
+            assertEquals("c".repeat(64), urls.get(0).sha256());
+            Path target = Files.createTempFile("xenon-cloud-blob", ".bin");
+
+            IOException failure = assertThrows(IOException.class,
+                    () -> server.client().downloadBlob(
+                            server.absoluteUrl(urls.get(0).url()), target, "d".repeat(64), null));
+
+            assertTrue(failure.getMessage().contains("hash mismatch"));
+            assertFalse(Files.exists(target));
+        }
+    }
+
+    /// A successful blob upload targets the returned PUT URL with the token and bytes.
+    @Test
+    public void uploadsBlobBytesThroughReturnedUrl() throws Exception {
+        try (CloudServer server = CloudServer.start()) {
+            Path file = Files.createTempFile("xenon-cloud-blob", ".bin");
+            Files.writeString(file, "blob-bytes");
+            MdtbbsCloudSavesClient client = server.client();
+
+            BlobUpload blob = client.createBlob("abc", Files.size(file));
+            client.uploadBlobBytes(blob, file, null);
+
+            assertEquals("PUT /api/v1/game-saves/blobs/b1/file", server.lastBlobUpload());
+            assertArrayEquals("blob-bytes".getBytes(StandardCharsets.UTF_8),
+                    server.lastBlobUploadBody());
+            assertEquals("Bearer token", server.lastBlobAuthHeader());
+            assertEquals("", server.lastBlobRelease());
+        }
+    }
+
+    /// A relative blob URL is resolved against the API origin and verified.
+    @Test
+    public void downloadsBlobWithRelativeUrl() throws Exception {
+        try (CloudServer server = CloudServer.start()) {
+            List<BlobUrl> urls = server.client().blobDownloadUrls("slot1", "snap1",
+                    List.of("c".repeat(64)));
+            Path target = Files.createTempFile("xenon-cloud-blob", ".bin");
+
+            server.client().downloadBlob(urls.get(0).url(), target,
+                    sha256(BLOB_CONTENT), null);
+
+            assertTrue(Files.exists(target));
+            assertEquals(BLOB_CONTENT, Files.readString(target));
+        }
+    }
+
+    /// A failed blob PUT releases the session without masking the error.
+    @Test
+    public void releasesBlobSessionWhenPutFails() throws Exception {
+        try (CloudServer server = CloudServer.start()) {
+            server.failBlobPut();
+            Path file = Files.createTempFile("xenon-cloud-blob", ".bin");
+            Files.writeString(file, "blob-bytes");
+            MdtbbsCloudSavesClient client = server.client();
+
+            BlobUpload blob = client.createBlob("abc", Files.size(file));
+            IOException failure = assertThrows(IOException.class,
+                    () -> client.uploadBlobBytes(blob, file, null));
+
+            assertEquals("boom", failure.getMessage());
+            assertEquals("DELETE /api/v1/game-saves/blobs/uploads/b1",
+                    server.lastBlobRelease());
+        }
+    }
+
+    /// Cross-origin blob URLs are written without the bearer token.
+    @Test
+    public void crossOriginBlobUploadSendsNoAuthorization() throws Exception {
+        HttpServer receiver = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        AtomicReference<String> authorization = new AtomicReference<>("");
+        AtomicReference<byte[]> received = new AtomicReference<>(new byte[0]);
+        receiver.createContext("/api/v1", exchange -> {
+            String header = exchange.getRequestHeaders().getFirst("Authorization");
+            authorization.set(header == null ? "" : header);
+            received.set(exchange.getRequestBody().readAllBytes());
+            byte[] body = "{\"data\":{}}".getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, body.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(body);
+            } finally {
+                exchange.close();
+            }
+        });
+        receiver.start();
+        try (CloudServer server = CloudServer.start()) {
+            server.blobUploadOrigin = "http://127.0.0.1:" + receiver.getAddress().getPort();
+            Path file = Files.createTempFile("xenon-cloud-blob", ".bin");
+            Files.writeString(file, "blob-bytes");
+            MdtbbsCloudSavesClient client = server.client();
+
+            BlobUpload blob = client.createBlob("abc", Files.size(file));
+            client.uploadBlobBytes(blob, file, null);
+
+            assertEquals("", authorization.get());
+            assertArrayEquals("blob-bytes".getBytes(StandardCharsets.UTF_8), received.get());
+        } finally {
+            receiver.stop(0);
+        }
+    }
+
+    /// The `exists`, flat-manifest and `urls` aliases are accepted.
+    @Test
+    public void acceptsDocumentedAliases() throws Exception {
+        try (CloudServer server = CloudServer.start()) {
+            server.blobCheckExistsAlias = true;
+            BlobCheck check = server.client().checkBlobs(List.of("aaa", "bbb"));
+            assertEquals(List.of("aaa"), check.existing());
+            assertEquals(List.of("bbb"), check.missing());
+
+            server.flatManifest = true;
+            RemoteManifest manifest = server.client().manifest("slot1", "snap1");
+            assertEquals("snap1", manifest.snapshotId());
+            assertEquals("manifest", manifest.format());
+            assertEquals(2, manifest.files().size());
+
+            server.blobUrlsAlias = true;
+            List<BlobUrl> urls = server.client().blobDownloadUrls("slot1", "snap1",
+                    List.of("c".repeat(64)));
+            assertEquals(1, urls.size());
+            assertEquals("c".repeat(64), urls.get(0).sha256());
+        }
+    }
+
+    /// Empty hash collections never reach the server.
+    @Test
+    public void skipsRequestsForEmptyHashCollections() throws Exception {
+        try (CloudServer server = CloudServer.start()) {
+            MdtbbsCloudSavesClient client = server.client();
+
+            assertTrue(client.checkBlobs(List.of()).existing().isEmpty());
+            assertTrue(client.checkBlobs(List.of()).missing().isEmpty());
+            assertTrue(client.blobDownloadUrls("slot1", "snap1", List.of()).isEmpty());
+            assertEquals("", server.lastBlobCheckBody());
+        }
+    }
+
+    /// Blob-missing details expose every named hash and ignore other error codes.
+    @Test
+    public void collectsMissingBlobsFromDetails() {
+        JsonArray details = new JsonArray();
+        JsonObject object = new JsonObject();
+        object.addProperty("sha256", "aaa");
+        JsonArray blobs = new JsonArray();
+        blobs.add("bbb");
+        object.add("blobs", blobs);
+        details.add(object);
+        JsonArray array = new JsonArray();
+        array.add("ccc");
+        details.add(array);
+
+        MdtbbsApiException missing = new MdtbbsApiException(409, "SAVE_BLOB_MISSING",
+                "missing", false, details);
+        assertEquals(List.of("aaa", "bbb", "ccc"), missing.missingBlobs());
+        MdtbbsApiException suffix = new MdtbbsApiException(409, "ARCHIVE_BLOB_MISSING",
+                "missing", false, details);
+        assertEquals(List.of("aaa", "bbb", "ccc"), suffix.missingBlobs());
+        MdtbbsApiException conflict = new MdtbbsApiException(409, "SAVE_CONFLICT",
+                "conflict", false, details);
+        assertTrue(conflict.missingBlobs().isEmpty());
+    }
+
+    /// The retry-after detail is read only from a primitive value.
+    @Test
+    public void readsRetryAfterSeconds() {
+        JsonArray details = new JsonArray();
+        JsonObject object = new JsonObject();
+        object.addProperty("retry_after_seconds", 7);
+        details.add(object);
+
+        assertEquals(7, new MdtbbsApiException(429, "RATE_LIMITED", "slow", true, details)
+                .retryAfterSeconds());
+        assertEquals(0, new MdtbbsApiException(429, "RATE_LIMITED", "slow", true)
+                .retryAfterSeconds());
+        object.add("retry_after_seconds", new JsonObject());
+        assertEquals(0, new MdtbbsApiException(429, "RATE_LIMITED", "slow", true, details)
+                .retryAfterSeconds());
+    }
+
+    /// Two different non-blank base heads are rejected before the request.
+    @Test
+    public void rejectsConflictingManifestBaseHeads() throws Exception {
+        try (CloudServer server = CloudServer.start()) {
+            UploadOptions options = new UploadOptions("manual", "snap-b", "normal", null, null);
+
+            assertThrows(IllegalArgumentException.class,
+                    () -> server.client().createManifestSnapshot("slot1", "snap-a",
+                            "manifest",
+                            List.of(new ManifestEntry("saves/a.msav", 1, "a".repeat(64))),
+                            options));
+        }
+    }
+
+    /// Computes the lowercase hex SHA-256 of a UTF-8 string.
+    private static String sha256(String value) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException e) {
+            throw new AssertionError(e);
+        }
+    }
+
     /// Local fixture server serving the cloud-save routes.
     private static final class CloudServer implements AutoCloseable {
         private final HttpServer server;
@@ -283,9 +633,23 @@ public final class MdtbbsCloudSavesClientTest {
         private final AtomicInteger commitStatus = new AtomicInteger(200);
         private final AtomicInteger releaseStatus = new AtomicInteger(200);
         private final AtomicReference<String> lastUploadBody = new AtomicReference<>("");
-        private final AtomicReference<String> lastPatchBody = new AtomicReference<>("");
+        private final AtomicReference<String> lastBlobCheckBody = new AtomicReference<>("");
+        private final AtomicReference<String> lastBlobUpload = new AtomicReference<>("");
+        private final AtomicReference<byte[]> lastBlobUploadBody =
+                new AtomicReference<>(new byte[0]);
+        private final AtomicReference<String> lastBlobAuthHeader = new AtomicReference<>("");
+        private final AtomicReference<String> lastBlobRelease = new AtomicReference<>("");
+        private final AtomicReference<String> lastManifestBody = new AtomicReference<>("");
+        private final AtomicInteger blobPutStatus = new AtomicInteger(200);
+        private final AtomicInteger blobReleaseStatus = new AtomicInteger(200);
         volatile boolean noUploadRequired;
         volatile boolean conflict;
+        volatile boolean blobNoUpload;
+        volatile boolean formatMismatch;
+        volatile boolean blobCheckExistsAlias;
+        volatile boolean flatManifest;
+        volatile boolean blobUrlsAlias;
+        volatile String blobUploadOrigin = "";
 
         private CloudServer(HttpServer server) {
             this.server = server;
@@ -323,8 +687,40 @@ public final class MdtbbsCloudSavesClientTest {
             return lastUploadBody.get();
         }
 
+        String lastBlobCheckBody() {
+            return lastBlobCheckBody.get();
+        }
+
+        String lastBlobUpload() {
+            return lastBlobUpload.get();
+        }
+
+        byte[] lastBlobUploadBody() {
+            return lastBlobUploadBody.get();
+        }
+
+        String lastBlobAuthHeader() {
+            return lastBlobAuthHeader.get();
+        }
+
+        String lastBlobRelease() {
+            return lastBlobRelease.get();
+        }
+
+        String lastManifestBody() {
+            return lastManifestBody.get();
+        }
+
+        String absoluteUrl(String path) {
+            return "http://127.0.0.1:" + server.getAddress().getPort() + path;
+        }
+
         void failPut() {
             putStatus.set(500);
+        }
+
+        void failBlobPut() {
+            blobPutStatus.set(500);
         }
 
         void failCommit() {
@@ -368,12 +764,68 @@ public final class MdtbbsCloudSavesClientTest {
                 return;
             }
             if (path.equals("/api/v1/game-saves/slot1") && method.equals("PATCH")) {
-                lastPatchBody.set(new String(request, StandardCharsets.UTF_8));
                 respond(exchange, 200, SLOT_JSON);
                 return;
             }
             if (path.equals("/api/v1/game-saves/slot1/snapshots") && method.equals("GET")) {
                 respond(exchange, 200, SNAPSHOTS_JSON);
+                return;
+            }
+            if (path.equals("/api/v1/game-saves/blobs/check") && method.equals("POST")) {
+                lastBlobCheckBody.set(new String(request, StandardCharsets.UTF_8));
+                respond(exchange, 200,
+                        blobCheckExistsAlias ? BLOB_CHECK_EXISTS_JSON : BLOB_CHECK_JSON);
+                return;
+            }
+            if (path.equals("/api/v1/game-saves/blobs") && method.equals("POST")) {
+                if (blobNoUpload) {
+                    respond(exchange, 200, BLOB_NO_UPLOAD_JSON);
+                } else {
+                    String origin = blobUploadOrigin.isBlank()
+                            ? "http://127.0.0.1:" + server.getAddress().getPort()
+                            : blobUploadOrigin;
+                    respond(exchange, 200, blobUploadJson(origin));
+                }
+                return;
+            }
+            if (path.equals("/api/v1/game-saves/blobs/b1/file") && method.equals("PUT")) {
+                lastBlobUpload.set(method + " " + path);
+                lastBlobUploadBody.set(request);
+                String authorization = exchange.getRequestHeaders().getFirst("Authorization");
+                lastBlobAuthHeader.set(authorization == null ? "" : authorization);
+                respond(exchange, blobPutStatus.get(), statusBody(blobPutStatus.get()));
+                return;
+            }
+            if (path.equals("/api/v1/game-saves/blobs/uploads/b1") && method.equals("DELETE")) {
+                lastBlobRelease.set(method + " " + path);
+                respond(exchange, blobReleaseStatus.get(), statusBody(blobReleaseStatus.get()));
+                return;
+            }
+            if (path.equals("/api/v1/game-saves/blobs/content/blob1") && method.equals("GET")) {
+                byte[] bytes = BLOB_CONTENT.getBytes(StandardCharsets.UTF_8);
+                exchange.getResponseHeaders().add("Content-Type", "application/octet-stream");
+                exchange.sendResponseHeaders(200, bytes.length);
+                try (OutputStream out = exchange.getResponseBody()) {
+                    out.write(bytes);
+                } finally {
+                    exchange.close();
+                }
+                return;
+            }
+            if (path.equals("/api/v1/game-saves/slot1/snapshots") && method.equals("POST")) {
+                lastManifestBody.set(new String(request, StandardCharsets.UTF_8));
+                respond(exchange, formatMismatch ? 409 : 200,
+                        formatMismatch ? FORMAT_MISMATCH_JSON : MANIFEST_SNAPSHOT_JSON);
+                return;
+            }
+            if (path.equals("/api/v1/game-saves/slot1/snapshots/snap1/manifest")
+                    && method.equals("GET")) {
+                respond(exchange, 200, flatManifest ? MANIFEST_FLAT_JSON : MANIFEST_JSON);
+                return;
+            }
+            if (path.equals("/api/v1/game-saves/slot1/snapshots/snap1/blobs/download")
+                    && method.equals("POST")) {
+                respond(exchange, 200, blobUrlsAlias ? BLOB_URLS_ALIAS_JSON : BLOB_URLS_JSON);
                 return;
             }
             if (path.equals("/api/v1/game-saves/uploads/u1/file") && method.equals("PUT")) {
@@ -434,6 +886,13 @@ public final class MdtbbsCloudSavesClientTest {
             return "{\"error\":{\"code\":\"INTERNAL\",\"message\":\"boom\"}}";
         }
 
+        /// Builds a blob upload session whose PUT targets the given origin.
+        private static String blobUploadJson(String origin) {
+            return "{\"data\":{\"upload_id\":\"b1\",\"upload\":{\"method\":\"PUT\","
+                    + "\"url\":\"" + origin
+                    + "/api/v1/game-saves/blobs/b1/file\"}}}";
+        }
+
         @Override
         public void close() {
             server.stop(0);
@@ -468,8 +927,11 @@ public final class MdtbbsCloudSavesClientTest {
     private static final String QUOTA_JSON = """
             {"data":{"used_bytes":1000,"limit_bytes":10000,
               "max_file_size_bytes":2048,
+              "logical_bytes":4096,
+              "formats":["zip","manifest"],
               "slots":{"used":3,"limit":20},
-              "retention":{"max_unpinned_versions_per_slot":10,"max_unpinned_age_days":30}}}
+              "retention":{"max_unpinned_versions_per_slot":10,"max_unpinned_age_days":30},
+              "manifest_limits":{"max_files":512,"max_manifest_bytes":4000000}}}
             """;
 
     private static final String NO_UPLOAD_JSON = """
@@ -491,6 +953,57 @@ public final class MdtbbsCloudSavesClientTest {
             {"data":[{"id":"snap1","size":2048,"sha256":"abc","file_name":"a.msav",
               "created_at":"2026-09-30T12:00:00Z","revision":4,
               "save":{"map_name":"Salt Flats","wave":12},
-              "mods":[{"id":"a"},{"id":"b"}]}]}
+              "mods":[{"id":"a"},{"id":"b"}]},
+              {"id":"snap2","size":4096,"sha256":"def","file_name":"b.zip",
+               "created_at":"2026-09-29T12:00:00Z","revision":3,
+               "format":"manifest","file_count":3,"mod_count":5,
+               "mods":[{"id":"example-mod","name":"Example","version":"1.2.0","sha256":"abc"}]}]}
             """;
+
+    private static final String BLOB_CONTENT = "blob-content-bytes";
+
+    private static final String BLOB_HASH = "c".repeat(64);
+
+    private static final String BLOB_CHECK_JSON = """
+            {"data":{"existing":["aaa"],"missing":["bbb"]}}
+            """;
+
+    private static final String BLOB_CHECK_EXISTS_JSON = """
+            {"data":{"exists":["aaa"],"missing":["bbb"]}}
+            """;
+
+    private static final String BLOB_NO_UPLOAD_JSON = """
+            {"data":{"no_upload_required":true,"snapshot_id":"blob-existing"}}
+            """;
+
+    private static final String FORMAT_MISMATCH_JSON = """
+            {"error":{"code":"SAVE_SNAPSHOT_FORMAT_MISMATCH","message":"format mismatch",
+              "retryable":false}}
+            """;
+
+    private static final String MANIFEST_SNAPSHOT_JSON = """
+            {"data":{"snapshot_id":"snap-manifest","format":"manifest","file_count":1}}
+            """;
+
+    private static final String MANIFEST_JSON = """
+            {"data":{"snapshot_id":"snap1","manifest":{"format":"manifest","files":[
+              {"path":"saves/a.msav","size":11,"sha256":"%s"},
+              {"path":"settings.bin","size":22,"sha256":"%s"}]}}}
+            """.formatted("a".repeat(64), "b".repeat(64));
+
+    private static final String MANIFEST_FLAT_JSON = """
+            {"data":{"snapshot_id":"snap1","format":"manifest","files":[
+              {"path":"saves/a.msav","size":11,"sha256":"%s"},
+              {"path":"settings.bin","size":22,"sha256":"%s"}]}}
+            """.formatted("a".repeat(64), "b".repeat(64));
+
+    private static final String BLOB_URLS_JSON = """
+            {"data":{"blobs":[{"sha256":"%s","url":"/api/v1/game-saves/blobs/content/blob1",
+              "size":18}]}}
+            """.formatted(BLOB_HASH);
+
+    private static final String BLOB_URLS_ALIAS_JSON = """
+            {"data":{"urls":[{"sha256":"%s","url":"/api/v1/game-saves/blobs/content/blob1",
+              "size":18}]}}
+            """.formatted(BLOB_HASH);
 }

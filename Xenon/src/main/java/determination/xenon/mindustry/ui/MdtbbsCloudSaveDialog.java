@@ -227,16 +227,19 @@ public final class MdtbbsCloudSaveDialog {
         hint.setWrapText(true);
         Label status = new Label(i18n("xenon.cloud.loading"));
         status.setWrapText(true);
+        boolean supported = MindustryCloudArchiveService.supportsArchive(version);
         JFXCheckBox auto = new JFXCheckBox(i18n("xenon.cloud.archive.auto"));
         auto.setSelected(version.isCloudAutoSync());
-        auto.setDisable(!MindustryCloudArchiveService.supportsArchive(version));
+        auto.setDisable(!supported);
         auto.selectedProperty().addListener((observable, was, enabled) -> {
             version.setCloudAutoSync(enabled);
             persistInstanceSwitch();
         });
         JFXButton upload = FXUtils.newRaisedButton(i18n("xenon.cloud.archive.upload"));
+        upload.setDisable(!supported);
         upload.setOnAction(e -> uploadArchive());
         JFXButton restore = FXUtils.newRaisedButton(i18n("xenon.cloud.archive.restore"));
+        restore.setDisable(!supported);
         restore.setOnAction(e -> restoreArchive());
         JFXButton refresh = FXUtils.newRaisedButton(i18n("button.refresh"));
         refresh.setOnAction(e -> reloadSlots());
@@ -249,8 +252,7 @@ public final class MdtbbsCloudSaveDialog {
                 var latest = service.latestSnapshot();
                 Platform.runLater(() -> status.setText(latest == null
                         ? i18n("xenon.cloud.archive.none")
-                        : i18n("xenon.cloud.archive.latest",
-                                DATE.format(latest.createdAt()), formatSize(latest.size()))));
+                        : archiveSnapshotText(latest)));
             } catch (IOException e) {
                 Platform.runLater(() -> status.setText(
                         i18n("xenon.cloud.archive.failed", messageOf(e))));
@@ -262,7 +264,7 @@ public final class MdtbbsCloudSaveDialog {
         Label disabled = new Label(i18n("xenon.cloud.archive.disabled"));
         disabled.getStyleClass().add("subtitle-label");
         disabled.setWrapText(true);
-        disabled.setVisible(!MindustryCloudArchiveService.supportsArchive(version));
+        disabled.setVisible(!supported);
         disabled.setManaged(disabled.isVisible());
 
         VBox body = new VBox(8, hint, quotaLabel, modeRow, auto, status, actions);
@@ -459,12 +461,31 @@ public final class MdtbbsCloudSaveDialog {
     /// @param source local `.msav` file
     private void uploadFile(Slot slot, Path source) {
         String reason = "manual";
-        @Nullable String head = null;
+        @Nullable String head = slot.currentSnapshotId().isBlank()
+                ? null : slot.currentSnapshotId();
         try {
             List<Snapshot> snapshots = client.snapshots(slot.id());
-            if (!snapshots.isEmpty()) head = snapshots.get(0).id();
+            @Nullable Snapshot current = null;
+            for (Snapshot snapshot : snapshots) {
+                if (snapshot.id().equals(head)) {
+                    current = snapshot;
+                    break;
+                }
+            }
+            if (current != null) {
+                head = current.id();
+            } else if (head == null && !snapshots.isEmpty()) {
+                head = snapshots.stream().max(Comparator.comparing(Snapshot::createdAt))
+                        .map(Snapshot::id).orElse(null);
+            }
         } catch (IOException e) {
-            // The upload itself reports the real failure.
+            if (head == null) {
+                Controllers.dialog(i18n("xenon.cloud.upload.failed", messageOf(e)),
+                        i18n("message.error"), MessageDialogPane.MessageType.ERROR);
+                return;
+            }
+            LOG.info("Cloud snapshot head lookup failed; using the slot head: "
+                    + messageOf(e));
         }
         uploadFile(slot, source, optionsFor(source, head, reason, "normal", null));
     }
@@ -647,19 +668,27 @@ public final class MdtbbsCloudSaveDialog {
     }
 
     /// Builds one snapshot row with download and pin actions.
+    ///
+    /// A manifest snapshot cannot be restored as a single `.msav`, so its
+    /// download action is disabled and the row explains where to restore it.
     private Region snapshotRow(Slot slot, Snapshot snapshot) {
         Label name = new Label(snapshot.fileName().isBlank() ? snapshot.id() : snapshot.fileName());
         name.getStyleClass().add("title-label");
+        String display = snapshotDisplay(snapshot);
+        if (snapshot.manifest()) {
+            display += "  ·  " + i18n("xenon.cloud.snapshot.delta_hint");
+        }
         Label meta = new Label(i18n("xenon.cloud.snapshot.meta",
                 DATE.format(snapshot.createdAt()), formatSize(snapshot.size()),
                 snapshot.pinned() ? i18n("xenon.cloud.pinned") : "")
-                + snapshotDisplay(snapshot));
+                + display);
         meta.getStyleClass().add("subtitle-label");
 
         VBox text = new VBox(2, name, meta);
         HBox.setHgrow(text, Priority.ALWAYS);
 
         JFXButton download = FXUtils.newRaisedButton(i18n("xenon.cloud.download"));
+        download.setDisable(snapshot.manifest());
         download.setOnAction(e -> restore(slot, snapshot));
         JFXButton pin = FXUtils.newRaisedButton(snapshot.pinned()
                 ? i18n("xenon.cloud.unpin") : i18n("xenon.cloud.pin"));
@@ -681,8 +710,18 @@ public final class MdtbbsCloudSaveDialog {
         Schedulers.io().execute(() -> {
             try {
                 Files.createDirectories(savesDir);
-                Path target = savesDir.resolve(snapshot.fileName().isBlank()
-                        ? "cloud-" + snapshot.id() + ".msav" : snapshot.fileName());
+                String fileName = safeSaveName(snapshot.fileName());
+                if (fileName.isBlank()) {
+                    fileName = safeSaveName("cloud-" + snapshot.id() + ".msav");
+                }
+                if (fileName.isBlank()) {
+                    throw new IOException("cloud save file name is invalid");
+                }
+                Path root = savesDir.normalize();
+                Path target = root.resolve(fileName).normalize();
+                if (!target.startsWith(root)) {
+                    throw new IOException("cloud save target escapes the saves directory");
+                }
                 Path temp = Files.createTempFile(savesDir, "xenon-cloud-", ".msav");
                 try {
                     client.download(slot.id(), snapshot.id(), temp, null);
@@ -1010,6 +1049,18 @@ public final class MdtbbsCloudSaveDialog {
         Platform.runLater(() -> layout.setBody(new Label(messageOf(error))));
     }
 
+    /// Formats the latest archive snapshot and its container format.
+    ///
+    /// @param snapshot newest archive snapshot
+    /// @return the latest line followed by the snapshot-format line
+    private static String archiveSnapshotText(Snapshot snapshot) {
+        String latest = i18n("xenon.cloud.archive.latest",
+                DATE.format(snapshot.createdAt()), formatSize(snapshot.size()));
+        if (!snapshot.manifest()) return latest;
+        return latest + "\n" + i18n("xenon.cloud.archive.snapshot_format",
+                i18n("xenon.cloud.archive.format.delta"), snapshot.fileCount());
+    }
+
     /// Formats the quota line.
     private static String formatQuota(Quota quota) {
         if (quota.quotaBytes() <= 0) {
@@ -1028,6 +1079,31 @@ public final class MdtbbsCloudSaveDialog {
             return String.format(Locale.ROOT, "%.1f MB", bytes / (1024.0 * 1024));
         }
         return String.format(Locale.ROOT, "%.2f GB", bytes / (1024.0 * 1024 * 1024));
+    }
+
+    /// Derives a safe leaf file name from a server-provided snapshot name.
+    ///
+    /// Rejects blank names, `.`/`..`, absolute paths, drive letters and any name
+    /// containing `/`, `\` or `:`. The result is a single leaf that can be
+    /// resolved under the saves directory without escaping it.
+    ///
+    /// @param name server-provided file name
+    /// @return the safe leaf name, or empty when the name is unsafe
+    static String safeSaveName(@Nullable String name) {
+        if (name == null || name.isBlank()) return "";
+        if (name.contains("/") || name.contains("\\") || name.contains(":")) return "";
+        try {
+            Path path = Path.of(name);
+            if (path.isAbsolute()) return "";
+            Path leaf = path.getFileName();
+            String candidate = leaf == null ? "" : leaf.toString();
+            if (candidate.isBlank() || ".".equals(candidate) || "..".equals(candidate)) {
+                return "";
+            }
+            return candidate;
+        } catch (RuntimeException e) {
+            return "";
+        }
     }
 
     /// Strips the file extension from a name.

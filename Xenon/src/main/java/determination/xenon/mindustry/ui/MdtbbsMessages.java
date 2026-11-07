@@ -87,8 +87,26 @@ public final class MdtbbsMessages {
                  "INSUFFICIENT_SCOPE" -> i18n("xenon.mdtbbs.error.auth", api.getStatusCode());
             case "CLIENT_CAPABILITY_NOT_APPROVED" -> i18n("xenon.mdtbbs.error.capability");
             case "CSRF_TOKEN_INVALID" -> i18n("xenon.mdtbbs.error.csrf");
+            case "SESSION_ALREADY_ACTIVE" -> i18n("xenon.netplay.mdtbbs.error.session_active", api.detailString("session_id"));
+            case "SESSION_PERMISSION_DENIED" -> i18n("xenon.netplay.mdtbbs.error.closed", messageOf(api));
+            case "INVITE_LIMIT_REACHED" -> i18n("xenon.netplay.mdtbbs.error.invite_limit", retryDetail(api));
+            case "PRESENCE_CONNECTION_LIMIT_REACHED" -> i18n("xenon.netplay.mdtbbs.error.presence_limit", messageOf(api));
+            case "SAVE_SNAPSHOT_FORMAT_MISMATCH" -> i18n("xenon.mdtbbs.error.save_format_mismatch");
+            case "SAVE_BLOB_MISSING" -> i18n("xenon.mdtbbs.error.save_blob_missing");
+            case "SAVE_MANIFEST_INVALID" -> i18n("xenon.mdtbbs.error.save_manifest_invalid");
+            case "SAVE_MANIFEST_LIMIT_EXCEEDED" -> i18n("xenon.mdtbbs.error.save_manifest_limit");
+            case "SAVE_QUOTA_EXCEEDED" -> i18n("xenon.mdtbbs.error.save_quota");
             default -> null;
         };
+    }
+
+    /// Formats the advertised retry delay of a rate-limited API failure.
+    ///
+    /// @param api failed API response
+    /// @return a short `Ns` suffix, or an empty string when no delay was advertised
+    private static String retryDetail(MdtbbsApiException api) {
+        long seconds = api.retryAfterSeconds();
+        return seconds > 0 ? seconds + "s" : "";
     }
 
     /// Unwraps nested IO causes so wrapped API failures are still recognized.

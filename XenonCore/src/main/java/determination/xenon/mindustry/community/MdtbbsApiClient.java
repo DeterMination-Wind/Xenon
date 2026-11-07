@@ -172,7 +172,7 @@ public final class MdtbbsApiClient {
         }
     }
 
-    /// Follows a single redirect, dropping the bearer token on cross-host hops.
+    /// Follows a single redirect, dropping the bearer token on cross-origin hops.
     ///
     /// @param response      response returned by [`#openRaw`]
     /// @param authenticated whether the original request carried the token
@@ -188,9 +188,8 @@ public final class MdtbbsApiClient {
             throw new IOException("Redirect without Location from " + origin);
         }
         URI target = origin.resolve(location);
-        boolean sameHost = target.getHost() != null
-                && target.getHost().equalsIgnoreCase(origin.getHost());
-        return openRawUrl(target.toString(), authenticated && sameHost);
+        boolean sameOrigin = isSameOrigin(target, origin);
+        return openRawUrl(target.toString(), authenticated && sameOrigin);
     }
 
     /// Sends an authenticated request with a caller-provided content type and body.
@@ -268,16 +267,18 @@ public final class MdtbbsApiClient {
                     "Not logged in to MDTBBS", false);
         }
         String absolute = resolveUrl(url);
-        boolean sameOrigin = absolute.startsWith(origin());
+        boolean sameOrigin = isApiOrigin(absolute);
         boolean csrfRetried = false;
         while (true) {
             String csrfBefore = cookies.get("csrf_token");
             HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(absolute))
                     .timeout(Duration.ofMinutes(30))
                     .header("Content-Type", contentType)
-                    .header("User-Agent", "Xenon-Launcher")
-                    .header("Authorization", "Bearer " + token);
-            if (sameOrigin) applyCsrf(builder);
+                    .header("User-Agent", "Xenon-Launcher");
+            if (sameOrigin) {
+                builder.header("Authorization", "Bearer " + token);
+                applyCsrf(builder);
+            }
             HttpRequest.BodyPublisher body = HttpRequest.BodyPublishers.ofFile(file);
             if (progress != null) body = new CountingBodyPublisher(body, progress);
             try {
@@ -524,6 +525,43 @@ public final class MdtbbsApiClient {
     private String origin() {
         URI uri = URI.create(baseUrl);
         return uri.getScheme() + "://" + uri.getAuthority();
+    }
+
+    /// Whether an absolute URL belongs to the configured API origin.
+    ///
+    /// Compares scheme, host and effective port instead of string prefixes, so
+    /// a look-alike host such as `api.example.evil` is not treated as local.
+    ///
+    /// @param absolute absolute URL to inspect
+    /// @return `true` when the URL shares the API origin
+    private boolean isApiOrigin(String absolute) {
+        try {
+            return isSameOrigin(URI.create(absolute), URI.create(baseUrl));
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
+    }
+
+    /// Whether two URIs share scheme, host and effective port.
+    ///
+    /// @param first  first URI
+    /// @param second second URI
+    /// @return `true` when both identify the same origin
+    private static boolean isSameOrigin(URI first, URI second) {
+        if (first.getScheme() == null || second.getScheme() == null) return false;
+        if (!first.getScheme().equalsIgnoreCase(second.getScheme())) return false;
+        if (first.getHost() == null || second.getHost() == null) return false;
+        if (!first.getHost().equalsIgnoreCase(second.getHost())) return false;
+        return effectivePort(first) == effectivePort(second);
+    }
+
+    /// Resolves the effective port, applying the scheme default.
+    ///
+    /// @param uri URI to inspect
+    /// @return the explicit or default port
+    private static int effectivePort(URI uri) {
+        if (uri.getPort() >= 0) return uri.getPort();
+        return "https".equalsIgnoreCase(uri.getScheme()) ? 443 : 80;
     }
 
     /// Computes the delay before retrying a rate-limited request.
