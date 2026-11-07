@@ -2,6 +2,22 @@
 
 All notable changes to Xenon will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- Cloud archives can upload a file-level delta snapshot: only the blobs the cloud is missing are transferred (three workers, server-advertised retry delay), and a restore downloads only files that are missing or hash-mismatched. When the server rejects the manifest, the instance exceeds a file-count/size limit, or the quota check fails, the upload falls back to the whole-archive zip inside the same run.
+- Host join requests are read from `GET /multiplayer/sessions/{id}/join-requests`; realtime events now only trigger a refresh, so a dropped event can no longer hide a pending request.
+- `capabilities.limits` now caps hosted player counts, lobby page size, invites and presence connections; `INVITE_LIMIT_REACHED` and `PRESENCE_CONNECTION_LIMIT_REACHED` explain the limit instead of failing generically.
+- The invite dialog searches non-friend users through `GET /users/search` and can invite them, subject to the server's friend/privacy policy.
+
+### Fixed
+- Creating a room while the account still owns a stale session no longer reports a generic failure: Xenon closes the leftover session and retries once, then offers a retry action naming the old session.
+- The lobby button follows the server snapshot (`joinable`, `blocked_reason`, `can_request_join`) instead of guessing from `require_approval`, and blocked rows show the localized reason.
+- `409 SAVE_SNAPSHOT_FORMAT_MISMATCH` and the other save-format codes now produce a readable, actionable message; a delta snapshot in the single-save tab is marked as restore-from-archive instead of offering a download that cannot work.
+
+### Changed
+- The competitor table was re-verified as of 2026-11-07, gained a last-push activity row, the MDTBBS 1.8 comparison, and Eliezer516/mindustry-launcher.
+
 ## [2.0.0] — 2026-10-23
 
 ### Added

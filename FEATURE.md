@@ -43,6 +43,8 @@
 - 冲突处理：保留两份（云端冲突副本）、用云端覆盖本地（先备份）、用本地覆盖云端（先下载云端副本）；强制覆盖需确认当前快照 ID。
 - `no_upload_required` 去重响应不重复上传；下载校验 SHA-256，并保存 ETag / Last-Modified。
 - 整实例归档：`saves/`、`maps/`、`schematics/`、`settings.bin` 与 Mod 清单；官方索引 Mod 不打包字节，恢复后自动补齐。
+- 文件级差量（manifest 快照）：只上传云端缺失的 blob（并发 ≤3，按服务端建议的退避时间重试），恢复时只下载缺失或哈希不符的文件；超出服务端文件数/大小限制、格式不被接受或配额不足时自动回退整包 zip。
+- 快照格式错误可读化：409 `SAVE_SNAPSHOT_FORMAT_MISMATCH`、`SAVE_BLOB_MISSING`、`SAVE_MANIFEST_INVALID` 等不再显示裸 HTTP 码。
 - 自动同步（按实例 opt-in）：启动前拉取、退出后上传；冲突永不自动裁决；共享数据目录禁用整实例模式。
 - 本地 `cloud-sync.json` 基线：用文件指纹而不是时间戳判断 pull / push / conflict。
 
@@ -52,10 +54,12 @@
 - MindAuth 系统浏览器登录并自动返回；作者名可打开用户主页。
 - 好友在线状态、正在玩动态、联机邀请接受/拒绝。
 - 官方公共服务器列表，复制地址或启动游戏。
-- MDTBBS 1.7.0 联机：可见范围（private/friends/public）与加入权限（invite_only/friends/public）正交，`require_approval` 独立。
-- 公开房间大厅：显示人数、版本与可见性，可直接加入或申请加入。
-- 房主审批：加入申请列表、批准/拒绝；客人等待状态与拒绝提示。
+- MDTBBS 1.8.0 联机：可见范围（private/friends/public）与加入权限（invite_only/friends/public）正交，`require_approval` 独立；每账号只允许一个活跃房间，建房撞上遗留会话时先结束僵尸房间并重试一次。
+- 公开房间大厅：显示人数、版本与可见性；按钮按服务端的 `joinable` / `can_request_join`（以及批准开关）决定直接加入、申请加入或不可加入，不可加入时显示 `blocked_reason` 的本地化原因。
+- 房主审批：以 `GET /multiplayer/sessions/{id}/join-requests` 为权威快照，实时事件只触发刷新，丢事件不再永久丢申请；客人等待状态与拒绝提示。
 - 实时事件：一次性 ticket + `/realtime/v1` WebSocket，30 秒心跳、事件去重、断线 resume；`resume_failed` 重新拉取快照。
+- `capabilities.limits` 收敛建房人数、大厅分页与邀请上限；邀请/在线状态连接超限时给出可操作提示。
+- 邀请对话框支持按用户名搜索非好友并直接邀请，是否成功由服务端的隐私/好友策略与邀请上限决定。
 - 房间码：`join_policy=public` 时签发 10 位十六进制码，支持粘贴、大小写归一化与格式校验。
 - 伪局域网：客人中继连接后向本机 Mindustry 广播房间，游戏 LAN 列表直接出现；20151 被占用时静默降级，保留 `127.0.0.1` 复制地址。
 - 房主桥接：先建房后开游戏时，本地 TCP 连接在 8 秒内重试；UDP 转发与中继凭证自动续期。
@@ -83,7 +87,7 @@
 
 ## 与竞品的比较
 
-> 按各项目公开文档整理（截至 2026-10-23）。竞品能力可能随版本变化，请以各自项目为准。
+> 按各项目公开文档整理（截至 2026-11-07）。竞品能力可能随版本变化，请以各自项目为准。
 
 | 能力 | Xenon | [BookMdtLauncher](https://github.com/ch-BookBanana/BookMdtLauncher) | [Copper Launcher](https://github.com/MDTCopper/launcher) | [MDL](https://github.com/colorgarden/mindustry_launcherMDL) | [MindustryLauncher](https://github.com/BalaM314/MindustryLauncher) |
 | --- | --- | --- | --- | --- | --- |
@@ -96,9 +100,10 @@
 | Mod 批量 / 拖拽 | ✅ 批量启停删除、拖入文件/文件夹、自动拆包 | ❌ | ✅ 多选、拖入、Windows 拖出 | ❌ | ❌ |
 | 地图 / 蓝图 | ✅ mindustry.top、.msch、分享码、资源页 | ❌ | ⚠️ 资源导入导出 | ✅ 社区蓝图 | ❌ |
 | 存档 | ✅ 备份/导出、回收站、自动备份 | ❌ | ⚠️ 资源与云存档（开发中） | ✅ 扫描/解析/删除 | ❌ |
-| 云存档 | ✅ 单存档冲突处理 + 整实例归档 + 自动同步 | ❌ | ⚠️ 整包/同步/冲突副本（开发中） | ❌ | ❌ |
+| 云存档 | ✅ 单存档冲突处理 + 整实例归档 + 文件级差量（manifest）+ 自动同步 | ❌ | ⚠️ 整包/同步/冲突副本、差量/清单快照（开发中） | ❌ | ❌ |
 | settings.bin 编辑 | ✅ 全量表格、搜索、自动备份与恢复 | ❌ | ⚠️ 启动时覆盖部分设置 | ✅ 表格编辑与备份 | ❌ |
-| 社区与联机 | ✅ MDTBBS 1.7.0、公开大厅、审批、实时事件、伪局域网 | ❌ | ⚠️ 中继代理与伪局域网（开发中） | ✅ EasyTier 大厅 | ❌ |
+| 社区与联机 | ✅ MDTBBS 1.8.0、公开大厅、审批列表、limits、实时事件、伪局域网 | ❌ | ⚠️ 中继代理、伪局域网与启动会话交接（开发中） | ✅ EasyTier 大厅 | ❌ |
+| 扩展 / 登录 | ✅ MindAuth 登录、深链、启动脚本、单实例协议 | ✅ 插件系统 v3、settings.bin 类型化编解码、GitHub App 登录 | ❌ | ❌ | ❌ |
 | Mod 开发工作流 | ✅ 构建、部署、监听、自动重启 | ❌ | ❌ | ❌ | ✅ 编译与自动重启 |
 | 回收站 / 分组 | ✅ 实例与存档回收站、单层分组 | ❌ | ❌ | ❌ | ❌ |
 | CLI / 深链 / 启动脚本 | ✅ 无窗口 CLI、`.bat/.sh`、三种深链 | ❌ | ❌ | ❌ | ✅ CLI |
@@ -106,15 +111,19 @@
 | 下载来源策略 | ✅ 四档 | ⚠️ 无档位开关 | ✅ 三档 | ❌ | ❌ |
 | 下载限速 | ✅ 全局令牌桶 | ❌ | ✅ | ❌ | ❌ |
 | 服务器管理 | ✅ 控制台、自动重启、ScriptAgent | ❌ | ❌ | ❌ | ❌ |
+| 最后推送（活跃度） | 2026-10-31 | 2026-10-31 | 2026-11-07 | 2026-06-28 | 2026-09-04 |
 | 许可 | GPLv3 | GPL-3.0 | MIT | AGPL-3.0 | 未标注 |
 
 ✅ 支持 ｜ ❌ 未提供或未说明 ｜ ⚠️ 部分支持或形态不同
+
+最后推送日期取自 GitHub REST API（2026-11-07 查询）。
 
 其他 Windows-capable 启动器：
 
 - [GIML](https://github.com/SquareCM2/GIML)（WinUI 3，开发中）
 - [zenonet/MindustryLauncher](https://github.com/zenonet/MindustryLauncher)（Avalonia）
-- [GXFQE/mindustry-launcher](https://github.com/GXFQE/mindustry-launcher)（Python/tkinter，CAS、隔离存档、自动备份、CLI）
+- [GXFQE/mindustry-launcher](https://github.com/GXFQE/mindustry-launcher)（Python/tkinter，CAS、隔离存档、自动备份、CLI；v1.3.2 / v1.3.3 补齐 5 类开关与退出码、版本名容错）
+- [Eliezer516/mindustry-launcher](https://github.com/Eliezer516/mindustry-launcher)（2026-10-27 最后推送）
 - [Walker196/Mindustry-Launcher](https://github.com/Walker196/Mindustry-Launcher)（Tauri + React + Rust）
 - [NixaVulpi/MindustryLauncher](https://github.com/NixaVulpi/MindustryLauncher)（便携包装，自备 jar/JRE）
 - [kabaka9527/MindustryLauncher](https://github.com/kabaka9527/MindustryLauncher)（Tauri 2 + Rust + React 19）
@@ -123,7 +132,7 @@
 
 移动端 / 其他平台：
 
-- [haohandc/MindustryArk](https://github.com/haohandc/MindustryArk)（HarmonyOS NEXT，C）
+- [haohandc/MindustryArk](https://github.com/haohandc/MindustryArk)（HarmonyOS NEXT，C；仓库已拆分）
 - [GXFQE/mindustry-launcher-android](https://github.com/GXFQE/mindustry-launcher-android)（Android，APK 插件）
 - [EmmM9O/oxygen-launcher](https://github.com/EmmM9O/oxygen-launcher)（Android，Kotlin，已停更）
 
