@@ -113,6 +113,45 @@ public final class MindustryModManager {
         return scan(true);
     }
 
+    /// Builds an index of the installed mods keyed by the game's internal name.
+    ///
+    /// Broken archives are ignored. When several archives provide the same
+    /// mod, the highest [MindustryModVersion] wins, then the enabled archive,
+    /// and finally the first archive in scan order. The returned map is an
+    /// immutable snapshot; callers must ask again after a mutation.
+    ///
+    /// @return internal name to installed mod, never `null`
+    public synchronized Map<String, MindustryLocalMod> byInternalName() {
+        Map<String, MindustryLocalMod> index = new LinkedHashMap<>();
+        for (MindustryLocalMod mod : scanAll()) {
+            if (mod.isUnparsable() || mod.getInternalName().isBlank()) {
+                continue;
+            }
+            index.merge(mod.getInternalName(), mod, MindustryModManager::betterLocalCopy);
+        }
+        return Collections.unmodifiableMap(index);
+    }
+
+    /// Chooses between two archives that provide the same internal mod name.
+    ///
+    /// @param current archive already indexed
+    /// @param candidate newly scanned archive
+    /// @return the archive that should stay in the index
+    private static MindustryLocalMod betterLocalCopy(MindustryLocalMod current,
+                                                     MindustryLocalMod candidate) {
+        Integer compared = MindustryModVersion.compare(candidate.getVersion(), current.getVersion());
+        if (compared != null && compared > 0) {
+            return candidate;
+        }
+        if (compared != null && compared < 0) {
+            return current;
+        }
+        if (candidate.isEnabled() && !current.isEnabled()) {
+            return candidate;
+        }
+        return current;
+    }
+
     private List<MindustryLocalMod> scan(boolean includeUnparsable) {
         List<MindustryLocalMod> result = new ArrayList<>();
         if (!Files.isDirectory(modsDir)) return result;

@@ -35,6 +35,7 @@ import java.util.zip.ZipOutputStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -637,6 +638,40 @@ public final class MindustryModManagerTest {
             zip.closeEntry();
         }
         return archive;
+    }
+
+    /// Duplicate archives collapse to the highest version; disabled copies and
+    /// broken archives do not replace it.
+    @Test
+    public void byInternalNamePicksHighestVersionAndSkipsBrokenArchives(@TempDir Path tempDir)
+            throws IOException {
+        Path modsDir = tempDir.resolve("mods");
+        writeModVersion(modsDir.resolve("duplicate-old.zip"), "Duplicate Mod", "1.0");
+        writeModVersion(modsDir.resolve("duplicate-new.zip"), "Duplicate Mod", "1.2");
+        writeModVersion(modsDir.resolve("duplicate-disabled.zip.disabled"), "Duplicate Mod", "1.1");
+        writeArchive(modsDir.resolve("broken.zip"), "mod.json", "{ name: broken");
+
+        Map<String, MindustryLocalMod> index = new MindustryModManager(modsDir).byInternalName();
+
+        assertEquals(1, index.size());
+        MindustryLocalMod picked = index.get("duplicate-mod");
+        assertNotNull(picked);
+        assertEquals("1.2", picked.getVersion());
+        assertEquals("duplicate-new.zip", picked.getFile().getFileName().toString());
+    }
+
+    /// Writes one mod archive with an explicit descriptor version.
+    private static Path writeModVersion(Path archive, String internalName, String version)
+            throws IOException {
+        String descriptor = """
+                {
+                  "name": "%s",
+                  "displayName": "%s",
+                  "author": "Xenon",
+                  "version": "%s"
+                }
+                """.formatted(internalName, internalName, version);
+        return writeArchive(archive, "mod.json", descriptor);
     }
 
     private static Path writeMod(Path archive, String internalName, String displayName) throws IOException {

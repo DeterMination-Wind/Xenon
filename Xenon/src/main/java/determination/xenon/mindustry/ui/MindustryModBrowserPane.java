@@ -29,6 +29,9 @@ import determination.xenon.mindustry.download.GitHubRelease;
 import determination.xenon.mindustry.download.GitHubReleaseClient;
 import determination.xenon.mindustry.download.MirrorDownloader;
 import determination.xenon.mindustry.mod.GitHubDirectInstaller;
+import determination.xenon.mindustry.mod.MindustryGameModNaming;
+import determination.xenon.mindustry.mod.MindustryLocalMod;
+import determination.xenon.mindustry.mod.MindustryModInstallState;
 import determination.xenon.mindustry.mod.MindustryModManager;
 import determination.xenon.mindustry.mod.MindustryModParser;
 import determination.xenon.mindustry.mod.MindustryModsIndexRepository;
@@ -54,6 +57,7 @@ import javafx.geometry.Pos;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
+import javafx.scene.control.Tooltip;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -114,6 +118,15 @@ public final class MindustryModBrowserPane extends BorderPane implements PageAwa
     private final Map<MindustryRemoteMod, String> oneLineDescription = new HashMap<>();
     /// Debounce timer for the search field.
     private final PauseTransition searchPause = new PauseTransition(Duration.millis(300));
+    /// Install state per game-normalized mod name for the selected target version.
+    private final Map<String, MindustryModInstallState> installedState = new HashMap<>();
+    /// Target instance the state map belongs to, or `null` before the first scan.
+    private @Nullable String installedStateTargetId;
+    /// Generation counter used to discard scans for a target the user left.
+    private long installedScanGeneration;
+    /// State shown for rows whose mod is absent from the target instance.
+    private static final MindustryModInstallState NOT_INSTALLED =
+            new MindustryModInstallState(MindustryModInstallState.State.NOT_INSTALLED, null);
 
     public MindustryModBrowserPane() {
         setPadding(new Insets(12));
@@ -136,6 +149,8 @@ public final class MindustryModBrowserPane extends BorderPane implements PageAwa
         // its skin). The HMCL CSS keys off this style class.
         targetVersion.getStyleClass().add("jfx-combo-box");
         targetVersion.setPromptText(i18n("xenon.mindustry.mod.browser.target"));
+        targetVersion.getSelectionModel().selectedItemProperty().addListener(
+                (obs, oldVersion, newVersion) -> refreshInstalledStates());
         targetVersion.setConverter(new javafx.util.StringConverter<>() {
             @Override
             public String toString(MindustryVersion v) {
@@ -149,7 +164,10 @@ public final class MindustryModBrowserPane extends BorderPane implements PageAwa
         });
 
         JFXButton refresh = FXUtils.newRaisedButton(i18n("xenon.mindustry.mod.browser.refresh"));
-        refresh.setOnAction(e -> reloadAsync());
+        refresh.setOnAction(e -> {
+            reloadAsync();
+            refreshInstalledStates();
+        });
 
         HBox toolbar = new HBox(8, search, targetVersion, refresh);
         toolbar.setAlignment(Pos.CENTER_LEFT);
@@ -236,6 +254,9 @@ public final class MindustryModBrowserPane extends BorderPane implements PageAwa
         // becomes visible — otherwise users who install a Mindustry version
         // *after* opening the download page see an empty target dropdown.
         refreshTargetVersions();
+        // The installed set may have changed while the tab was hidden (the mod
+        // list page can enable, disable or delete archives).
+        refreshInstalledStates();
     }
 
     private void reloadAsync() {
@@ -289,6 +310,76 @@ public final class MindustryModBrowserPane extends BorderPane implements PageAwa
         }
         all.setAll(mods);
         rebuildList();
+        // Remote tags just changed, so every row's update state may have
+        // changed with them.
+        refreshInstalledStates();
+    }
+
+    // ------------------------------------------------------------------
+    // Installed-state scan
+    // ------------------------------------------------------------------
+
+    /// Recomputes which remote rows are already present in the selected target
+    /// instance.
+    ///
+    /// The scan reads `mods/` on the IO scheduler and swaps the resulting map
+    /// on the FX thread. A newer scan (target change, tab shown, refresh)
+    /// invalidates an in-flight one, so rows never mix two target instances.
+    private void refreshInstalledStates() {
+        MindustryVersion target = targetVersion.getSelectionModel().getSelectedItem();
+        long generation = ++installedScanGeneration;
+        if (target == null) {
+            installedState.clear();
+            installedStateTargetId = null;
+            listView.refresh();
+            return;
+        }
+        String targetId = target.getId();
+
+        List<MindustryRemoteMod> snapshot = List.copyOf(all);
+        if (snapshot.isEmpty()) {
+            installedState.clear();
+            installedStateTargetId = targetId;
+            listView.refresh();
+            return;
+        }
+        XenonGameRepository repo = MindustryImportFlow.repositoryForVersion(target);
+        Path versionRoot = repo.getVersionRoot(target);
+        Path modsDir = target.resolveDataDir(versionRoot).resolve("mods");
+
+        Schedulers.io().execute(() -> {
+            Map<String, MindustryLocalMod> local;
+            try {
+                local = new MindustryModManager(modsDir).byInternalName();
+            } catch (Throwable ex) {
+                LOG.warning("Failed to scan installed mods in " + modsDir, ex);
+                local = Map.of();
+            }
+            Map<String, MindustryModInstallState> states = new HashMap<>();
+            for (MindustryRemoteMod mod : snapshot) {
+                String key = MindustryGameModNaming.keyName(mod.getName());
+                if (key.isEmpty()) {
+                    continue;
+                }
+                MindustryLocalMod installed = local.get(key);
+                states.put(key, MindustryModInstallState.resolve(
+                        mod.getLatestTag(),
+                        installed == null ? List.of() : List.of(installed)));
+            }
+            Map<String, MindustryModInstallState> result = states;
+            Platform.runLater(() -> {
+                MindustryVersion current = targetVersion.getSelectionModel().getSelectedItem();
+                if (generation != installedScanGeneration
+                        || current == null
+                        || !Objects.equals(current.getId(), target.getId())) {
+                    return;
+                }
+                installedState.clear();
+                installedState.putAll(result);
+                installedStateTargetId = targetId;
+                listView.refresh();
+            });
+        });
     }
 
     /// Builds the lower-cased search haystack for one mod.
@@ -660,6 +751,9 @@ public final class MindustryModBrowserPane extends BorderPane implements PageAwa
                     MindustryCompatibility.showIssues(
                             i18n("xenon.mindustry.install.compat.title"), outcome.issues());
                 }
+                // The archive is on disk now; refresh the Install/Update/
+                // Installed button state without waiting for a tab switch.
+                refreshInstalledStates();
             } else {
                 String msg = ex.getMessage() == null ? ex.toString() : ex.getMessage();
                 LOG.warning("Failed to install mod " + ownerRepo + " into " + target.getId(), ex);
@@ -863,6 +957,10 @@ public final class MindustryModBrowserPane extends BorderPane implements PageAwa
                 i18n("xenon.mindustry.mod.browser.install"));
         private final JFXButton historyBtn = newToggleButton4(SVG.FORMAT_LIST_BULLETED);
         private final JFXButton openRepo = newToggleButton4(SVG.GLOBE_BOOK);
+        /// Tooltip text for installed / update states, shown on the row because
+        /// a disabled Install button cannot receive hover events.
+        private final Tooltip stateTip = new Tooltip();
+        private boolean stateTipInstalled;
         // Badge shown to the right of the title for repos in PINNED_REPOS.
         // The cell is recycled by JFXListView, so toggle managed/visible
         // in updateItem rather than adding/removing the node each time.
@@ -912,7 +1010,6 @@ public final class MindustryModBrowserPane extends BorderPane implements PageAwa
             recommendedBadge.setManaged(false);
             recommendedBadge.setVisible(false);
             twoLine.getFirstLine().getChildren().add(recommendedBadge);
-
             FXUtils.installFastTooltip(historyBtn, i18n("xenon.mindustry.mod.browser.history.tooltip"));
             historyBtn.setOnAction(e -> {
                 MindustryRemoteMod m = getItem();
@@ -1012,6 +1109,60 @@ public final class MindustryModBrowserPane extends BorderPane implements PageAwa
                 subtitle.append(desc);
             }
             twoLine.setSubtitle(subtitle.length() == 0 ? null : subtitle.toString());
+
+            // Install state: Install / Update / Installed. The map is keyed by
+            // the game-normalized name so a remote row matches the archive the
+            // game would load. The cell is recycled; every branch must reset
+            // both the button and the tooltip.
+            String key = MindustryGameModNaming.keyName(mod.getName());
+            MindustryVersion selected = targetVersion.getSelectionModel().getSelectedItem();
+            boolean stateMatchesTarget = selected != null
+                    && Objects.equals(installedStateTargetId, selected.getId());
+            MindustryModInstallState state = stateMatchesTarget
+                    ? installedState.getOrDefault(key, NOT_INSTALLED)
+                    : NOT_INSTALLED;
+            String hint = "";
+            switch (state.state()) {
+                case NOT_INSTALLED -> {
+                    installBtn.setText(i18n("xenon.mindustry.mod.browser.install"));
+                    installBtn.setDisable(false);
+                }
+                case UPDATE_AVAILABLE -> {
+                    installBtn.setText(i18n("xenon.mindustry.mod.browser.state.update"));
+                    installBtn.setDisable(false);
+                    String localVersion = state.installedVersion();
+                    String latestVersion = mod.getLatestTag();
+                    if (localVersion != null && latestVersion != null && !latestVersion.isBlank()) {
+                        hint = i18n("xenon.mindustry.mod.browser.state.update.tooltip",
+                                localVersion, latestVersion);
+                        String subtitleHint = i18n("xenon.mindustry.mod.browser.state.update.hint",
+                                localVersion, latestVersion);
+                        if (subtitle.length() > 0) subtitle.append("  ·  ");
+                        subtitle.append(subtitleHint);
+                    }
+                }
+                case INSTALLED -> {
+                    installBtn.setText(i18n("xenon.mindustry.mod.browser.state.installed"));
+                    installBtn.setDisable(true);
+                    hint = i18n("xenon.mindustry.mod.browser.state.installed.tooltip",
+                            installedVersionOrUnknown(state));
+                }
+                case LOCAL_NEWER -> {
+                    installBtn.setText(i18n("xenon.mindustry.mod.browser.state.installed"));
+                    installBtn.setDisable(true);
+                    String localVersion = state.installedVersion();
+                    String latestVersion = mod.getLatestTag();
+                    if (localVersion != null && latestVersion != null && !latestVersion.isBlank()) {
+                        hint = i18n("xenon.mindustry.mod.browser.state.local_newer",
+                                localVersion, latestVersion);
+                    } else {
+                        hint = i18n("xenon.mindustry.mod.browser.state.installed.tooltip",
+                                installedVersionOrUnknown(state));
+                    }
+                }
+            }
+            setStateTooltip(hint);
+            twoLine.setSubtitle(subtitle.length() == 0 ? null : subtitle.toString());
             // The subtitle label is built on demand by setSubtitle; clamp
             // it the same way as the title so it ellipsises rather than
             // pushing the row width.
@@ -1020,6 +1171,35 @@ public final class MindustryModBrowserPane extends BorderPane implements PageAwa
                 subLabel.setMinWidth(0);
                 subLabel.setMaxWidth(Double.MAX_VALUE);
             }
+        }
+
+        /// Shows or clears the installed-state tooltip without leaking one
+        /// tooltip instance per recycled row.
+        ///
+        /// @param text tooltip text, or an empty string to remove it
+        private void setStateTooltip(String text) {
+            if (text == null || text.isBlank()) {
+                stateTip.setText("");
+                if (stateTipInstalled) {
+                    Tooltip.uninstall(twoLine, stateTip);
+                    stateTipInstalled = false;
+                }
+                return;
+            }
+            stateTip.setText(text);
+            if (!stateTipInstalled) {
+                FXUtils.installFastTooltip(twoLine, stateTip);
+                stateTipInstalled = true;
+            }
+        }
+
+        /// Formats the locally installed version for the tooltip.
+        ///
+        /// @param state resolved install state
+        /// @return the version, or `?` when the descriptor had none
+        private static String installedVersionOrUnknown(MindustryModInstallState state) {
+            String version = state.installedVersion();
+            return version == null || version.isBlank() ? "?" : version;
         }
     }
 }
