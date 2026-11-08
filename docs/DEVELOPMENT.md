@@ -37,6 +37,19 @@ VERSION_ROOT=2.0 BUILD_NUMBER=0 VERSION_TYPE=stable \
 
 产物为 `Xenon-2.0.0.jar` 与 `Xenon.exe`。
 
+发布版本统一用脚本构建并同步到 `../构建/Xenon/`（默认 `C:\Users\华硕\Documents\codex\构建\Xenon`）：
+
+```powershell
+pwsh -NoProfile -File scripts/build-local-release.ps1 -Version 2.1.0
+```
+
+脚本会设置 `VERSION_ROOT` / `BUILD_NUMBER` / `VERSION_TYPE=stable`，运行
+`shadowJar`、`packagePortable` 与 `packageWindowsSingleFileExe`，然后把
+`Xenon-<version>.jar`、`Xenon-<version>.exe`、`Xenon-portable-<version>.zip`
+及各自的 `.sha256` 复制过去，并校验 jar 的 `Implementation-Version`。
+它只编译当前工作区，**不会**从 GitHub Release 下载任何资产；无 Windows 环境时可加
+`-SkipExe`。
+
 ## 测试与检查
 
 ```bash
@@ -62,7 +75,7 @@ VERSION_ROOT=2.0 BUILD_NUMBER=0 VERSION_TYPE=stable \
 
 1. 更新 `config/project.properties` 的 `versionRoot`。
 2. 更新 `CHANGELOG.md` 与 `release-notes/v<version>.md`。
-3. 本地构建并验证 jar/exe；需要留档时复制到 `构建/Xenon/`。
+3. 运行 `pwsh -NoProfile -File scripts/build-local-release.ps1 -Version <x.y.z>`：本地构建 jar / portable zip / 单文件 exe，并把它们连同 `.sha256` 复制到 `../构建/Xenon/`。该目录只能由本地源码构建填充，不要从 GitHub Release 下载 CI 产物。
 4. 提交并 push `main`。
 5. 创建并 push `v<version>` tag；`.github/workflows/release.yml` 会在 Windows runner 上重新构建 jar/exe、生成 SHA-256 表并创建 GitHub Release。
 6. Release 必须只有一个 `.jar` 资产（安装器会取第一个 jar），可以与 `.exe` 并列；不要上传 Android/desktop 分类 jar、D8 输入包或其他中间产物。

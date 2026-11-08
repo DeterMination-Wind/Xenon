@@ -76,3 +76,18 @@ definitions live in `Xenon/build.gradle.kts`, root default tasks are `clean buil
 - This checkout (`Xenon-fork`) is the source of truth. One logical change per commit; stage only intended files. Don't push, tag, or publish.
 - `config/mods/` contains local test jars and is ignored; never commit them. Build outputs and generated bundles stay ignored.
 - Don't edit the workspace-root `AGENTS.md` outside this repo (`../AGENTS.md`) or sibling repositories.
+
+## Release artifacts
+
+- Every release (version bump, tag, or release-notes change) must also produce a
+  **local** build staged to `../构建/Xenon`, i.e.
+  `C:\Users\华硕\Documents\codex\构建\Xenon`:
+  `pwsh -NoProfile -File scripts/build-local-release.ps1 -Version <x.y.z>`.
+- Never fill that folder from GitHub: no `gh release download`, no remote asset
+  download, no copying the CI artifacts. The staged jar/exe/portable zip must be
+  built from the current working tree so they match the commit being released.
+- CI cannot write to this machine; `.github/workflows/release.yml` only publishes
+  the GitHub Release. The local staging step is ours.
+- The script writes `Xenon-<version>.jar`, `Xenon-<version>.exe`,
+  `Xenon-portable-<version>.zip`, plus a `.sha256` next to each file, and fails
+  when the jar's `Implementation-Version` does not match the requested version.
