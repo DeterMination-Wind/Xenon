@@ -86,6 +86,9 @@ pwsh -NoProfile -File scripts/build-local-release.ps1 -Version 2.1.0
 - UI 文案位于 `Xenon/src/main/resources/assets/lang/I18N*.properties`。
 - `I18N.properties`、`I18N_zh_CN.properties`、`I18N_zh.properties`、`I18N_lzh.properties` 需要保持同步；`checkTranslations` 会检查 zh_CN 键是否存在于英文/繁体，以及常见错别字。
 - 用户文档使用中文为主、英文术语保留原文的风格。
+- `README.md` 是中文首页，`README_EN.md` 是英文版；两份都在顶部互相链接，竞品对比表同时维护在两边。
+- README 的“最后更新”由 `<!-- LAST_UPDATED:START -->` / `<!-- LAST_UPDATED:END -->` 标记包围，`.github/workflows/readme-last-updated.yml` 会在 push 与 tag 时把它改写为最新 tag 与 commit 日期；不要手工修改标记内的文字。
+- README 截图位于 `docs/images/screenshots/`，取自真实运行的 Xenon 界面；更新界面后可重新截图替换同名文件。
 
 ## 关于 AI 辅助开发
 

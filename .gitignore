@@ -76,3 +76,6 @@ language-subtag-registry
 # root build artifacts
 /Xenon-*.jar
 /Xenon-portable-*.zip
+
+# screenshots produced by the local-tools MCP server
+/.mcp-shots/

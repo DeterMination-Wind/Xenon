@@ -1,6 +1,6 @@
 # Xenon 功能列表
 
-本文档是 Xenon 的完整能力清单，包含 README 中未展开的小功能与竞品对比。用户操作步骤见 [用户手册](docs/USAGE.md)，构建与发布见 [开发文档](docs/DEVELOPMENT.md)。
+本文档是 Xenon 的完整能力清单，包含 README 中未展开的小功能。用户操作步骤见 [用户手册](docs/USAGE.md)，构建与发布见 [开发文档](docs/DEVELOPMENT.md)，竞品对比见 [README](README.md#与竞品的比较)。
 
 ## 实例与版本
 
@@ -87,55 +87,8 @@
 
 ## 与竞品的比较
 
-> 按各项目公开文档整理（截至 2026-11-07）。竞品能力可能随版本变化，请以各自项目为准。
-
-| 能力 | Xenon | [BookMdtLauncher](https://github.com/ch-BookBanana/BookMdtLauncher) | [Copper Launcher](https://github.com/MDTCopper/launcher) | [MDL](https://github.com/colorgarden/mindustry_launcherMDL) | [MindustryLauncher](https://github.com/BalaM314/MindustryLauncher) |
-| --- | --- | --- | --- | --- | --- |
-| 平台 / 形态 | Windows / Linux / macOS · 图形界面 | Windows · 图形界面（PySide6，单文件便携） | Windows / Linux / macOS / Android · 图形界面（Flutter，开发阶段） | Windows 7+ · 图形界面（WPF，需 .NET 10） | Windows / Linux / macOS · 命令行（需 Node.js） |
-| 移动端运行（Android） | ❌ 桌面启动器；同维护者另有 [Xenon-Mobile](https://github.com/DeterMination-Wind/Xenon-Mobile) | ❌ | ✅ 自带 Java 与 Copper 桥（Mod 支持开发中） | ❌ | ❌ |
-| 游戏来源 | 原版 / BE / MindustryX / CN-ARC / Foo Client，本地 jar 与 Steam 导入 | 原版 / MindustryX / MindustryARC | 原版 / BE | 原版 | 原版 / BE / Foo Client，自定义 jar 与源码目录 |
-| Java 管理 | ✅ 多运行时、自动检测、Adoptium 下载、按版本匹配 | ✅ 自动嗅探与竞速下载 | ✅ 多运行时与自动下载 | ✅ 扫描与内存分配 | ⚠️ 仅配置路径 |
-| 实例隔离 | ✅ 独立数据目录 | ✅ | ✅ | ✅ | ⚠️ 仅版本目录 |
-| Mod 管理 | ✅ 社区索引、GitHub 直装、启停、依赖补齐 | ❌ | ✅ 浏览、启停、搜索 | ✅ 浏览、搜索、安装 | ⚠️ 面向开发 |
-| Mod 批量 / 拖拽 | ✅ 批量启停删除、拖入文件/文件夹、自动拆包 | ❌ | ✅ 多选、拖入、Windows 拖出 | ❌ | ❌ |
-| 地图 / 蓝图 | ✅ mindustry.top、.msch、分享码、资源页 | ❌ | ⚠️ 资源导入导出 | ✅ 社区蓝图 | ❌ |
-| 存档 | ✅ 备份/导出、回收站、自动备份 | ❌ | ⚠️ 资源与云存档（开发中） | ✅ 扫描/解析/删除 | ❌ |
-| 云存档 | ✅ 单存档冲突处理 + 整实例归档 + 文件级差量（manifest）+ 自动同步 | ❌ | ⚠️ 整包/同步/冲突副本、差量/清单快照（开发中） | ❌ | ❌ |
-| settings.bin 编辑 | ✅ 全量表格、搜索、自动备份与恢复 | ❌ | ⚠️ 启动时覆盖部分设置 | ✅ 表格编辑与备份 | ❌ |
-| 社区与联机 | ✅ MDTBBS 1.8.0、公开大厅、审批列表、limits、实时事件、伪局域网 | ❌ | ⚠️ 中继代理、伪局域网与启动会话交接（开发中） | ✅ EasyTier 大厅 | ❌ |
-| 扩展 / 登录 | ✅ MindAuth 登录、深链、启动脚本、单实例协议 | ✅ 插件系统 v3、settings.bin 类型化编解码、GitHub App 登录 | ❌ | ❌ | ❌ |
-| Mod 开发工作流 | ✅ 构建、部署、监听、自动重启 | ❌ | ❌ | ❌ | ✅ 编译与自动重启 |
-| 回收站 / 分组 | ✅ 实例与存档回收站、单层分组 | ❌ | ❌ | ❌ | ❌ |
-| CLI / 深链 / 启动脚本 | ✅ 无窗口 CLI、`.bat/.sh`、三种深链 | ❌ | ❌ | ❌ | ✅ CLI |
-| 国内下载 | ✅ 多镜像回退、GitHub CLI | ⚠️ 仅 JDK 镜像 | ✅ 分类测速与自定义节点 | ✅ 6 种代理 | ❌ |
-| 下载来源策略 | ✅ 四档 | ⚠️ 无档位开关 | ✅ 三档 | ❌ | ❌ |
-| 下载限速 | ✅ 全局令牌桶 | ❌ | ✅ | ❌ | ❌ |
-| 服务器管理 | ✅ 控制台、自动重启、ScriptAgent | ❌ | ❌ | ❌ | ❌ |
-| 最后推送（活跃度） | 2026-10-31 | 2026-10-31 | 2026-11-07 | 2026-06-28 | 2026-09-04 |
-| 许可 | GPLv3 | GPL-3.0 | MIT | AGPL-3.0 | 未标注 |
-
-✅ 支持 ｜ ❌ 未提供或未说明 ｜ ⚠️ 部分支持或形态不同
-
-最后推送日期取自 GitHub REST API（2026-11-07 查询）。
-
-其他 Windows-capable 启动器：
-
-- [GIML](https://github.com/SquareCM2/GIML)（WinUI 3，开发中）
-- [zenonet/MindustryLauncher](https://github.com/zenonet/MindustryLauncher)（Avalonia）
-- [GXFQE/mindustry-launcher](https://github.com/GXFQE/mindustry-launcher)（Python/tkinter，CAS、隔离存档、自动备份、CLI；v1.3.2 / v1.3.3 补齐 5 类开关与退出码、版本名容错）
-- [Eliezer516/mindustry-launcher](https://github.com/Eliezer516/mindustry-launcher)（2026-10-27 最后推送）
-- [Walker196/Mindustry-Launcher](https://github.com/Walker196/Mindustry-Launcher)（Tauri + React + Rust）
-- [NixaVulpi/MindustryLauncher](https://github.com/NixaVulpi/MindustryLauncher)（便携包装，自备 jar/JRE）
-- [kabaka9527/MindustryLauncher](https://github.com/kabaka9527/MindustryLauncher)（Tauri 2 + Rust + React 19）
-- [UnQuis/SingularityLauncher](https://github.com/UnQuis/SingularityLauncher)（Java + Arc）
-- [Plain-Mindustry-Launcher](https://github.com/taiko525/Plain-Mindustry-Launcher)（WPF，固定 Java 17）
-
-移动端 / 其他平台：
-
-- [haohandc/MindustryArk](https://github.com/haohandc/MindustryArk)（HarmonyOS NEXT，C；仓库已拆分）
-- [GXFQE/mindustry-launcher-android](https://github.com/GXFQE/mindustry-launcher-android)（Android，APK 插件）
-- [EmmM9O/oxygen-launcher](https://github.com/EmmM9O/oxygen-launcher)（Android，Kotlin，已停更）
+竞品对比已移至 [README](README.md#与竞品的比较)（英文：[README_EN.md](README_EN.md#comparison-with-other-launchers)）。
 
 ## English summary
 
-Xenon is a Mindustry launcher and instance manager. Detailed English feature descriptions live in [README](README.md#english); this file keeps the complete capability list and the comparison matrix above. Build and release instructions are in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+Xenon is a Mindustry launcher and instance manager. Detailed English feature descriptions live in [README_EN.md](README_EN.md); this file keeps the complete capability list, and the competitor matrix lives in [README_EN.md](README_EN.md#comparison-with-other-launchers). Build and release instructions are in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).

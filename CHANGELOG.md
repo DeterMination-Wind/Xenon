@@ -2,6 +2,13 @@
 
 All notable changes to Xenon will be documented in this file.
 
+## [Unreleased]
+
+### Changed
+- `README.md` is now the Chinese landing page and `README_EN.md` holds the English version; each links to the other at the top.
+- The competitor matrix moved from `FEATURE.md` into both READMEs. Its "last updated" line is now rewritten automatically from the latest tag and commit date by `.github/workflows/readme-last-updated.yml`.
+- The README now shows real screenshots of the instance list, download page, instance detail and multiplayer page.
+
 ## [2.1.0] — 2026-11-08
 
 ### Added

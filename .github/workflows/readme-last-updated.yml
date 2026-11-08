@@ -1,0 +1,90 @@
+name: README Last Updated
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: readme-last-updated
+  cancel-in-progress: true
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Resolve tag and commit date
+        id: version
+        shell: bash
+        run: |
+          tag="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+          if [[ -z "$tag" ]]; then
+            tag="$(grep '^versionRoot=' config/project.properties | cut -d'=' -f2)"
+          fi
+          date="$(git log -1 --date=short --format=%cs)"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "date=${date}" >> "$GITHUB_OUTPUT"
+
+      - name: Rewrite the LAST_UPDATED markers
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          DATE: ${{ steps.version.outputs.date }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os
+          import pathlib
+          import re
+
+          tag = os.environ["TAG"]
+          date = os.environ["DATE"]
+          targets = {
+              "README.md": f"最后更新：**{tag}**（{date}）",
+              "README_EN.md": f"Last updated: **{tag}** ({date})",
+          }
+          pattern = re.compile(
+              r"<!-- LAST_UPDATED:START -->.*?<!-- LAST_UPDATED:END -->",
+              re.DOTALL,
+          )
+          for name, line in targets.items():
+              path = pathlib.Path(name)
+              if not path.is_file():
+                  continue
+              text = path.read_text(encoding="utf-8")
+              if not pattern.search(text):
+                  print(f"{name}: no marker block, skipped")
+                  continue
+              updated = pattern.sub(
+                  f"<!-- LAST_UPDATED:START -->\n{line}\n<!-- LAST_UPDATED:END -->",
+                  text,
+                  count=1,
+              )
+              if updated != text:
+                  path.write_text(updated, encoding="utf-8")
+                  print(f"{name}: {line}")
+          PY
+
+      - name: Commit the refreshed marker
+        shell: bash
+        run: |
+          if git diff --quiet -- README.md README_EN.md; then
+            echo "README markers are already current."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md README_EN.md
+          git commit -m "docs(readme): refresh last-updated marker [skip ci]"
+          git push
