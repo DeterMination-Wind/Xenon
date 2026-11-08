@@ -1,0 +1,39 @@
+{
+  "formatVersion": 1,
+  "source": {
+    "index": "https://raw.githubusercontent.com/MDTCopper/mindustry-data-index/main/index-full.json",
+    "repoCreated": "https://raw.githubusercontent.com/MDTCopper/mindustry-data-index/main/state/repo-created.json",
+    "commitStats": "https://raw.githubusercontent.com/MDTCopper/mindustry-data-index/main/state/heat-commit-stats.json",
+    "versions": "https://raw.githubusercontent.com/MDTCopper/mindustry-data-index/main/mindustry/versions.json"
+  },
+  "weights": {
+    "popularity": 0.35,
+    "activity": 0.35,
+    "freshness": 0.2,
+    "compatibility": 0.1
+  },
+  "activity": {
+    "releaseRateWeight": 0.6,
+    "commitWeight": 0.4,
+    "releaseRateCapPerMonth": 20,
+    "commitWindowWeeks": 13
+  },
+  "eligibility": {
+    "minStars": 10,
+    "minDownloads": 1000,
+    "maxDaysSinceRelease": 365
+  },
+  "compatibility": {
+    "unsupportedScore": 0.6
+  },
+  "officialOwners": [
+    "determination-wind"
+  ],
+  "badges": {
+    "bundles": {
+      "determination-wind/neon": "bundle",
+      "determination-wind/logicsugar": "bundled-in-neon"
+    }
+  },
+  "output": "remote/mod-ranking.json"
+}

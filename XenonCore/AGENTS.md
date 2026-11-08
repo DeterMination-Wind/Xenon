@@ -21,7 +21,8 @@ has zero JavaFX imports; legacy HMCL packages (`auth/`, `task/`, `util/javafx/`,
   `ServerAutoRestartPolicy`, `ServerConfig(Manager)`, `ServerMapPool`,
   `ServerModsBridge`, `PortChecker`, `{Vanilla,Be,MindustryX}ServerVersionList`,
   `ServerJarInstaller`.
-- `mindustry/mod/` — local mod manager plus the remote `mindustry-mods` index;
+- `mindustry/mod/` — local mod manager, the remote `mindustry-mods` index, and
+  the `MindustryModRanking` recommendation snapshot;
   `save/` parses `.msav` headers and launcher save archives; `schematic/`
   imports/exports `.msch` with base64 share-codes; `crash/` scans
   `crashes/*.txt` + `last_log.txt` and builds issue-ready reports

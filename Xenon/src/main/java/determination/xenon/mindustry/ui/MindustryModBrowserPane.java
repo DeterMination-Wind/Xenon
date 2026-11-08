@@ -34,6 +34,8 @@ import determination.xenon.mindustry.mod.MindustryLocalMod;
 import determination.xenon.mindustry.mod.MindustryModInstallState;
 import determination.xenon.mindustry.mod.MindustryModManager;
 import determination.xenon.mindustry.mod.MindustryModParser;
+import determination.xenon.mindustry.mod.MindustryModRanking;
+import determination.xenon.mindustry.mod.MindustryModRankingRepository;
 import determination.xenon.mindustry.mod.MindustryModsIndexRepository;
 import determination.xenon.mindustry.mod.MindustryRemoteMod;
 import determination.xenon.setting.Profiles;
@@ -55,6 +57,7 @@ import javafx.collections.ObservableList;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.ComboBox;
+import javafx.scene.control.Hyperlink;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.Tooltip;
@@ -105,11 +108,42 @@ public final class MindustryModBrowserPane extends BorderPane implements PageAwa
             new MindustryModsIndexRepository(MindustryImportFlow.cachesDirectory());
     private final GitHubReleaseClient client =
             new GitHubReleaseClient(MindustryImportFlow.cachesDirectory());
+    private final MindustryModRankingRepository rankingRepo =
+            new MindustryModRankingRepository(MindustryImportFlow.cachesDirectory());
 
     private final JFXTextField search = new JFXTextField();
+    private final ComboBox<BrowseMode> mode = new ComboBox<>();
     private final ComboBox<MindustryVersion> targetVersion = new ComboBox<>();
     private final Label status = new Label();
+    /// Shown while the recommendation snapshot is missing so the stars
+    /// fallback is not mistaken for the curated order.
+    private final Label rankingHint = new Label();
     private final JFXListView<MindustryRemoteMod> listView = new JFXListView<>();
+
+    /// Most recent recommendation snapshot; empty until the cache or network
+    /// provides one. Replaced only on the FX thread.
+    private MindustryModRanking ranking = MindustryModRanking.empty();
+
+    /// The three ways the browser can order the same remote index.
+    private enum BrowseMode {
+        /// Xenon's maintenance-first recommendation order.
+        RECOMMENDED("xenon.mindustry.mod.browser.mode.recommended"),
+        /// Data-index community heat order.
+        POPULAR("xenon.mindustry.mod.browser.mode.popular"),
+        /// Every mod, ordered by stars; this is the legacy behavior.
+        ALL("xenon.mindustry.mod.browser.mode.all");
+
+        private final String i18nKey;
+
+        BrowseMode(String i18nKey) {
+            this.i18nKey = i18nKey;
+        }
+
+        /// Translation key shown in the mode combo box.
+        private String i18nKey() {
+            return i18nKey;
+        }
+    }
 
     private final ObservableList<MindustryRemoteMod> all = FXCollections.observableArrayList();
     /// Lower-cased search haystack per mod (name, repo, author, description).
@@ -144,6 +178,29 @@ public final class MindustryModBrowserPane extends BorderPane implements PageAwa
         search.textProperty().addListener((obs, o, n) -> searchPause.playFromStart());
         searchPause.setOnFinished(e -> rebuildList());
 
+        // Browse-mode selector. Defaults to Xenon's recommendation order; the
+        // legacy stars order stays available as "all".
+        mode.getStyleClass().add("jfx-combo-box");
+        mode.setPrefWidth(136);
+        mode.setItems(FXCollections.observableArrayList(BrowseMode.values()));
+        mode.setConverter(new javafx.util.StringConverter<>() {
+            @Override
+            public String toString(BrowseMode value) {
+                return value == null ? "" : i18n(value.i18nKey());
+            }
+
+            @Override
+            public BrowseMode fromString(String value) {
+                return null;
+            }
+        });
+        mode.getSelectionModel().select(BrowseMode.RECOMMENDED);
+        mode.getSelectionModel().selectedItemProperty().addListener(
+                (obs, oldMode, newMode) -> {
+                    rebuildList();
+                    listView.refresh();
+                });
+
         // Pick up HMCL's JFoenix combo-box look without using JFXComboBox —
         // JFXComboBox crashes on JavaFX 25 (arrowButtonHandle == null in
         // its skin). The HMCL CSS keys off this style class.
@@ -169,10 +226,19 @@ public final class MindustryModBrowserPane extends BorderPane implements PageAwa
             refreshInstalledStates();
         });
 
-        HBox toolbar = new HBox(8, search, targetVersion, refresh);
+        Hyperlink methodology = new Hyperlink(
+                i18n("xenon.mindustry.mod.browser.methodology"));
+        methodology.setVisited(false);
+        methodology.setOnAction(e -> showMethodologyDialog());
+
+        HBox toolbar = new HBox(8, search, mode, targetVersion, refresh, methodology);
         toolbar.setAlignment(Pos.CENTER_LEFT);
 
-        VBox header = new VBox(6, title, hint, toolbar, status);
+        rankingHint.setWrapText(true);
+        rankingHint.setManaged(false);
+        rankingHint.setVisible(false);
+
+        VBox header = new VBox(6, title, hint, toolbar, rankingHint, status);
         header.setPadding(new Insets(0, 0, 8, 0));
         setTop(header);
 
@@ -213,6 +279,8 @@ public final class MindustryModBrowserPane extends BorderPane implements PageAwa
 
         // Cache-first: synchronous load so the list isn't empty during
         // the async refresh; falls back to "loading..." if cache miss.
+        ranking = rankingRepo.loadCache();
+        updateRankingHint();
         List<MindustryRemoteMod> cached = repo.loadCache();
         if (!cached.isEmpty()) {
             setMods(cached);
@@ -289,6 +357,39 @@ public final class MindustryModBrowserPane extends BorderPane implements PageAwa
                 });
             }
         });
+        reloadRankingAsync();
+    }
+
+    /// Refreshes the recommendation snapshot independently of the mod index.
+    ///
+    /// A failure keeps the previous snapshot (or the stars fallback when there
+    /// is none) and never surfaces a dialog; the ranking is an optional
+    /// ordering layer, not a prerequisite for browsing mods.
+    private void reloadRankingAsync() {
+        Schedulers.io().execute(() -> {
+            try {
+                MindustryModRanking refreshed = rankingRepo.refresh();
+                Platform.runLater(() -> {
+                    ranking = refreshed;
+                    updateRankingHint();
+                    rebuildList();
+                    listView.refresh();
+                });
+            } catch (Throwable error) {
+                LOG.warning("Failed to refresh mod ranking", error);
+                Platform.runLater(this::updateRankingHint);
+            }
+        });
+    }
+
+    /// Shows the stars-fallback note only while no ranked snapshot exists.
+    private void updateRankingHint() {
+        boolean missing = !ranking.hasRankedEntries();
+        rankingHint.setText(missing
+                ? i18n("xenon.mindustry.mod.browser.recommend.unavailable")
+                : "");
+        rankingHint.setManaged(missing);
+        rankingHint.setVisible(missing);
     }
 
     // ------------------------------------------------------------------
@@ -401,13 +502,12 @@ public final class MindustryModBrowserPane extends BorderPane implements PageAwa
     }
 
     /**
-     * Repos that should always sort first when the search box is empty.
-     * The user keeps these four mods on every Mindustry instance, so we
-     * front-load them to save a search every time. Order here defines the
-     * pinned order in the list. Match is case-insensitive on full
-     * {@code owner/repo}; entries that aren't in the upstream index are
-     * silently skipped (so adding a not-yet-indexed mod here won't break
-     * the list — it just stays unpinned until the index picks it up).
+     * Repos that should always sort first when the search box is empty and the
+     * legacy "all" order is selected. The recommendation order is intentionally
+     * not overridden by this editorial list.
+     *
+     * <p>Match is case-insensitive on full {@code owner/repo}; entries that
+     * aren't in the upstream index are silently skipped.</p>
      */
     private static final List<String> PINNED_REPOS = List.of(
             "determination-wind/neon",
@@ -416,17 +516,88 @@ public final class MindustryModBrowserPane extends BorderPane implements PageAwa
             "dustdustry/patcheditor"
     );
 
+    /// Returns whether a repo belongs to the editorial pin list.
+    private static boolean isPinned(@Nullable String repo) {
+        if (repo == null) return false;
+        for (String pin : PINNED_REPOS) {
+            if (pin.equalsIgnoreCase(repo)) return true;
+        }
+        return false;
+    }
+
+    /// Recommendation order: ranked entries first, then the stars tie-break.
+    private int compareRecommended(MindustryRemoteMod left, MindustryRemoteMod right) {
+        int leftRank = recommendationRank(left, false);
+        int rightRank = recommendationRank(right, false);
+        if (leftRank != rightRank) return Integer.compare(leftRank, rightRank);
+        return compareStars(left, right);
+    }
+
+    /// Community-heat order: data-index heat rank first, then stars.
+    private int comparePopular(MindustryRemoteMod left, MindustryRemoteMod right) {
+        int leftRank = recommendationRank(left, true);
+        int rightRank = recommendationRank(right, true);
+        if (leftRank != rightRank) return Integer.compare(leftRank, rightRank);
+        return compareStars(left, right);
+    }
+
+    /// Stars order shared by the "all" mode and both tie-breakers.
+    private static int compareStars(MindustryRemoteMod left, MindustryRemoteMod right) {
+        int stars = Integer.compare(right.getStars(), left.getStars());
+        if (stars != 0) return stars;
+        return left.displayName().compareToIgnoreCase(right.displayName());
+    }
+
+    /// Reads one rank from the current snapshot; absent ranks sort last.
+    ///
+    /// @param mod     remote row
+    /// @param popular `true` for the community-heat rank, `false` for the
+    ///                recommendation rank
+    /// @return a positive rank, or [`Integer#MAX_VALUE`]
+    private int recommendationRank(MindustryRemoteMod mod, boolean popular) {
+        return ranking.findByRepo(mod.getRepo())
+                .map(entry -> popular ? entry.popularRank() : entry.rank())
+                .filter(rank -> rank > 0)
+                .orElse(Integer.MAX_VALUE);
+    }
+
+    /// Rebuilds the visible list for the current search text and browse mode.
+    ///
+    /// In recommendation mode (the default, and the only mode without a search
+    /// query) only ranked entries are shown, so the tab stays a curated list.
+    /// A search query broadens it to every matching mod; unranked rows follow
+    /// the ranked ones. The legacy "all" mode keeps the four editorial pins.
     private void rebuildList() {
         String q = search.getText() == null ? "" : search.getText().trim().toLowerCase(Locale.ROOT);
-        List<MindustryRemoteMod> sorted = new ArrayList<>(all);
-        sorted.sort((a, b) -> Integer.compare(b.getStars(), a.getStars()));
-
-        // Pinning only applies when the user isn't actively searching —
-        // a query already implies "show me what matches", overriding the
-        // editorial pin order.
+        BrowseMode selected = mode.getSelectionModel().getSelectedItem();
+        if (selected == null) selected = BrowseMode.RECOMMENDED;
         boolean searching = !q.isEmpty();
+        boolean hasRanking = ranking.hasRankedEntries();
+
+        List<MindustryRemoteMod> sorted = new ArrayList<>(all);
+        switch (selected) {
+            case RECOMMENDED -> {
+                if (hasRanking) {
+                    sorted.sort(this::compareRecommended);
+                    if (!searching) {
+                        sorted.removeIf(mod -> recommendationRank(mod, false) == Integer.MAX_VALUE);
+                    }
+                } else {
+                    sorted.sort(MindustryModBrowserPane::compareStars);
+                }
+            }
+            case POPULAR -> {
+                if (hasRanking) {
+                    sorted.sort(this::comparePopular);
+                } else {
+                    sorted.sort(MindustryModBrowserPane::compareStars);
+                }
+            }
+            case ALL -> sorted.sort(MindustryModBrowserPane::compareStars);
+        }
+
         List<MindustryRemoteMod> pinnedHits = new ArrayList<>();
-        if (!searching) {
+        if (selected == BrowseMode.ALL && !searching) {
             for (String pin : PINNED_REPOS) {
                 MindustryRemoteMod hit = findByRepo(sorted, pin);
                 if (hit != null) {
@@ -445,7 +616,7 @@ public final class MindustryModBrowserPane extends BorderPane implements PageAwa
         listView.getItems().setAll(visible);
     }
 
-    /** Case-insensitive {@code owner/repo} lookup. */
+    /// Case-insensitive {@code owner/repo} lookup.
     private static MindustryRemoteMod findByRepo(List<MindustryRemoteMod> mods, String ownerRepo) {
         for (MindustryRemoteMod m : mods) {
             if (m.getRepo() != null && m.getRepo().equalsIgnoreCase(ownerRepo)) {
@@ -459,6 +630,21 @@ public final class MindustryModBrowserPane extends BorderPane implements PageAwa
         if (q.isEmpty()) return true;
         String haystack = lowerHaystack.get(mod);
         return haystack != null && haystack.contains(q);
+    }
+
+    /// Shows the current recommendation weights and upstream data source.
+    private void showMethodologyDialog() {
+        MindustryModRanking.Methodology methodology = ranking.methodology();
+        String body = i18n("xenon.mindustry.mod.browser.methodology.body",
+                (int) Math.round(methodology.popularityWeight() * 100),
+                (int) Math.round(methodology.activityWeight() * 100),
+                (int) Math.round(methodology.freshnessWeight() * 100),
+                (int) Math.round(methodology.compatibilityWeight() * 100),
+                methodology.latestGameVersion() == null ? "?" : methodology.latestGameVersion(),
+                methodology.source() == null ? "" : methodology.source());
+        Controllers.dialog(body,
+                i18n("xenon.mindustry.mod.browser.methodology.title"),
+                MessageDialogPane.MessageType.INFO);
     }
 
     // ------------------------------------------------------------------
@@ -966,6 +1152,8 @@ public final class MindustryModBrowserPane extends BorderPane implements PageAwa
         // in updateItem rather than adding/removing the node each time.
         private final Label recommendedBadge = new Label(
                 i18n("xenon.mindustry.mod.browser.recommended"));
+        /// `#N` badge for the recommendation / community-heat modes.
+        private final Label rankBadge = new Label();
 
         ModCell() {
             // BorderPane keeps the action cluster glued to the right edge
@@ -1000,6 +1188,15 @@ public final class MindustryModBrowserPane extends BorderPane implements PageAwa
 
             twoLine.setMinWidth(0);
             twoLine.setMaxWidth(Double.MAX_VALUE);
+
+            // `#N` pill for the active ranking mode; precedes the editorial
+            // "recommended utility mod" badge.
+            rankBadge.getStyleClass().addAll("tag");
+            rankBadge.setMinWidth(Label.USE_PREF_SIZE);
+            HBox.setMargin(rankBadge, new Insets(0, 0, 0, 8));
+            rankBadge.setManaged(false);
+            rankBadge.setVisible(false);
+            twoLine.getFirstLine().getChildren().add(rankBadge);
 
             // "Recommended utility mod" pill — sits in the title row, just
             // after the title Label. Hgrow stays on the title so the badge
@@ -1070,19 +1267,29 @@ public final class MindustryModBrowserPane extends BorderPane implements PageAwa
             }
             twoLine.setTitle(title);
 
-            // Show the "recommended" badge only for the four pinned repos.
-            // Match the same case-insensitive owner/repo rule that the
-            // pinning logic uses — keeps both lists consistent.
-            boolean recommended = false;
+            // `#N` badge follows the active mode; the editorial "recommended
+            // utility mod" badge stays exclusive to the legacy "all" order so
+            // it cannot be confused with the ranking itself.
+            BrowseMode selectedMode = mode.getSelectionModel().getSelectedItem();
             String repo = mod.getRepo();
-            if (repo != null) {
-                for (String pin : PINNED_REPOS) {
-                    if (pin.equalsIgnoreCase(repo)) {
-                        recommended = true;
-                        break;
-                    }
+            @Nullable MindustryModRanking.Entry recommendation =
+                    ranking.findByRepo(repo).orElse(null);
+            int displayedRank = 0;
+            if (recommendation != null) {
+                if (selectedMode == BrowseMode.RECOMMENDED) {
+                    displayedRank = recommendation.rank();
+                } else if (selectedMode == BrowseMode.POPULAR) {
+                    displayedRank = recommendation.popularRank();
                 }
             }
+            boolean showRank = displayedRank > 0;
+            rankBadge.setText(showRank
+                    ? i18n("xenon.mindustry.mod.browser.rank", displayedRank)
+                    : "");
+            rankBadge.setManaged(showRank);
+            rankBadge.setVisible(showRank);
+
+            boolean recommended = selectedMode == BrowseMode.ALL && isPinned(repo);
             recommendedBadge.setManaged(recommended);
             recommendedBadge.setVisible(recommended);
 

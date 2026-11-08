@@ -1,0 +1,35 @@
+name: Update mod ranking
+
+on:
+  schedule:
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mod-ranking
+  cancel-in-progress: true
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Generate recommendation ranking
+        run: node scripts/mod-ranking/generate.mjs
+      - name: Commit changed ranking
+        run: |
+          if git diff --quiet -- remote/mod-ranking.json; then
+            echo "No ranking changes."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add remote/mod-ranking.json
+          git commit -m "chore(mod-ranking): refresh recommendation data"
+          git push
