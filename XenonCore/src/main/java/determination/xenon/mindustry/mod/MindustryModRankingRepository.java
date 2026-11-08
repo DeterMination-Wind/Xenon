@@ -19,6 +19,7 @@ package determination.xenon.mindustry.mod;
 
 import com.google.gson.JsonSyntaxException;
 import determination.xenon.mindustry.download.MirrorSelector;
+import determination.xenon.util.io.NetworkUtils;
 import determination.xenon.util.logging.Logger;
 import org.jetbrains.annotations.NotNullByDefault;
 import org.jetbrains.annotations.Nullable;
@@ -54,6 +55,13 @@ public final class MindustryModRankingRepository {
     /// matches `Metadata.PUBLISH_URL`; XenonCore cannot reference the UI module.
     public static final String RANKING_URL =
             "https://raw.githubusercontent.com/DeterMination-Wind/Xenon/main/remote/mod-ranking.json";
+
+    /// Pre-cached copy of the same snapshot on the project mirror. The
+    /// `github-cache` timer writes it under `/var/www/github/raw/`, and
+    /// [NetworkUtils#resolvePlayMirrorIp(URI)] rewrites the host to the current
+    /// IPv4 address, matching the mod-index path.
+    public static final String MIRROR_RANKING_URL =
+            "http://play.mindustry.men/github/raw/DeterMination-Wind/Xenon/main/remote/mod-ranking.json";
 
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(10);
     private static final Duration READ_TIMEOUT = Duration.ofSeconds(30);
@@ -161,10 +169,12 @@ public final class MindustryModRankingRepository {
         throw lastError == null ? new IOException("No mod ranking source available") : lastError;
     }
 
-    /// Candidate URLs in order: whichever GitHub mirror the selector picked,
+    /// Candidate URLs in order: the project mirror's cached copy (reachable
+    /// through the IP rewrite), whichever GitHub mirror the selector picked,
     /// then the direct raw URL. Duplicates are dropped.
     private Set<URI> fetchCandidates() {
         Set<URI> uris = new LinkedHashSet<>();
+        uris.add(NetworkUtils.resolvePlayMirrorIp(URI.create(MIRROR_RANKING_URL)));
         uris.add(URI.create(mirror.wrap(RANKING_URL)));
         uris.add(URI.create(RANKING_URL));
         return uris;

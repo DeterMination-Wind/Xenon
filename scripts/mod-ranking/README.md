@@ -50,6 +50,17 @@ node scripts/mod-ranking/generate.mjs
 `.github/workflows/mod-ranking.yml` 每天 04:00 UTC 运行一次，也可以手动
 `workflow_dispatch`。只有 `remote/mod-ranking.json` 内容变化时才提交。
 
+云服务器上的 `github-cache.timer`（每小时）会把同一份文件缓存到
+`/var/www/github/raw/DeterMination-Wind/Xenon/main/remote/mod-ranking.json`，
+对外地址为：
+
+```text
+http://play.mindustry.men/github/raw/DeterMination-Wind/Xenon/main/remote/mod-ranking.json
+```
+
+启动器会先把 `play.mindustry.men` 解析成当前 IPv4 再请求，失败后依次回退到
+GitHub 镜像和 `raw.githubusercontent.com`。
+
 ## 数据来源与许可
 
 排名依赖第三方数据，请在分发或展示时保留来源说明：
