@@ -4,7 +4,13 @@ All notable changes to Xenon will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- The headless CLI gained `--version`, `--list-backups`, `--check-updates`, `--import`, `--restore-backup`, `--delete-backup` and `--delete-version`, a documented exit-code contract, `--yes` for destructive commands, and instance references that ignore case, repeated/full-width spaces and an optional `v` prefix. `--restore-backup` backs up the live slot before overwriting it, and a mutation is refused with exit code 6 while a launcher is running.
+- The community Mod browser marks each row Install, Update or Installed from the selected instance's `mods/` folder, shows the local → latest version on update rows, and disables the action for installed rows.
+
 ### Changed
+- CLI commands now run in their own process instead of being forwarded to a running launcher as deep-link arguments, so scripts get the command's real exit code.
+- `--set` refuses to write while a Xenon launcher is running (exit code 6) instead of racing the launcher's own config write.
 - `README.md` is now the Chinese landing page and `README_EN.md` holds the English version; each links to the other at the top.
 - The competitor matrix moved from `FEATURE.md` into both READMEs. Its "last updated" line is now rewritten automatically from the latest tag and commit date by `.github/workflows/readme-last-updated.yml`.
 - The README now shows real screenshots of the instance list, download page, instance detail and multiplayer page.

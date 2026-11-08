@@ -149,6 +149,14 @@ public final class SingleInstanceManager {
             LOG.info("Single-instance check skipped for update application");
             return remaining.toArray(String[]::new);
         }
+        if (isCliInvocation(remaining)) {
+            // Headless commands must run in their own process: a running
+            // launcher would otherwise swallow the arguments as a deep link
+            // and exit 0 before the command executes. The CLI scans the
+            // instance registry itself when it needs to refuse a mutation.
+            LOG.info("Single-instance check skipped for a CLI command");
+            return remaining.toArray(String[]::new);
+        }
         if (mode == Mode.AUTO && JarUtils.thisJarPath() == null) {
             LOG.info("Single-instance check skipped: not running from a launcher jar");
             return remaining.toArray(String[]::new);
@@ -187,6 +195,23 @@ public final class SingleInstanceManager {
         for (CompletableFuture<Boolean> waiter : waiters) {
             waiter.complete(Boolean.TRUE);
         }
+    }
+
+    /// Returns whether the arguments name a headless CLI command.
+    ///
+    /// A leading `--yes` is ignored so `xenon --yes --delete-version` is
+    /// recognized as a command too.
+    ///
+    /// @param args command-line arguments after `--new-instance` removal
+    /// @return `true` when the first meaningful argument starts with `--`
+    private static boolean isCliInvocation(List<String> args) {
+        for (String arg : args) {
+            if (arg == null || "--yes".equals(arg)) {
+                continue;
+            }
+            return arg.startsWith("--") || "-h".equals(arg);
+        }
+        return false;
     }
 
     /// Scans the instance group and asks a running instance what to do.

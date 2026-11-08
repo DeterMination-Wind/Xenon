@@ -205,16 +205,52 @@
 无窗口 CLI 在 JavaFX 启动前执行：
 
 ```text
+xenon --help
+xenon --version
 xenon --list
-xenon --launch <id>
-xenon --export <id> <out.zip>
+xenon --list-backups <instance>
+xenon --launch <instance>
+xenon --export <instance> <out.zip>
 xenon --get download.source
 xenon --set download.speed 2048
+xenon --import <jar> [--as <id>] [--name <显示名>] [--variant <variant>]
+xenon --delete-version <instance> --yes
+xenon --delete-backup <instance> [备份文件名或时间戳] --yes
+xenon --restore-backup <instance> [备份文件名或时间戳] --yes
+xenon --check-updates [--variant <variant>]
 ```
 
-`--set` 只接受 `download.source`、`download.speed`、`github.token` 三个白名单键，未知键退出码为 2。实例页工具栏「导出启动脚本」会生成包含 Java、JVM 参数、数据目录与工作目录的 `.bat`/`.sh` 脚本。
+实例参数可以是实例 id 或显示名；匹配忽略大小写、连续/全角空格与可选的 `v` 前缀，所以 `V146`、`v 146`、`Mindustry 146`、`Mindustry v146` 都能找到同一个实例。含空格的名称要按 shell 规则加引号。
 
-深链支持 `xenon://join?intent=`、`xenon://launch?instance=`(启动前确认)与 `xenon://open?instance=`(仅导航)。
+`--list-backups` 按时间倒序输出「槽名、时间戳、字节数、文件名」。`--delete-backup` / `--restore-backup` 省略备份参数时选择最新一份；也可以给完整文件名或时间戳片段，片段命中多份时会报错并列出候选，不会自行挑一个。`--restore-backup` 会先把当前同名槽备份到 `saves/backups/`，再覆盖目标，失败时保留这份保护副本并返回 9。
+
+`--import` 的 `--as` 省略时会根据 jar 文件名生成一个不冲突的 id；显式 id 已存在时不覆盖，返回 8。`--variant` 接受 `vanilla`、`be`、`mindustryx`、`cn-arc`、`foo`、`custom`。
+
+`--check-updates` 默认检查已安装实例涉及的所有变体；`--variant` 可只查一个。输出远端最新 build 与本地最高 build。
+
+破坏性命令（`--delete-*`、`--restore-backup`）必须带 `--yes`，缺省返回 2 且不落盘；`--yes` 可以放在命令行的任意位置。会改数据的命令（`--set`、`--import`、`--restore-backup`、`--delete-*`）在启动器运行时返回 6，避免运行中的启动器稍后回写 `xenon.json` 覆盖 CLI 的修改。
+
+退出码：
+
+| 码 | 含义 |
+| --- | --- |
+| 0 | 成功 |
+| 1 | 命令失败 |
+| 2 | 用法错误或未知设置键 |
+| 3 | 实例或备份不存在 |
+| 5 | 导出失败 |
+| 6 | 启动器正在运行，拒绝改写 |
+| 7 | 删除失败 |
+| 8 | 导入失败（同 id 不覆盖） |
+| 9 | 恢复失败（当前存档未被替换） |
+| 10 | `--check-updates` 发现新版本 |
+| 11 | `--check-updates` 的所有变体源都不可达 |
+
+`--launch` 不套用上表：它等待游戏进程结束并透传游戏自己的退出码。
+
+`--set` 只接受 `download.source`、`download.speed`、`github.token` 三个白名单键，未知键退出码为 2。`download.source` 的取值为 `PREFER_DOMESTIC`、`PREFER_OFFICIAL`、`DOMESTIC_ONLY`、`OFFICIAL_ONLY`。实例页工具栏「导出启动脚本」会生成包含 Java、JVM 参数、数据目录与工作目录的 `.bat`/`.sh` 脚本。
+
+深链支持 `xenon://join?intent=`、`xenon://launch?instance=`(启动前确认)与 `xenon://open?instance=`(仅导航)。CLI 命令不受单实例转发影响，会在独立进程中执行。
 
 ## 12. 服务端管理
 

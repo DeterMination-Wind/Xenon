@@ -25,6 +25,7 @@
 ## Mod 与游戏内容
 
 - 社区 Mod 索引、GitHub Release 直装、搜索与依赖补齐。
+- 社区 Mod 浏览页按所选实例的 `mods/` 显示「安装 / 更新 / 已安装」三态；可更新时提示「本地 → 远端」版本，已安装行禁用主按钮。
 - 批量启用/禁用/删除，Shift/Ctrl 连选。
 - 拖入文件或文件夹导入；双层压缩包自动拆包；同 internal name 的旧版本自动替换。
 - Mod 开发页：配置工程目录、构建命令与产物 glob，构建日志流式显示，产物自动部署。
@@ -78,12 +79,15 @@
 
 ## 自动化与扩展
 
-- 无窗口 CLI：`--help`、`--list`、`--launch <id>`、`--export <id> <file>`、`--get/--set`。
+- 无窗口 CLI：`--help`、`--version`、`--list`、`--list-backups <instance>`、`--launch <instance>`、`--export <instance> <file>`、`--get/--set`、`--import <jar>`、`--delete-version`、`--delete-backup`、`--restore-backup`、`--check-updates`。
+- 实例引用容错：接受 id 或显示名，忽略大小写、连续/全角空格与可选的 `v` 前缀。
+- 破坏性命令必须带 `--yes`；启动器运行时以退出码 6 拒绝写入，避免运行中的启动器回写覆盖 CLI 的修改。
+- 退出码：0 成功、1 失败、2 用法错误、3 未找到、5 导出失败、6 启动器运行中、7 删除失败、8 导入失败、9 恢复失败、10 有更新、11 检查源不可达；`--launch` 透传游戏进程退出码。
 - `--set` 白名单：`download.source`、`download.speed`、`github.token`；未知键退出码 2。
 - 启动脚本导出：Windows `.bat` / POSIX `.sh`，包含 Java、JVM 参数、数据目录与工作目录。
 - 深链：`xenon://join?intent=`、`xenon://launch?instance=`、`xenon://open?instance=`。
 - `.xenon` 整实例打包，便于迁移或分享。
-- 单实例协议：重复启动会把深链转发给已运行的启动器。
+- 单实例协议：重复启动会把深链转发给已运行的启动器；CLI 命令单独执行，不会被转发。
 
 ## 与竞品的比较
 
