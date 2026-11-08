@@ -49,7 +49,7 @@ Captured from a real Xenon 2.1.0 session on Windows (light theme, local instance
 ## Comparison with other launchers
 
 <!-- LAST_UPDATED:START -->
-Last updated: **v2.1.0** (2026-11-08)
+Last updated: **v2.2.0** (2026-11-08)
 <!-- LAST_UPDATED:END -->
 
 > Compiled from public project documentation and the GitHub REST API. Competitor capabilities change over time; treat each project as the source of truth.

@@ -49,7 +49,7 @@ Xenon 源自 [HMCL](https://github.com/HMCL-dev/HMCL)，但工作流围绕 Mindu
 ## 与竞品的比较
 
 <!-- LAST_UPDATED:START -->
-最后更新：**v2.1.0**（2026-11-08）
+最后更新：**v2.2.0**（2026-11-08）
 <!-- LAST_UPDATED:END -->
 
 > 按各项目公开文档与 GitHub REST API 整理。竞品能力可能随版本变化，请以各自项目为准。
