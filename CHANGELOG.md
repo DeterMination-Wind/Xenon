@@ -4,9 +4,12 @@ All notable changes to Xenon will be documented in this file.
 
 ## [Unreleased]
 
+## [2.2.0] — 2026-11-08
+
 ### Added
-- The headless CLI gained `--version`, `--list-backups`, `--check-updates`, `--import`, `--restore-backup`, `--delete-backup` and `--delete-version`, a documented exit-code contract, `--yes` for destructive commands, and instance references that ignore case, repeated/full-width spaces and an optional `v` prefix. `--restore-backup` backs up the live slot before overwriting it, and a mutation is refused with exit code 6 while a launcher is running.
+- The community Mod browser opens on a new **Recommended** tab: Xenon scores the indexed mods from downloads, stars, release cadence, recent commits, release recency and latest-version compatibility, then shows the ranked list with `#N` badges and a Methodology dialog. **Community heat** and **All mods** remain one click away, the ranking is regenerated daily, and the project mirror caches it hourly.
 - The community Mod browser marks each row Install, Update or Installed from the selected instance's `mods/` folder, shows the local → latest version on update rows, and disables the action for installed rows.
+- The headless CLI gained `--version`, `--list-backups`, `--check-updates`, `--import`, `--restore-backup`, `--delete-backup` and `--delete-version`, a documented exit-code contract, `--yes` for destructive commands, and instance references that ignore case, repeated/full-width spaces and an optional `v` prefix. `--restore-backup` backs up the live slot before overwriting it, and a mutation is refused with exit code 6 while a launcher is running.
 
 ### Changed
 - CLI commands now run in their own process instead of being forwarded to a running launcher as deep-link arguments, so scripts get the command's real exit code.
@@ -14,6 +17,9 @@ All notable changes to Xenon will be documented in this file.
 - `README.md` is now the Chinese landing page and `README_EN.md` holds the English version; each links to the other at the top.
 - The competitor matrix moved from `FEATURE.md` into both READMEs. Its "last updated" line is now rewritten automatically from the latest tag and commit date by `.github/workflows/readme-last-updated.yml`.
 - The README now shows real screenshots of the instance list, download page, instance detail and multiplayer page.
+- Release builds are now produced locally from the working tree and staged with SHA-256 files before the tag is pushed.
+
+See the [bilingual release notes](release-notes/v2.2.0.md) for details.
 
 ## [2.1.0] — 2026-11-08
 

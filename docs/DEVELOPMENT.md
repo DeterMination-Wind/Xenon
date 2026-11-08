@@ -35,12 +35,12 @@ VERSION_ROOT=2.0 BUILD_NUMBER=0 VERSION_TYPE=stable \
   ./gradlew -g .gradle-user-home :Xenon:shadowJar :Xenon:packageWindowsSingleFileExe
 ```
 
-产物为 `Xenon-2.0.0.jar` 与 `Xenon.exe`。
+产物为 `Xenon-2.2.0.jar` 与 `Xenon.exe`。
 
 发布版本统一用脚本构建并同步到 `../构建/Xenon/`（默认 `C:\Users\华硕\Documents\codex\构建\Xenon`）：
 
 ```powershell
-pwsh -NoProfile -File scripts/build-local-release.ps1 -Version 2.1.0
+pwsh -NoProfile -File scripts/build-local-release.ps1 -Version 2.2.0
 ```
 
 脚本会设置 `VERSION_ROOT` / `BUILD_NUMBER` / `VERSION_TYPE=stable`，运行
