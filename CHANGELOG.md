@@ -2,7 +2,7 @@
 
 All notable changes to Xenon will be documented in this file.
 
-## [Unreleased]
+## [2.1.0] — 2026-11-08
 
 ### Added
 - Cloud archives can upload a file-level delta snapshot: only the blobs the cloud is missing are transferred (three workers, server-advertised retry delay), and a restore downloads only files that are missing or hash-mismatched. When the server rejects the manifest, the instance exceeds a file-count/size limit, or the quota check fails, the upload falls back to the whole-archive zip inside the same run.
@@ -17,6 +17,8 @@ All notable changes to Xenon will be documented in this file.
 
 ### Changed
 - The competitor table was re-verified as of 2026-11-07, gained a last-push activity row, the MDTBBS 1.8 comparison, and Eliezer516/mindustry-launcher.
+
+See the [bilingual release notes](release-notes/v2.1.0.md) for details.
 
 ## [2.0.0] — 2026-10-23
 
