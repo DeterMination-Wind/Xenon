@@ -17,6 +17,7 @@
  */
 package determination.xenon.setting;
 
+import javafx.beans.InvalidationListener;
 import javafx.beans.Observable;
 import javafx.beans.property.ObjectProperty;
 import javafx.beans.property.SimpleObjectProperty;
@@ -33,6 +34,7 @@ import java.io.Reader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -175,6 +177,19 @@ public final class Accounts {
 
         selectedAccount.set(selected);
 
+        // Keep the selection on an account that is still present: when the
+        // selected account is removed, fall back to the first remaining one.
+        // Only an empty list may leave the launcher without a selection.
+        InvalidationListener selectionValidator = any -> {
+            Account current = selectedAccount.get();
+            Account next = resolveSelection(accounts, current);
+            if (next != current) {
+                selectedAccount.set(next);
+            }
+        };
+        accounts.addListener(selectionValidator);
+        selectedAccount.addListener(selectionValidator);
+
         accounts.addListener(onInvalidating(Accounts::updateAccountStorages));
         selectedAccount.addListener((observable, oldValue, newValue) -> {
             if (!initialized) {
@@ -190,6 +205,19 @@ public final class Accounts {
         });
 
         initialized = true;
+    }
+
+    /// Picks the account that should stay selected for the given candidate list.
+    ///
+    /// The current selection is kept when it is still present; otherwise the
+    /// first candidate is selected. `null` is returned only when there is no
+    /// candidate at all, i.e. the account list is empty.
+    @Nullable
+    static Account resolveSelection(List<Account> candidates, @Nullable Account current) {
+        if (current != null && candidates.contains(current)) {
+            return current;
+        }
+        return candidates.isEmpty() ? null : candidates.get(0);
     }
 
     /// Finds the account whose identifier matches, preferring the storage the

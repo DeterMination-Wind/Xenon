@@ -19,10 +19,13 @@ package determination.xenon.ui.account;
 
 import com.jfoenix.controls.JFXButton;
 import com.jfoenix.controls.JFXRadioButton;
+import javafx.event.Event;
 import javafx.geometry.Pos;
+import javafx.scene.Cursor;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.control.Label;
 import javafx.scene.control.SkinBase;
+import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
@@ -38,6 +41,11 @@ import static determination.xenon.util.i18n.I18n.i18n;
 
 /// Row skin for [AccountListItem]: Gamma avatar, name, portable/global toggle,
 /// UUID copy and delete.
+///
+/// The whole card acts as the radio button: clicking the avatar, the nickname
+/// or the empty area fires the item and therefore selects that account. The
+/// action buttons on the right keep their own behavior and must never change
+/// the selection, so that subtree consumes click events.
 final class AccountListItemSkin extends SkinBase<AccountListItem> {
 
     AccountListItemSkin(AccountListItem skinnable) {
@@ -82,6 +90,10 @@ final class AccountListItemSkin extends SkinBase<AccountListItem> {
         spinnerMove.getStyleClass().add("small-spinner-pane");
         btnMove.setOnAction(e -> {
             Account account = skinnable.getAccount();
+            // Moving removes the account from the list, which makes the
+            // selection fall back to another row; remember it and restore it
+            // once the account is re-inserted.
+            Account previousSelection = Accounts.getSelectedAccount();
             Accounts.getAccounts().remove(account);
             if (account.isPortable()) {
                 account.setPortable(false);
@@ -99,6 +111,10 @@ final class AccountListItemSkin extends SkinBase<AccountListItem> {
                     }
                     Accounts.getAccounts().add(idx, account);
                 }
+            }
+
+            if (previousSelection == account) {
+                Accounts.setSelectedAccount(account);
             }
         });
         btnMove.getStyleClass().add("toggle-icon4");
@@ -127,6 +143,13 @@ final class AccountListItemSkin extends SkinBase<AccountListItem> {
         FXUtils.installFastTooltip(btnRemove, i18n("button.delete"));
         right.getChildren().add(btnRemove);
         root.setRight(right);
+
+        root.setCursor(Cursor.HAND);
+        // Action buttons must not change the account selection. JFXButton actions
+        // run on press/release, while MOUSE_CLICKED bubbles afterwards, so
+        // consuming the click here only suppresses the card-level selection.
+        right.addEventHandler(MouseEvent.MOUSE_CLICKED, Event::consume);
+        FXUtils.onClicked(root, skinnable::fire);
 
         root.getStyleClass().add("card");
         root.setStyle("-fx-padding: 8 8 8 0;");
