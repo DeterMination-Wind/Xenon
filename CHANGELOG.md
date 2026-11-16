@@ -4,6 +4,16 @@ All notable changes to Xenon will be documented in this file.
 
 ## [Unreleased]
 
+## [2.2.1] — 2026-11-16
+
+### Fixed
+- Clicking an account card body (avatar, nickname or empty area) selects that Mindustry UID again; the radio dot, the sidebar account entry and `selectedAccount` in `config.json` follow the click, and the Move / Copy UUID / Delete buttons no longer change the selection.
+- Deleting the selected account selects the first remaining account instead of leaving nothing selected; only an empty list leaves the launcher without a selection.
+- Moving an account between Portable and Global keeps the selection on that account.
+- The in-app update now actually replaces the installed launcher: the download is started with `--apply-to`, the new process copies itself over the installed jar (`installJar`) and starts that copy, retrying while the previous launcher releases the file. Packaged installs keep their jar name, and a refused write reports the manual-download hint instead of silently running the old version again.
+
+See the [bilingual release notes](release-notes/v2.2.1.md) for details.
+
 ## [2.2.0] — 2026-11-08
 
 ### Added
