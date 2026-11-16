@@ -70,6 +70,16 @@ JavaFX UI module and the preserved HMCL shell. It depends on `XenonCore` and
   `api.github.com`.
 - Self-update is `upgrade/UpdateChecker`, `UpdateHandler`, `IntegrityChecker`;
   it is not in `XenonBoot`.
+- A jar update must keep the HMCL handover: download to a temp file, start it
+  with `--apply-to <installed jar>`, and let that process copy itself over the
+  installed jar (`installJar`) and start the installed copy. Starting the
+  download straight from `%TEMP%` (no `--apply-to`) looks like a successful
+  update but silently reverts to the old version on the next launch.
+- `installJar` must not run for the single-file build: `app/Xenon.cfg` names
+  the bundled jar, so `selectArtifact` refuses the jar asset inside
+  `Xenon.bundle`. A launcher directory that refuses the write fails the update
+  with the manual-download hint; never fall back to running the new launcher
+  from a temporary directory.
 
 ## i18n and tests
 

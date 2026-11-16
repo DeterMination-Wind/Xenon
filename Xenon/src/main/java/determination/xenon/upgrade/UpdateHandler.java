@@ -43,6 +43,7 @@ import java.lang.management.ManagementFactory;
 import java.nio.ByteBuffer;
 import java.nio.channels.SeekableByteChannel;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -53,6 +54,7 @@ import java.util.*;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -70,6 +72,18 @@ public final class UpdateHandler {
 
     /// Name of the bundle directory extracted next to the single-file executable.
     private static final String BOOTSTRAP_BUNDLE_NAME = "Xenon.bundle";
+
+    /// Command-line flag that turns a freshly started launcher into the update
+    /// application step: `--apply-to <installed launcher>`.
+    static final String APPLY_TO_ARGUMENT = "--apply-to";
+
+    /// How long replacing an installed launcher waits for the previous process
+    /// to release the file. The previous process exits right after spawning the
+    /// handover, so this only covers a slow shutdown.
+    private static final long LOCK_WAIT_MILLIS = 30_000L;
+
+    /// Delay between two attempts while the previous launcher is still exiting.
+    private static final long LOCK_RETRY_MILLIS = 200L;
 
     private UpdateHandler() {
     }
@@ -91,7 +105,7 @@ public final class UpdateHandler {
             return true;
         }
 
-        if (args.length == 2 && args[0].equals("--apply-to")) {
+        if (args.length == 2 && args[0].equals(APPLY_TO_ARGUMENT)) {
             if (OperatingSystem.CURRENT_OS == OperatingSystem.WINDOWS && !OperatingSystem.isWindows7OrLater()) {
                 SwingUtils.showErrorDialog(i18n("fatal.apply_update_need_win7", Metadata.PUBLISH_URL));
                 return true;
@@ -165,7 +179,18 @@ public final class UpdateHandler {
                     // See UpdateChecker.checkUpdate() for rationale.
 
                     saveWindowStatesAndWait();
-                    requestUpdate(version, type, downloaded);
+                    try {
+                        requestUpdate(version, type, downloaded);
+                    } catch (IOException e) {
+                        // The handover failed, so the installed launcher is
+                        // still the old one: keep this process alive and tell
+                        // the user instead of restarting into the old version.
+                        LOG.warning("Failed to install the downloaded launcher", e);
+                        Platform.runLater(() -> Controllers.dialog(
+                                i18n("fatal.apply_update_failure", Metadata.MANUAL_UPDATE_URL) + "\n" + e,
+                                i18n("update.failed"), MessageType.ERROR));
+                        return;
+                    }
                     EntryPoint.exit(0);
                 } else {
                     Exception e = executor.getException();
@@ -191,8 +216,11 @@ public final class UpdateHandler {
     /// @param version release being installed
     /// @return artifact kind, or `null` when the release cannot be applied automatically
     private static @Nullable RemoteVersion.Type selectArtifact(RemoteVersion version) {
+        // The packaged builds name their bundled jar in the launcher
+        // configuration, so they must never be updated like a portable jar.
+        boolean packaged = isPackagedInstall(Metadata.PROGRAM_DIRECTORY);
         return selectArtifact(version,
-                JavaRuntime.getDefault() != null,
+                !packaged && JavaRuntime.getDefault() != null,
                 OperatingSystem.CURRENT_OS == OperatingSystem.WINDOWS);
     }
 
@@ -241,33 +269,145 @@ public final class UpdateHandler {
         }
     }
 
+    /// Replaces the installed launcher with the running (downloaded) one.
+    ///
+    /// @param target installed launcher to replace
+    /// @throws IOException when the installed launcher cannot be replaced
     private static void applyUpdate(Path target) throws IOException {
         LOG.info("Applying update to " + target);
 
         Path self = getCurrentLocation();
         // Self-integrity check skipped for non-official builds.
-        ExecutableHeaderHelper.copyWithHeader(self, target);
+        Path installed = installJar(self, target);
+
+        startJava(installed);
+    }
+
+    /// Copies the running launcher over an installed launcher jar.
+    ///
+    /// The previous launcher starts this process from the downloaded jar and
+    /// exits right afterwards, so the installed jar stays locked for a moment.
+    /// The copy is staged next to the target and moved into place with retries
+    /// instead of failing the update, and the installed file is renamed to the
+    /// running version so the next launch finds a correctly named launcher.
+    ///
+    /// @param self   running launcher jar
+    /// @param target installed launcher jar to replace
+    /// @return the installed launcher jar
+    /// @throws IOException when the installed jar cannot be replaced
+    static Path installJar(Path self, Path target) throws IOException {
+        Path staging = target.resolveSibling(target.getFileName() + ".new");
+        try {
+            ExecutableHeaderHelper.copyWithHeader(self, staging);
+            moveWithRetry(staging, target);
+        } catch (IOException e) {
+            try {
+                Files.deleteIfExists(staging);
+            } catch (IOException ignored) {
+                // The staging file is left behind; the update still fails.
+            }
+            throw e;
+        }
+
+        if (isPackagedInstall(target.getParent())) {
+            // The packaged launcher configuration names this exact file, so it
+            // must keep its name.
+            return target;
+        }
 
         Optional<Path> newFilename = tryRename(target, Metadata.VERSION);
         if (newFilename.isPresent()) {
-            LOG.info("Move " + target + " to " + newFilename.get());
+            Path renamed = newFilename.get();
             try {
-                Files.move(target, newFilename.get());
-                target = newFilename.get();
+                moveWithRetry(target, renamed);
+                LOG.info("Moved " + target + " to " + renamed);
+                return renamed;
             } catch (IOException e) {
-                LOG.warning("Failed to move target", e);
+                LOG.warning("Failed to move " + target + " to " + renamed, e);
             }
         }
+        return target;
+    }
 
-        startJava(target);
+    /// Returns whether a launcher directory belongs to a packaged build that
+    /// starts the jar by its exact file name.
+    ///
+    /// The Windows single-file build extracts into `Xenon.bundle`, and a
+    /// `jpackage` app image keeps a `Xenon.cfg` next to the jar. Both name the
+    /// launcher jar explicitly, so renaming it would make the installed
+    /// launcher unstartable.
+    ///
+    /// @param directory directory that contains the launcher jar, or `null`
+    /// @return `true` when the directory belongs to a packaged launcher
+    static boolean isPackagedInstall(@Nullable Path directory) {
+        if (directory == null) {
+            return false;
+        }
+        if (bootstrapBundleOf(directory) != null) {
+            return true;
+        }
+        return "app".equals(FileUtils.getName(directory))
+                && Files.isRegularFile(directory.resolve("Xenon.cfg"));
+    }
+
+    /// Moves a file over an existing one, retrying while the previous launcher
+    /// still holds the destination.
+    ///
+    /// @param source file to move
+    /// @param target destination, replaced when it exists
+    /// @throws IOException when the destination is still locked after the wait
+    static void moveWithRetry(Path source, Path target) throws IOException {
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(LOCK_WAIT_MILLIS);
+        while (true) {
+            try {
+                try {
+                    Files.move(source, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+                } catch (AtomicMoveNotSupportedException e) {
+                    Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
+                }
+                return;
+            } catch (IOException e) {
+                if (System.nanoTime() >= deadline) {
+                    throw e;
+                }
+                LOG.info("Waiting for " + target + " to be released");
+                try {
+                    Thread.sleep(LOCK_RETRY_MILLIS);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw e;
+                }
+            }
+        }
     }
 
     /// Hands the downloaded artifact over to a fresh launcher process.
     private static void requestUpdate(RemoteVersion version, RemoteVersion.Type type, Path downloaded) throws IOException {
         switch (type) {
-            case JAR -> startJava(downloaded);
+            case JAR -> startJarUpdate(downloaded);
             case EXE -> startExecutableUpdate(version, downloaded);
         }
+    }
+
+    /// Installs a downloaded jar and starts the installed copy.
+    ///
+    /// The process that runs from a jar cannot replace that jar itself, so the
+    /// download is started with [APPLY_TO_ARGUMENT] instead: the new launcher
+    /// copies itself over the installed jar and starts the installed copy.
+    /// Starting the download straight from its temporary directory would leave
+    /// the installed launcher untouched, so the next launch would silently run
+    /// the old version again.
+    ///
+    /// @param downloaded downloaded launcher jar
+    /// @throws IOException when the handover process cannot be started
+    private static void startJarUpdate(Path downloaded) throws IOException {
+        Path self = JarUtils.thisJarPath();
+        if (self == null) {
+            // Development run from a class path: there is no installed jar to replace.
+            startJava(downloaded);
+            return;
+        }
+        startJava(downloaded, APPLY_TO_ARGUMENT, self.toAbsolutePath().toString());
     }
 
     /// Installs and starts the Windows single-file launcher.
@@ -275,8 +415,10 @@ public final class UpdateHandler {
     /// The bootstrap executable is not running while the launcher works, so it
     /// can be replaced in place. The new bootstrap retries the `Xenon.bundle`
     /// swap until this process exits, which keeps the running launcher from
-    /// blocking the extraction. When the outer executable cannot be located or
-    /// written, the downloaded file is started from a fresh directory instead.
+    /// blocking the extraction. When no outer bootstrap can be identified the
+    /// downloaded executable is placed next to the installed launcher instead;
+    /// a directory that refuses the write fails the update instead of running
+    /// the new version from a temporary location.
     private static void startExecutableUpdate(RemoteVersion version, Path downloaded) throws IOException {
         Path bootstrap = findBootstrapExecutable();
         Path target;
@@ -303,34 +445,27 @@ public final class UpdateHandler {
     static Path replaceExecutable(Path downloaded, Path target) throws IOException {
         Path staging = target.resolveSibling(target.getFileName() + ".new");
         Files.copy(downloaded, staging, StandardCopyOption.REPLACE_EXISTING);
-        try {
-            Files.move(staging, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-        } catch (IOException e) {
-            LOG.warning("Atomic replacement of the launcher failed; retrying without it", e);
-            Files.move(staging, target, StandardCopyOption.REPLACE_EXISTING);
-        }
+        moveWithRetry(staging, target);
         return target;
     }
 
     /// Places the downloaded executable in a visible directory when the outer
     /// bootstrap cannot be replaced.
     ///
+    /// A launcher installed in a protected directory cannot be updated in
+    /// place. Failing here keeps the installed version and reports the problem;
+    /// starting the download from a temporary directory instead would look like
+    /// a successful update but silently revert on the next launch.
+    ///
     /// @param downloaded downloaded executable
     /// @param version    release being installed
-    /// @param directory  preferred directory for the new executable
+    /// @param directory  directory that contains the user-visible launcher
     /// @return the executable to start
-    /// @throws IOException when neither the preferred directory nor a temp directory accepts the file
+    /// @throws IOException when the directory does not accept the file
     static Path installExecutableFallback(Path downloaded, RemoteVersion version, Path directory) throws IOException {
         Path target = directory.resolve("Xenon-" + version.version() + ".exe");
-        try {
-            Files.move(downloaded, target, StandardCopyOption.REPLACE_EXISTING);
-            return target;
-        } catch (IOException e) {
-            LOG.warning("Failed to place the downloaded launcher at " + target, e);
-            Path fallback = Files.createTempDirectory("xenon-update-").resolve("Xenon-" + version.version() + ".exe");
-            Files.move(downloaded, fallback, StandardCopyOption.REPLACE_EXISTING);
-            return fallback;
-        }
+        Files.move(downloaded, target, StandardCopyOption.REPLACE_EXISTING);
+        return target;
     }
 
     /// Starts a native launcher executable and lets it detach from this JVM.

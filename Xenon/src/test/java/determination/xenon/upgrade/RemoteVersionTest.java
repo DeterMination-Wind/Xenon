@@ -24,12 +24,15 @@ import org.jetbrains.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HexFormat;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -217,6 +220,18 @@ public final class RemoteVersionTest {
         assertArrayEquals(payload, Files.readAllBytes(installed));
     }
 
+    /// A launcher directory that refuses the write fails the update instead of
+    /// starting the new version from a temporary directory.
+    @Test
+    public void executableFallbackDoesNotUseATempDirectory(@TempDir Path directory) throws IOException {
+        Path downloaded = directory.resolve("download.exe");
+        Files.write(downloaded, new byte[]{6});
+        RemoteVersion version = release("https://example.com/Xenon.jar", "https://example.com/Xenon.exe");
+
+        assertThrows(IOException.class,
+                () -> UpdateHandler.installExecutableFallback(downloaded, version, directory.resolve("missing")));
+    }
+
     /// The packaged layout points from `app/` back to the outer bundle.
     @Test
     public void bootstrapBundleIsFoundFromAppDirectory(@TempDir Path directory) throws IOException {
@@ -237,6 +252,85 @@ public final class RemoteVersionTest {
         assertNull(UpdateHandler.readPayloadHash(directory.resolve("missing.exe")));
     }
 
+    /// Replacing an installed jar swaps its bytes, drops the staging file and
+    /// renames the installed launcher to the running version.
+    @Test
+    public void installedJarIsReplacedAndRenamed(@TempDir Path directory) throws IOException {
+        Path self = directory.resolve("xenon-update-1234.jar");
+        byte[] launcher = writeJar(self);
+
+        Path target = directory.resolve("Xenon-1.0.0.jar");
+        Files.write(target, new byte[]{9});
+
+        Path installed = UpdateHandler.installJar(self, target);
+
+        assertArrayEquals(launcher, Files.readAllBytes(installed));
+        assertFalse(Files.exists(directory.resolve("Xenon-1.0.0.jar.new")));
+        if (!installed.equals(target)) {
+            assertFalse(Files.exists(target));
+            assertTrue(installed.getFileName().toString().endsWith(".jar"));
+        }
+    }
+
+    /// A launcher without a version in its name is replaced but keeps its name.
+    @Test
+    public void unversionedLauncherKeepsItsName(@TempDir Path directory) throws IOException {
+        Path self = directory.resolve("xenon-update-5678.jar");
+        byte[] launcher = writeJar(self);
+
+        Path target = directory.resolve("Xenon.jar");
+        Files.write(target, new byte[3]);
+
+        assertEquals(target, UpdateHandler.installJar(self, target));
+        assertArrayEquals(launcher, Files.readAllBytes(target));
+    }
+
+    /// The jar of a packaged launcher keeps its name because the packaged
+    /// configuration names the exact file.
+    @Test
+    public void packagedLauncherJarIsNotRenamed(@TempDir Path directory) throws IOException {
+        Path app = Files.createDirectory(directory.resolve("app"));
+        Files.writeString(app.resolve("Xenon.cfg"), "app.classpath=$APPDIR\\Xenon-1.0.0.jar");
+
+        Path self = directory.resolve("xenon-update-9012.jar");
+        byte[] launcher = writeJar(self);
+
+        Path target = app.resolve("Xenon-1.0.0.jar");
+        Files.write(target, new byte[3]);
+
+        assertTrue(UpdateHandler.isPackagedInstall(app));
+        assertEquals(target, UpdateHandler.installJar(self, target));
+        assertArrayEquals(launcher, Files.readAllBytes(target));
+    }
+
+    /// Only bundle and jpackage layouts count as packaged installations.
+    @Test
+    public void portableDirectoryIsNotAPackagedInstall(@TempDir Path directory) throws IOException {
+        Path portable = Files.createDirectory(directory.resolve("portable"));
+        Path app = Files.createDirectory(directory.resolve("app"));
+        Path bundledApp = Files.createDirectories(
+                directory.resolve("Xenon.bundle").resolve("Xenon").resolve("app"));
+
+        assertFalse(UpdateHandler.isPackagedInstall(portable));
+        assertFalse(UpdateHandler.isPackagedInstall(app));
+        assertTrue(UpdateHandler.isPackagedInstall(bundledApp));
+        assertFalse(UpdateHandler.isPackagedInstall(null));
+    }
+
+    /// Moving over an existing file replaces its content.
+    @Test
+    public void moveReplacesTheDestination(@TempDir Path directory) throws IOException {
+        Path source = directory.resolve("staged.jar");
+        Path target = directory.resolve("Xenon-2.0.0.jar");
+        Files.write(source, new byte[]{1, 2, 3});
+        Files.write(target, new byte[]{9});
+
+        UpdateHandler.moveWithRetry(source, target);
+
+        assertArrayEquals(new byte[]{1, 2, 3}, Files.readAllBytes(target));
+        assertFalse(Files.exists(source));
+    }
+
     /// Builds a deterministic 32-byte hash for the given seed.
     private static byte[] hashOf(int seed) {
         byte[] hash = new byte[32];
@@ -244,6 +338,19 @@ public final class RemoteVersionTest {
             hash[i] = (byte) (seed + i);
         }
         return hash;
+    }
+
+    /// Writes a minimal launcher jar and returns its bytes.
+    private static byte[] writeJar(Path jar) throws IOException {
+        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+        try (ZipOutputStream zip = new ZipOutputStream(buffer)) {
+            zip.putNextEntry(new ZipEntry("META-INF/MANIFEST.MF"));
+            zip.write("Manifest-Version: 1.0\n".getBytes(StandardCharsets.UTF_8));
+            zip.closeEntry();
+        }
+        byte[] bytes = buffer.toByteArray();
+        Files.write(jar, bytes);
+        return bytes;
     }
 
     /// Writes an executable with a valid bootstrap footer.
