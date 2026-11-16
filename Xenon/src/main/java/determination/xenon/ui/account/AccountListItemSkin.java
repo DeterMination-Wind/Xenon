@@ -36,6 +36,7 @@ import determination.xenon.ui.FXUtils;
 import determination.xenon.ui.SVG;
 import determination.xenon.ui.Controllers;
 import determination.xenon.ui.construct.SpinnerPane;
+import org.jetbrains.annotations.Nullable;
 
 import static determination.xenon.util.i18n.I18n.i18n;
 
@@ -93,7 +94,7 @@ final class AccountListItemSkin extends SkinBase<AccountListItem> {
             // Moving removes the account from the list, which makes the
             // selection fall back to another row; remember it and restore it
             // once the account is re-inserted.
-            Account previousSelection = Accounts.getSelectedAccount();
+            @Nullable Account previousSelection = Accounts.getSelectedAccount();
             Accounts.getAccounts().remove(account);
             if (account.isPortable()) {
                 account.setPortable(false);
@@ -145,9 +146,12 @@ final class AccountListItemSkin extends SkinBase<AccountListItem> {
         root.setRight(right);
 
         root.setCursor(Cursor.HAND);
-        // Action buttons must not change the account selection. JFXButton actions
-        // run on press/release, while MOUSE_CLICKED bubbles afterwards, so
-        // consuming the click here only suppresses the card-level selection.
+        // The action area is not a click target for the selection: show the
+        // default cursor there and keep it out of the card-level handler.
+        // JFXButton actions run on press/release, while MOUSE_CLICKED bubbles
+        // afterwards, so consuming the click here only suppresses the
+        // card-level selection.
+        right.setCursor(Cursor.DEFAULT);
         right.addEventHandler(MouseEvent.MOUSE_CLICKED, Event::consume);
         FXUtils.onClicked(root, skinnable::fire);
 

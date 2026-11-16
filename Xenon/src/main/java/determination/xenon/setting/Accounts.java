@@ -177,18 +177,7 @@ public final class Accounts {
 
         selectedAccount.set(selected);
 
-        // Keep the selection on an account that is still present: when the
-        // selected account is removed, fall back to the first remaining one.
-        // Only an empty list may leave the launcher without a selection.
-        InvalidationListener selectionValidator = any -> {
-            Account current = selectedAccount.get();
-            Account next = resolveSelection(accounts, current);
-            if (next != current) {
-                selectedAccount.set(next);
-            }
-        };
-        accounts.addListener(selectionValidator);
-        selectedAccount.addListener(selectionValidator);
+        installSelectionListeners(accounts, selectedAccount);
 
         accounts.addListener(onInvalidating(Accounts::updateAccountStorages));
         selectedAccount.addListener((observable, oldValue, newValue) -> {
@@ -205,6 +194,26 @@ public final class Accounts {
         });
 
         initialized = true;
+    }
+
+    /// Keeps `selection` on an account that is still present in `accounts`.
+    ///
+    /// Removing the selected account falls back to the first remaining one, and
+    /// only an empty list leaves nothing selected. The listeners are attached to
+    /// the two arguments only, so the wiring can be exercised without
+    /// {@link #init()} and the configuration it depends on; {@link #init()}
+    /// installs it before the storage listener so the fallback is computed
+    /// before the account storage is rewritten.
+    static void installSelectionListeners(ObservableList<Account> accounts, ObjectProperty<Account> selection) {
+        InvalidationListener selectionValidator = any -> {
+            Account current = selection.get();
+            Account next = resolveSelection(accounts, current);
+            if (next != current) {
+                selection.set(next);
+            }
+        };
+        accounts.addListener(selectionValidator);
+        selection.addListener(selectionValidator);
     }
 
     /// Picks the account that should stay selected for the given candidate list.
@@ -260,11 +269,19 @@ public final class Accounts {
         return selectedAccount;
     }
 
+    /// Returns the selected account, or `null` only while the account list is
+    /// empty (see {@link #setSelectedAccount(Account)}).
+    @Nullable
     public static Account getSelectedAccount() {
         return selectedAccount.get();
     }
 
-    public static void setSelectedAccount(Account account) {
+    /// Requests a new selection.
+    ///
+    /// Once {@link #init()} has installed the selection listeners, a `null` or
+    /// unlisted account is replaced by the first listed account, so only an
+    /// empty list keeps this property empty.
+    public static void setSelectedAccount(@Nullable Account account) {
         selectedAccount.set(account);
     }
 

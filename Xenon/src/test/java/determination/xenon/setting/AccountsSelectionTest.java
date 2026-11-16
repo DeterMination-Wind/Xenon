@@ -19,6 +19,10 @@ package determination.xenon.setting;
 
 import determination.xenon.auth.Account;
 import determination.xenon.auth.offline.OfflineAccount;
+import javafx.beans.property.ObjectProperty;
+import javafx.beans.property.SimpleObjectProperty;
+import javafx.collections.FXCollections;
+import javafx.collections.ObservableList;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -27,13 +31,15 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
-/// Tests the detached selection rule used by {@link Accounts}: the current
-/// selection survives while it is still listed, otherwise the first account
-/// takes over, and only an empty list may leave the launcher without a
-/// selection.
+/// Tests the selection rules of {@link Accounts}: the current selection
+/// survives while it is still listed, otherwise the first account takes over,
+/// and only an empty list may leave the launcher without a selection.
 ///
-/// The test never touches the JavaFX toolkit, `ConfigHolder` or
-/// {@link Accounts#init()}; it only loads the class to reach the static helper.
+/// Both the pure rule and the listener wiring installed by
+/// {@link Accounts#installSelectionListeners(ObservableList, ObjectProperty)}
+/// are covered. The test never touches the JavaFX toolkit, `ConfigHolder` or
+/// {@link Accounts#init()}; it only loads the class to reach the static helpers
+/// and uses locally created collections and properties.
 public final class AccountsSelectionTest {
 
     private static final Account A = OfflineAccount.fromUsername("a");
@@ -63,5 +69,54 @@ public final class AccountsSelectionTest {
     public void testFallBackToFirstWhenCurrentIsNull() {
         List<Account> accounts = new ArrayList<>(List.of(B, C));
         assertSame(B, Accounts.resolveSelection(accounts, null));
+    }
+
+    @Test
+    public void testListenerFallsBackWhenSelectedAccountIsRemoved() {
+        ObservableList<Account> accounts = FXCollections.observableArrayList(A, B, C);
+        ObjectProperty<Account> selection = new SimpleObjectProperty<>(B);
+        Accounts.installSelectionListeners(accounts, selection);
+
+        accounts.remove(B);
+        assertSame(A, selection.get());
+
+        accounts.clear();
+        assertNull(selection.get());
+    }
+
+    @Test
+    public void testListenerKeepsSelectionWhenAnotherAccountIsRemoved() {
+        ObservableList<Account> accounts = FXCollections.observableArrayList(A, B);
+        ObjectProperty<Account> selection = new SimpleObjectProperty<>(B);
+        Accounts.installSelectionListeners(accounts, selection);
+
+        accounts.remove(A);
+        assertSame(B, selection.get());
+    }
+
+    @Test
+    public void testListenerSelectsFirstAddedAccount() {
+        ObservableList<Account> accounts = FXCollections.observableArrayList();
+        ObjectProperty<Account> selection = new SimpleObjectProperty<>();
+        Accounts.installSelectionListeners(accounts, selection);
+
+        accounts.add(B);
+        assertSame(B, selection.get());
+
+        accounts.add(C);
+        assertSame(B, selection.get());
+    }
+
+    @Test
+    public void testListenerRejectsUnlistedOrNullSelection() {
+        ObservableList<Account> accounts = FXCollections.observableArrayList(A, B);
+        ObjectProperty<Account> selection = new SimpleObjectProperty<>(B);
+        Accounts.installSelectionListeners(accounts, selection);
+
+        selection.set(C);
+        assertSame(A, selection.get());
+
+        selection.set(null);
+        assertSame(A, selection.get());
     }
 }
