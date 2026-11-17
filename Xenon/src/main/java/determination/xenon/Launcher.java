@@ -445,7 +445,7 @@ public final class Launcher extends Application {
         runInFX(() -> {
             if (Controllers.getStage() == null)
                 return;
-            if (!determination.xenon.ui.TrayIconManager.isInstalled()) {
+            if (!determination.xenon.ui.TrayIconManager.canHideToTray()) {
                 stopApplication();
                 return;
             }

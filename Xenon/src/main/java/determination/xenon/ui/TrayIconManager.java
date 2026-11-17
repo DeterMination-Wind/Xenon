@@ -24,6 +24,7 @@ import javafx.stage.Stage;
 import org.jetbrains.annotations.Nullable;
 
 import java.awt.AWTException;
+import java.awt.EventQueue;
 import java.awt.Image;
 import java.awt.MenuItem;
 import java.awt.PopupMenu;
@@ -33,6 +34,7 @@ import java.awt.TrayIcon;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.net.URL;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static determination.xenon.util.logging.Logger.LOG;
@@ -55,6 +57,16 @@ public final class TrayIconManager {
     private static final AtomicReference<TrayIcon> INSTALLED = new AtomicReference<>();
     private static final AtomicReference<MenuItem> STATUS_ITEM = new AtomicReference<>();
 
+    /// Message `SystemTray.getSystemTray()` uses when the tray disappeared.
+    private static final String TRAY_UNSUPPORTED_MESSAGE =
+            "The system tray is not supported on the current platform.";
+
+    /// Guards the one-time EDT handler installation.
+    private static final AtomicBoolean DISPATCH_GUARD_INSTALLED = new AtomicBoolean();
+
+    /// Set once the JDK reported that the notification area vanished.
+    private static final AtomicBoolean TRAY_DEGRADED = new AtomicBoolean();
+
     private TrayIconManager() {
     }
 
@@ -68,11 +80,15 @@ public final class TrayIconManager {
      */
     public static void install(Stage stage) {
         if (INSTALLED.get() != null) return;
+        // A fresh install starts a new tray lifecycle, so drop any latch
+        // recorded by a previous one.
+        TRAY_DEGRADED.set(false);
         if (!SystemTray.isSupported()) {
             LOG.info("System tray not supported on this platform; skipping tray icon");
             return;
         }
-        java.awt.EventQueue.invokeLater(() -> {
+        EventQueue.invokeLater(() -> {
+            installDispatchGuard();
             try {
                 installOnEdt(stage);
             } catch (Throwable ex) {
@@ -138,6 +154,68 @@ public final class TrayIconManager {
         return INSTALLED.get() != null;
     }
 
+    /// Whether hiding the launcher window still leaves a way back.
+    ///
+    /// Three conditions must hold: an icon was installed, the platform still
+    /// reports a tray, and no notification-area failure has been observed in
+    /// this session. The third condition is a conservative latch: once the JDK
+    /// drops its icon, `SystemTray.isSupported()` can flip back to `true` before
+    /// the icon is re-attached (and the JDK swallows `addNotify` failures), so a
+    /// hidden window could stay unreachable. Refusing to hide after such a
+    /// failure degrades to the normal "close exits" path instead.
+    ///
+    /// @return `true` when closing the window may hide it into the tray
+    public static boolean canHideToTray() {
+        return isInstalled() && !TRAY_DEGRADED.get() && SystemTray.isSupported();
+    }
+
+    /// Installs a narrow uncaught-exception guard on the current EDT thread.
+    ///
+    /// When the Linux notification area disappears, `sun.awt.X11.XTrayIconPeer`
+    /// removes its icon from its own EDT task and `SystemTray.getSystemTray()`
+    /// throws because support has already flipped to `false`. That exception
+    /// bypasses [#uninstall] and would reach the crash reporter as an ERROR plus
+    /// an analytics event, so it is filtered here. Any failure that does not
+    /// match [#isJdkSystemTrayFailure] is delegated to the previous handler, so
+    /// real AWT failures keep their existing reporting path.
+    ///
+    /// Only the [EventQueue] thread that runs the installation task gets the
+    /// guard; other threads are untouched.
+    private static void installDispatchGuard() {
+        if (!DISPATCH_GUARD_INSTALLED.compareAndSet(false, true)) return;
+        Thread edt = Thread.currentThread();
+        Thread.UncaughtExceptionHandler previous = edt.getUncaughtExceptionHandler();
+        edt.setUncaughtExceptionHandler((thread, error) -> {
+            if (isJdkSystemTrayFailure(error)) {
+                // The icon may never be re-attached: stop offering hide-to-tray.
+                TRAY_DEGRADED.set(true);
+                LOG.info("Notification area disappeared; ignoring the JDK tray failure");
+                return;
+            }
+            previous.uncaughtException(thread, error);
+        });
+    }
+
+    /// Whether a failure is the JDK's own "system tray disappeared" signal.
+    ///
+    /// All three conditions must hold: it is an
+    /// [UnsupportedOperationException], its message is exactly the one
+    /// `SystemTray.getSystemTray()` uses, and a stack frame belongs to `sun.awt.`
+    /// where the JDK implements the per-platform notification area. Launcher
+    /// code can never satisfy the last condition, so our own tray failures are
+    /// never swallowed.
+    ///
+    /// @param error failure to classify
+    /// @return `true` when the failure comes from the JDK tray implementation
+    static boolean isJdkSystemTrayFailure(Throwable error) {
+        if (!(error instanceof UnsupportedOperationException)) return false;
+        if (!TRAY_UNSUPPORTED_MESSAGE.equals(error.getMessage())) return false;
+        for (StackTraceElement frame : error.getStackTrace()) {
+            if (frame.getClassName().startsWith("sun.awt.")) return true;
+        }
+        return false;
+    }
+
     /**
      * Show a transient status line in the tray menu, for example upload
      * progress. Passing {@code null} removes the line and restores the
@@ -152,7 +230,7 @@ public final class TrayIconManager {
     public static void setStatus(@Nullable String status) {
         TrayIcon icon = INSTALLED.get();
         if (icon == null) return;
-        java.awt.EventQueue.invokeLater(() -> {
+        EventQueue.invokeLater(() -> {
             try {
                 applyStatus(icon, status);
             } catch (Throwable ex) {
@@ -200,7 +278,7 @@ public final class TrayIconManager {
         TrayIcon icon = INSTALLED.getAndSet(null);
         STATUS_ITEM.set(null);
         if (icon == null) return;
-        java.awt.EventQueue.invokeLater(() -> {
+        EventQueue.invokeLater(() -> {
             try {
                 SystemTray.getSystemTray().remove(icon);
             } catch (Throwable ex) {
