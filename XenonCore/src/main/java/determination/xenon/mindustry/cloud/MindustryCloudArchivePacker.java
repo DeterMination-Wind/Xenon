@@ -138,6 +138,10 @@ public final class MindustryCloudArchivePacker {
     /// byte budget. Hashes are computed here as a prediction; [#pack] re-hashes
     /// the bytes it writes and records those actual values in the manifest.
     ///
+    /// Mod descriptors may omit `displayName` and `version`, so the recorded
+    /// Mod name and version are normalised to non-empty values here: both the
+    /// manifest and the upload metadata consume them without null checks.
+    ///
     /// @param dataDir instance data directory
     /// @param options pack configuration
     /// @return the immutable plan
@@ -192,8 +196,10 @@ public final class MindustryCloudArchivePacker {
             }
             String modSha = packedDigest != null ? packedDigest
                     : mod.getFile() == null ? "" : sha256(mod.getFile(), cancelled);
-            mods.add(new ModEntry(mod.getInternalName(), mod.getDisplayName(),
-                    mod.getVersion(), modSha, packed, fileName, mod.isEnabled()));
+            String modVersion = mod.getVersion();
+            mods.add(new ModEntry(mod.getInternalName(), mod.displayName(),
+                    modVersion == null ? "" : modVersion, modSha, packed, fileName,
+                    mod.isEnabled()));
         }
         validatePlan(files);
         return new Plan(files, mods);

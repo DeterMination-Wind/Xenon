@@ -212,6 +212,17 @@ public final class MdtbbsCloudSavesClientTest {
         }
     }
 
+    /// A `ModInfo` built from a descriptor without names exposes empty strings.
+    @Test
+    public void modInfoNormalisesNullComponents() {
+        // Passing nulls here is deliberate: that is the invariant under test.
+        ModInfo mod = new ModInfo("id", null, null, null);
+        assertEquals("id", mod.id());
+        assertEquals("", mod.name());
+        assertEquals("", mod.version());
+        assertEquals("", mod.sha256());
+    }
+
     /// A `no_upload_required` response skips the PUT and commit.
     @Test
     public void skipsUploadWhenServerAlreadyHasContent() throws Exception {

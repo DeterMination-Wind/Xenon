@@ -97,6 +97,9 @@ public final class MindustryCloudSaveMetadata {
 
     /// Reads the enabled Mods of one instance.
     ///
+    /// A descriptor may omit `displayName` and `version`; the reported name and
+    /// version are normalised to non-empty values so uploads never carry nulls.
+    ///
     /// @param dataDir instance data directory
     /// @return at most {#MAX_MODS} entries, in scan order
     static List<ModInfo> readMods(Path dataDir) {
@@ -113,8 +116,9 @@ public final class MindustryCloudSaveMetadata {
                     continue;
                 }
                 String hash = mod.getFile() == null ? "" : sha256(mod.getFile());
-                result.add(new ModInfo(mod.getInternalName(), mod.getDisplayName(),
-                        mod.getVersion(), hash));
+                String modVersion = mod.getVersion();
+                result.add(new ModInfo(mod.getInternalName(), mod.displayName(),
+                        modVersion == null ? "" : modVersion, hash));
                 if (result.size() >= MAX_MODS) {
                     break;
                 }

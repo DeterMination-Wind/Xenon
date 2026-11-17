@@ -234,11 +234,32 @@ public final class MdtbbsCloudSavesClient {
 
     /// One Mod attached to an upload.
     ///
+    /// Descriptor-driven callers (for example an instance archive whose Mod
+    /// `mod.hjson` omits `displayName` or `version`) may hold `null` here. Both
+    /// the JSON encoder and the UI treat an empty string as "missing", so the
+    /// record normalises `null` to `""` once and no consumer needs a null check.
+    ///
     /// @param id      stable Mod id (`internalName`)
-    /// @param name    display name
-    /// @param version Mod version
+    /// @param name    display name, or empty when the descriptor omits it
+    /// @param version Mod version, or empty when the descriptor omits it
     /// @param sha256  Mod archive SHA-256, or empty
     public record ModInfo(String id, String name, String version, String sha256) {
+
+        /// Normalises `null` components to empty strings.
+        public ModInfo {
+            id = emptyIfNull(id);
+            name = emptyIfNull(name);
+            version = emptyIfNull(version);
+            sha256 = emptyIfNull(sha256);
+        }
+
+        /// Returns the value, or an empty string when it is `null`.
+        ///
+        /// @param value candidate value, or `null`
+        /// @return the value, or `""`
+        private static String emptyIfNull(@Nullable String value) {
+            return value == null ? "" : value;
+        }
     }
 
     /// Optional metadata attached to an upload.

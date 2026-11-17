@@ -374,6 +374,9 @@ public final class MindustryCloudArchiveService {
                 ? null : new GameInfo(versionId, version.getBuild());
         List<ModInfo> metadataMods = new ArrayList<>(mods.size());
         for (ModEntry mod : mods) {
+            // Mirror the single-save path: an entry without a stable id is not
+            // addressable on the server, so it must not be uploaded as metadata.
+            if (mod.id().isBlank()) continue;
             metadataMods.add(new ModInfo(mod.id(), mod.name(), mod.version(), mod.sha256()));
         }
         UploadMetadata metadata = new UploadMetadata(game, null, metadataMods,

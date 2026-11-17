@@ -136,6 +136,27 @@ public final class MindustryCloudArchiveServiceTest {
         }
     }
 
+    /// A Mod descriptor without `displayName`/`version` still uploads metadata.
+    @Test
+    public void uploadsModWithoutDescriptorNames(@TempDir Path root) throws Exception {
+        seedInstance(root);
+        seedBareMod(root);
+        try (CloudServer server = CloudServer.start()) {
+            server.formats = List.of("manifest");
+            MindustryCloudArchiveService service =
+                    new MindustryCloudArchiveService(server.client(), version(), root);
+
+            Result result = service.uploadNow("manual");
+
+            assertEquals(Outcome.UPLOADED, result.outcome());
+            String body = server.lastManifestBody();
+            assertTrue(body.contains("\"id\":\"bare-mod\""));
+            assertTrue(body.contains("\"name\":\"bare-mod\""));
+            assertFalse(body.contains("\"name\":null"));
+            assertFalse(body.contains("\"version\":null"));
+        }
+    }
+
     /// A missing blob is created, uploaded and then committed with the manifest.
     @Test
     public void uploadsOnlyMissingManifestBlobs(@TempDir Path root) throws Exception {
@@ -403,6 +424,18 @@ public final class MindustryCloudArchiveServiceTest {
             zip.putNextEntry(new ZipEntry("mod.json"));
             zip.write(("{\"name\":\"test-mod\",\"displayName\":\"Test Mod\","
                     + "\"version\":\"1.2.3\"}").getBytes(StandardCharsets.UTF_8));
+            zip.closeEntry();
+        }
+    }
+
+    /// Seeds a Mod jar whose descriptor omits `displayName` and `version`.
+    private static void seedBareMod(Path root) throws IOException {
+        Path modsDir = version().resolveDataDir(root).resolve("mods");
+        Files.createDirectories(modsDir);
+        Path jar = modsDir.resolve("bare-mod.jar");
+        try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(jar))) {
+            zip.putNextEntry(new ZipEntry("mod.json"));
+            zip.write("{\"name\":\"bare-mod\"}".getBytes(StandardCharsets.UTF_8));
             zip.closeEntry();
         }
     }

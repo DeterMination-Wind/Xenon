@@ -25,6 +25,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -136,6 +137,28 @@ public final class MindustryCloudArchiveTest {
         assertFalse(Files.exists(dir.resolve("evil.txt")));
     }
 
+    /// A Mod descriptor without `displayName`/`version` still yields non-null metadata.
+    @Test
+    public void plansModWithoutDescriptorNames(@TempDir Path dir) throws Exception {
+        Path source = dir.resolve("source");
+        Files.createDirectories(source.resolve("mods"));
+        writeBareMod(source.resolve("mods/bare-mod.zip"));
+
+        MindustryCloudArchivePacker.Plan plan = MindustryCloudArchivePacker.plan(source,
+                new MindustryCloudArchivePacker.Options("v157", 157, Set.of()));
+
+        assertEquals(1, plan.mods().size());
+        assertEquals("bare-mod", plan.mods().get(0).name());
+        assertEquals("", plan.mods().get(0).version());
+
+        // The packed manifest must carry the same non-null values, not `null`.
+        MindustryCloudArchivePacker.Result result = MindustryCloudArchivePacker.pack(
+                source, dir.resolve("bare.zip"),
+                new MindustryCloudArchivePacker.Options("v157", 157, Set.of()), null, null);
+        assertEquals("bare-mod", result.manifest().mods().get(0).name());
+        assertEquals("", result.manifest().mods().get(0).version());
+    }
+
     /// Cancellation removes the temporary archive and keeps the destination clean.
     @Test
     public void cancellationLeavesNoArchive(@TempDir Path dir) throws Exception {
@@ -147,6 +170,35 @@ public final class MindustryCloudArchiveTest {
                 new MindustryCloudArchivePacker.Options("v157", 157, Set.of()),
                 null, cancelled));
         assertFalse(Files.exists(archive));
+    }
+
+    /// Manifest Mod entries never carry `null` names, versions or hashes.
+    @Test
+    public void manifestModEntriesNeverCarryNulls() {
+        // Passing nulls here is deliberate: that is the invariant under test.
+        MindustryCloudArchiveManifest.ModEntry mod = new MindustryCloudArchiveManifest.ModEntry(
+                "bare-mod", null, null, null, false, "", true);
+        assertEquals("", mod.name());
+        assertEquals("", mod.version());
+        assertEquals("", mod.sha256());
+
+        MindustryCloudArchiveManifest manifest = new MindustryCloudArchiveManifest(
+                MindustryCloudArchiveManifest.SCHEMA, "v157", 157, Instant.EPOCH,
+                List.of(mod), List.of());
+        String json = manifest.toJson().toString();
+        assertTrue(json.contains("\"name\":\"\""));
+        assertTrue(json.contains("\"version\":\"\""));
+        assertFalse(json.contains(":null"));
+    }
+
+    /// Writes a Mod archive whose descriptor omits `displayName` and `version`.
+    private static void writeBareMod(Path target) throws IOException {
+        try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(target))) {
+            zip.putNextEntry(new ZipEntry("mod.hjson"));
+            zip.write(("{\n name: bare-mod\n minGameVersion: 146\n}\n")
+                    .getBytes(StandardCharsets.UTF_8));
+            zip.closeEntry();
+        }
     }
 
     /// Builds a small instance tree with one Mod archive.

@@ -22,6 +22,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import org.jetbrains.annotations.NotNullByDefault;
+import org.jetbrains.annotations.Nullable;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -51,15 +52,36 @@ public record MindustryCloudArchiveManifest(int schema, String gameVersion, int 
 
     /// One Mod recorded in the archive.
     ///
+    /// A descriptor can omit `displayName`/`version`, so the record normalises
+    /// `null` components to empty strings: the manifest writer and every restore
+    /// consumer treat an empty string as "missing" and never check for `null`.
+    ///
     /// @param id       stable internal name
-    /// @param name     display name
-    /// @param version  Mod version
+    /// @param name     display name, or empty when the descriptor omits it
+    /// @param version  Mod version, or empty when the descriptor omits it
     /// @param sha256   archive SHA-256, or empty
     /// @param packed   whether the archive contains the Mod bytes
     /// @param fileName packed file name, or empty
     /// @param enabled  whether the Mod was enabled
     public record ModEntry(String id, String name, String version, String sha256,
                            boolean packed, String fileName, boolean enabled) {
+
+        /// Normalises `null` components to empty strings.
+        public ModEntry {
+            id = emptyIfNull(id);
+            name = emptyIfNull(name);
+            version = emptyIfNull(version);
+            sha256 = emptyIfNull(sha256);
+            fileName = emptyIfNull(fileName);
+        }
+
+        /// Returns the value, or an empty string when it is `null`.
+        ///
+        /// @param value candidate value, or `null`
+        /// @return the value, or `""`
+        private static String emptyIfNull(@Nullable String value) {
+            return value == null ? "" : value;
+        }
     }
 
     /// One packed file.

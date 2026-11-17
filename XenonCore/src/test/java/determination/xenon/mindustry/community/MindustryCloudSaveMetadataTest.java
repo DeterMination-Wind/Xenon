@@ -74,6 +74,31 @@ public final class MindustryCloudSaveMetadataTest {
         assertTrue(metadata.mods().isEmpty());
     }
 
+    /// A descriptor without `displayName`/`version` still yields non-null metadata.
+    @Test
+    public void fallsBackWhenDescriptorLacksNames(@TempDir Path dir) throws Exception {
+        Path dataDir = dir.resolve("data");
+        Path modsDir = Files.createDirectories(dataDir.resolve("mods"));
+        writeBareMod(modsDir.resolve("test-mod.zip"));
+
+        UploadMetadata metadata = MindustryCloudSaveMetadata.collect(
+                dir.resolve("missing.msav"), "v157", 157, dataDir, "");
+
+        assertEquals(1, metadata.mods().size());
+        assertEquals("test-mod", metadata.mods().get(0).name());
+        assertEquals("", metadata.mods().get(0).version());
+    }
+
+    /// Writes a Mod archive whose descriptor omits `displayName` and `version`.
+    private static void writeBareMod(Path target) throws IOException {
+        try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(target))) {
+            zip.putNextEntry(new ZipEntry("mod.hjson"));
+            zip.write(("{\n  name: test-mod\n  minGameVersion: 146\n}\n")
+                    .getBytes(StandardCharsets.UTF_8));
+            zip.closeEntry();
+        }
+    }
+
     /// Writes one minimal Mindustry Mod archive.
     private static void writeMod(Path target, String name, String displayName, String version)
             throws IOException {
