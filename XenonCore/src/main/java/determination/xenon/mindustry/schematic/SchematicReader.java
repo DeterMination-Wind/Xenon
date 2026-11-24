@@ -160,4 +160,150 @@ public final class SchematicReader {
             throw new IOException("Failed to inflate .msch payload (not a valid zlib stream?): " + msch, e);
         }
     }
+
+    /// Parses the full tile list of `msch`, for previews.
+    ///
+    /// Layout after the tag map (see [SchematicSummary] for the prefix):
+    /// <pre>
+    ///   ubyte  blockCount
+    ///   repeated blockCount times:
+    ///     UTF  blockName
+    ///   int    tileCount
+    ///   repeated tileCount times:
+    ///     byte   blockIndex (into the dictionary above)
+    ///     int    packed position (Point2.pack(x, y))
+    ///     ...    config object (version 1+) or int (version 0) — skipped
+    ///     byte   rotation
+    /// </pre>
+    ///
+    /// Only the dictionary and positions are kept; configs are skipped with a
+    /// type-aware skip so a schematic full of configured blocks still parses.
+    ///
+    /// @param msch path to a Mindustry schematic file
+    /// @return parsed blueprint
+    /// @throws IOException when the file is unreadable, the magic/version is
+    ///     wrong, a config uses an unknown type, or the payload is truncated
+    public static SchematicBlueprint readBlueprint(Path msch) throws IOException {
+        Objects.requireNonNull(msch, "msch");
+        try (InputStream raw = Files.newInputStream(msch);
+             InputStream buffered = new BufferedInputStream(raw, BUFFER_SIZE)) {
+            for (int i = 0; i < MAGIC.length; i++) {
+                int b = buffered.read();
+                if (b < 0 || (byte) b != MAGIC[i]) {
+                    throw new IOException("Invalid .msch magic for " + msch);
+                }
+            }
+            int version = buffered.read();
+            if (version < 0) {
+                throw new IOException("Truncated .msch header (version byte) for " + msch);
+            }
+            if (version > CURRENT_VERSION) {
+                throw new IOException("Unknown .msch version " + version + " for " + msch);
+            }
+
+            try (DataInputStream stream = new DataInputStream(new InflaterInputStream(buffered))) {
+                int width = stream.readShort();
+                int height = stream.readShort();
+                int tagCount = stream.readUnsignedByte();
+                Map<String, String> tags = new LinkedHashMap<>(Math.max(8, tagCount * 2));
+                for (int i = 0; i < tagCount; i++) {
+                    tags.put(stream.readUTF(), stream.readUTF());
+                }
+
+                int blockCount = stream.readUnsignedByte();
+                String[] names = new String[blockCount];
+                for (int i = 0; i < blockCount; i++) {
+                    names[i] = stream.readUTF();
+                }
+
+                int tileCount = stream.readInt();
+                if (tileCount < 0 || tileCount > 128 * 128) {
+                    throw new IOException("Invalid .msch tile count " + tileCount + " for " + msch);
+                }
+                java.util.List<SchematicBlueprint.Tile> tiles = new java.util.ArrayList<>(tileCount);
+                for (int i = 0; i < tileCount; i++) {
+                    int blockIndex = stream.readByte();
+                    int position = stream.readInt();
+                    if (version == 0) {
+                        stream.readInt();
+                    } else {
+                        skipConfig(stream);
+                    }
+                    stream.readByte();
+                    int x = position & 0xFFFF;
+                    int y = (position >>> 16) & 0xFFFF;
+                    tiles.add(new SchematicBlueprint.Tile(x, y, blockIndex));
+                }
+                return new SchematicBlueprint(width, height, names, tiles, tags);
+            }
+        } catch (ZipException e) {
+            throw new IOException("Failed to inflate .msch payload: " + msch, e);
+        } catch (java.io.EOFException e) {
+            throw new IOException("Truncated .msch tile payload for " + msch, e);
+        }
+    }
+
+    /// Skips one config object written by `TypeIO.writeObject`.
+    ///
+    /// The type table is fixed by the game's `TypeIO`; an unknown type means the
+    /// schematic came from a newer build than this reader understands, so the
+    /// preview is abandoned instead of desynchronising the stream.
+    ///
+    /// @param in compressed schematic stream positioned on a config object
+    /// @throws IOException when the object uses an unknown type or the stream ends
+    private static void skipConfig(DataInputStream in) throws IOException {
+        int type = in.readUnsignedByte();
+        switch (type) {
+            case 0 -> { }
+            case 1, 3, 12, 17 -> skipFully(in, 4);
+            case 2, 7, 11, 19 -> skipFully(in, 8);
+            case 4 -> {
+                if (in.readUnsignedByte() != 0) {
+                    int length = in.readUnsignedShort();
+                    skipFully(in, length);
+                }
+            }
+            case 5, 9, 13 -> skipFully(in, 3);
+            case 6 -> skipFully(in, 4L * in.readUnsignedShort());
+            case 8 -> skipFully(in, 4L * in.readUnsignedByte());
+            case 10, 15, 20 -> skipFully(in, 1);
+            case 14 -> skipFully(in, in.readInt());
+            case 16 -> skipFully(in, in.readInt());
+            case 18 -> skipFully(in, 8L * in.readUnsignedShort());
+            case 21 -> skipFully(in, 4L * in.readUnsignedShort());
+            case 22 -> {
+                int length = in.readInt();
+                if (length < 0 || length > 4096) {
+                    throw new IOException("Invalid .msch config array length " + length);
+                }
+                for (int i = 0; i < length; i++) {
+                    skipConfig(in);
+                }
+            }
+            case 23 -> skipFully(in, 2);
+            default -> throw new IOException("Unknown .msch config type " + type);
+        }
+    }
+
+    /// Skips exactly `bytes` bytes, rejecting negative sizes.
+    ///
+    /// @param in    stream to drain
+    /// @param bytes byte count
+    /// @throws IOException when the stream ends early or the size is negative
+    private static void skipFully(DataInputStream in, long bytes) throws IOException {
+        if (bytes < 0) {
+            throw new IOException("Invalid .msch config size " + bytes);
+        }
+        long remaining = bytes;
+        while (remaining > 0) {
+            long skipped = in.skip(remaining);
+            if (skipped <= 0) {
+                if (in.read() < 0) {
+                    throw new java.io.EOFException("Truncated .msch config");
+                }
+                skipped = 1;
+            }
+            remaining -= skipped;
+        }
+    }
 }
