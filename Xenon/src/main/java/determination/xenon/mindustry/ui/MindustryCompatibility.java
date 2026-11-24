@@ -19,6 +19,7 @@ package determination.xenon.mindustry.ui;
 
 import determination.xenon.mindustry.MindustryVersion;
 import determination.xenon.mindustry.mod.MindustryLocalMod;
+import determination.xenon.mindustry.mod.MindustryModDependencies;
 import determination.xenon.mindustry.mod.MindustryModManager;
 import determination.xenon.ui.Controllers;
 import determination.xenon.ui.construct.MessageDialogPane;
@@ -120,6 +121,7 @@ public final class MindustryCompatibility {
         }
 
         collectDependencyIssues(mods, issues);
+        collectDependencyCycles(mods, issues);
 
         for (MindustryLocalMod mod : mods) {
             if (mod.isIgnoredByDuplicate()) {
@@ -236,6 +238,25 @@ public final class MindustryCompatibility {
                                 : "xenon.mindustry.health.issue.missing_dependency",
                         mod.displayName(), dependency)));
             }
+        }
+    }
+
+    /// Appends one finding per dependency loop between installed mods.
+    ///
+    /// Mindustry's loader accepts the descriptors and then crashes while
+    /// resolving the loop, so the launcher reports it before launch instead of
+    /// letting the user read a generic stack trace.
+    ///
+    /// @param mods parsed mods of the instance
+    /// @param issues issue sink
+    private static void collectDependencyCycles(List<MindustryLocalMod> mods, List<Issue> issues) {
+        for (List<String> loop : MindustryModDependencies.findCycles(mods)) {
+            if (loop.size() < 2) {
+                continue;
+            }
+            issues.add(new Issue(Severity.WARNING,
+                    i18n("xenon.mindustry.health.issue.dependency_cycle",
+                            String.join(" → ", loop))));
         }
     }
 
