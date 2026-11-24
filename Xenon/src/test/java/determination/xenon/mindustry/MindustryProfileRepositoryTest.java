@@ -27,6 +27,8 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.jar.JarEntry;
+import java.util.jar.JarOutputStream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -47,7 +49,7 @@ public final class MindustryProfileRepositoryTest {
         Profile first = new Profile("First", firstGameDir);
         Profile second = new Profile("Second", secondGameDir);
         Path sourceJar = tempDir.resolve("mindustry-build-158.jar");
-        Files.write(sourceJar, "jar-content".getBytes(StandardCharsets.UTF_8));
+        writeJar(sourceJar);
 
         XenonGameRepository firstRepository = MindustryImportFlow.repository(first);
         XenonGameRepository secondRepository = MindustryImportFlow.repository(second);
@@ -125,7 +127,7 @@ public final class MindustryProfileRepositoryTest {
         Path gameDir = tempDir.resolve("game");
         Profile profile = new Profile("Rename", gameDir);
         Path sourceJar = tempDir.resolve("mindustry-build-158.jar");
-        Files.write(sourceJar, "jar-content".getBytes(StandardCharsets.UTF_8));
+        writeJar(sourceJar);
 
         XenonGameRepository repository = MindustryImportFlow.repository(profile);
         MindustryVersion version = MindustryLaunchService.importLocalJar(repository, sourceJar, "old-id", null);
@@ -157,7 +159,7 @@ public final class MindustryProfileRepositoryTest {
         Path gameDir = tempDir.resolve("game");
         Profile profile = new Profile("Rename", gameDir);
         Path sourceJar = tempDir.resolve("mindustry-build-158.jar");
-        Files.write(sourceJar, "jar-content".getBytes(StandardCharsets.UTF_8));
+        writeJar(sourceJar);
 
         XenonGameRepository repository = MindustryImportFlow.repository(profile);
         MindustryLaunchService.importLocalJar(repository, sourceJar, "first", null);
@@ -178,7 +180,7 @@ public final class MindustryProfileRepositoryTest {
         Path versionsRoot = tempDir.resolve("versions");
         Path instanceDir = versionsRoot.resolve("renamed-instance");
         Files.createDirectories(instanceDir);
-        Files.write(instanceDir.resolve("renamed-instance.jar"), "jar-content".getBytes(StandardCharsets.UTF_8));
+        writeJar(instanceDir.resolve("renamed-instance.jar"));
         Files.writeString(instanceDir.resolve("version.json"), """
                 {
                   "id": "old-id",
@@ -228,6 +230,28 @@ public final class MindustryProfileRepositoryTest {
             zip.putNextEntry(new ZipEntry("version.properties"));
             zip.write(versionProperties.getBytes(StandardCharsets.UTF_8));
             zip.closeEntry();
+        }
+    }
+
+    /// Writes a minimal Mindustry-shaped jar so imports can read its identity.
+    ///
+    /// Importing validates the archive, so a placeholder byte array is no longer
+    /// enough: the file must be a real zip and should carry
+    /// `version.properties` like a real download.
+    ///
+    /// @param jar destination path
+    /// @throws IOException when the jar cannot be written
+    private static void writeJar(Path jar) throws IOException {
+        try (OutputStream raw = Files.newOutputStream(jar);
+             JarOutputStream out = new JarOutputStream(raw)) {
+            out.putNextEntry(new JarEntry(MindustryJarMetadata.VERSION_PROPERTIES));
+            out.write("""
+                    number=8
+                    build=158
+                    modifier=release
+                    type=official
+                    """.getBytes(StandardCharsets.UTF_8));
+            out.closeEntry();
         }
     }
 }
