@@ -19,6 +19,8 @@ package determination.xenon.mindustry.save;
 
 import determination.xenon.util.io.FileUtils;
 import determination.xenon.util.logging.Logger;
+import org.jetbrains.annotations.NotNullByDefault;
+import org.jetbrains.annotations.Nullable;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
@@ -29,6 +31,8 @@ import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.security.MessageDigest;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -36,6 +40,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -69,6 +74,10 @@ public final class SaveBackupService {
 
     private static final DateTimeFormatter BACKUP_STAMP =
             DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss").withZone(ZoneId.systemDefault());
+
+    /// Same-second collision counter appended by [#backupWithResult(SaveSummary)].
+    private static final java.util.regex.Pattern COLLISION_SUFFIX =
+            java.util.regex.Pattern.compile("-\\d{8}-\\d{6}-(\\d+)\\.msav$");
 
     private final Path savesDir;
 
@@ -142,6 +151,18 @@ public final class SaveBackupService {
     // Backup / Restore
     // ---------------------------------------------------------------------
 
+    /// Result of one [backupWithResult(SaveSummary)] call.
+    ///
+    /// @param file    the backup that represents the save now
+    /// @param skipped `true` when an identical newer backup already existed
+    @NotNullByDefault
+    public record BackupResult(Path file, boolean skipped) {
+        /// Validates the required member.
+        public BackupResult {
+            Objects.requireNonNull(file, "file");
+        }
+    }
+
     /**
      * Copy {@code s.file()} into {@link #getBackupsDir()} with a timestamp
      * suffix, preserving the original {@code .msav} extension.
@@ -150,14 +171,30 @@ public final class SaveBackupService {
      * collides (same second), a numeric suffix {@code -1}, {@code -2}, ... is
      * appended until a free name is found.</p>
      *
+     * <p>When the newest existing backup of the same save already has byte
+     * identical content, no copy is written and the existing file is returned:
+     * automatic backups run after every long session, and a save the player did
+     * not touch would otherwise consume the whole retention window with
+     * duplicate files.</p>
+     *
      * @param s summary returned from {@link #list()} (or any
      *          {@link SaveSummary} whose {@link SaveSummary#file()} is a
      *          readable {@code .msav})
-     * @return path of the written backup file
+     * @return path of the written (or reused) backup file
      * @throws IOException if the source cannot be read or the backup folder
      *                     cannot be created / written
      */
     public Path backup(SaveSummary s) throws IOException {
+        return backupWithResult(s).file();
+    }
+
+    /// Copies {@code s.file()} into the backups folder unless an identical copy
+    /// is already the newest backup of that save.
+    ///
+    /// @param s summary of the live save
+    /// @return the backup that represents this save plus whether it was reused
+    /// @throws IOException if the source cannot be read or written
+    public BackupResult backupWithResult(SaveSummary s) throws IOException {
         Objects.requireNonNull(s, "s");
         Path src = s.file();
         if (!Files.isRegularFile(src)) {
@@ -168,6 +205,15 @@ public final class SaveBackupService {
         Files.createDirectories(backupsDir);
 
         String base = stripExtension(src.getFileName().toString());
+        long srcSize = Files.size(src);
+        @Nullable Path newest = newestBackup(backupsDir, base);
+        if (newest != null && Files.size(newest) == srcSize
+                && sha256(newest).equals(sha256(src))) {
+            Logger.LOG.info("Skipped unchanged backup for " + src.getFileName()
+                    + " -> " + newest.getFileName());
+            return new BackupResult(newest, true);
+        }
+
         String stamp = BACKUP_STAMP.format(LocalDateTime.now().atZone(ZoneId.systemDefault()));
         Path target = backupsDir.resolve(base + "-" + stamp + MSAV_EXT);
 
@@ -175,9 +221,151 @@ public final class SaveBackupService {
             target = backupsDir.resolve(base + "-" + stamp + "-" + attempt + MSAV_EXT);
         }
 
-        Files.copy(src, target, StandardCopyOption.COPY_ATTRIBUTES);
-        Logger.LOG.info("Backed up save " + src.getFileName() + " -> " + target);
-        return target;
+        Path tmp = target.resolveSibling(target.getFileName() + ".xenon-tmp");
+        Files.copy(src, tmp, StandardCopyOption.COPY_ATTRIBUTES);
+        try {
+            Files.move(tmp, target, StandardCopyOption.ATOMIC_MOVE);
+        } catch (java.nio.file.AtomicMoveNotSupportedException e) {
+            Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING);
+        }
+        Logger.LOG.info("Backed up save " + src.getFileName() + " -> " + target.getFileName());
+        return new BackupResult(target, false);
+    }
+
+    /// Lists every backup of this saves folder, newest first.
+    ///
+    /// Notes come from the folder's [SaveBackupNotes] document. Files whose
+    /// names carry no stamp fall back to their modification time so a
+    /// hand-renamed backup keeps a position in the list.
+    ///
+    /// @return mutable list sorted by backup time descending
+    /// @throws IOException when the backups folder exists but cannot be listed
+    public List<BackupSummary> listBackups() throws IOException {
+        Path dir = getBackupsDir();
+        if (!Files.isDirectory(dir)) {
+            return new ArrayList<>();
+        }
+        Map<String, String> notes = new SaveBackupNotes(dir).load();
+        List<BackupSummary> out = new ArrayList<>();
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(dir)) {
+            for (Path entry : stream) {
+                if (!Files.isRegularFile(entry)) {
+                    continue;
+                }
+                String name = entry.getFileName().toString();
+                if (!name.toLowerCase(Locale.ROOT).endsWith(MSAV_EXT)) {
+                    continue;
+                }
+                @Nullable String slot = MindustryBackupNaming.slotName(entry);
+                String slotName = slot == null ? name : slot;
+                @Nullable Instant takenAt = MindustryBackupNaming.timestamp(entry);
+                long size;
+                try {
+                    size = Files.size(entry);
+                    if (takenAt == null) {
+                        takenAt = Files.getLastModifiedTime(entry).toInstant();
+                    }
+                } catch (IOException e) {
+                    size = -1L;
+                }
+                out.add(new BackupSummary(entry, slotName, takenAt, size, notes.get(name)));
+            }
+        }
+        out.sort(Comparator.comparing((BackupSummary b) -> b.takenAt(),
+                Comparator.nullsLast(Comparator.reverseOrder()))
+                .thenComparing(b -> collisionCounter(b.file()), Comparator.reverseOrder())
+                .thenComparing(BackupSummary::fileName, Comparator.reverseOrder()));
+        return out;
+    }
+
+    /// Reads the same-second collision counter out of a backup file name.
+    ///
+    /// `slot-20261124-101500.msav` yields `0`, `slot-20261124-101500-3.msav`
+    /// yields `3`, so two copies written in one second still sort newest-first.
+    ///
+    /// @param file backup file
+    /// @return the counter, or `0` when the name has none
+    private static int collisionCounter(Path file) {
+        @Nullable Path name = file.getFileName();
+        if (name == null) {
+            return 0;
+        }
+        java.util.regex.Matcher matcher = COLLISION_SUFFIX.matcher(name.toString());
+        if (!matcher.find()) {
+            return 0;
+        }
+        try {
+            return Integer.parseInt(matcher.group(1));
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+
+    /// Finds the newest backup belonging to one save slot.
+    ///
+    /// @param backupsDir backups folder
+    /// @param base       live save name without its extension
+    /// @return the newest matching backup, or `null` when there is none
+    private static @Nullable Path newestBackup(Path backupsDir, String base) throws IOException {
+        Path best = null;
+        Instant bestStamp = null;
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(backupsDir)) {
+            for (Path entry : stream) {
+                if (!Files.isRegularFile(entry)) {
+                    continue;
+                }
+                String name = entry.getFileName().toString();
+                if (!name.toLowerCase(Locale.ROOT).endsWith(MSAV_EXT)) {
+                    continue;
+                }
+                if (!base.equals(MindustryBackupNaming.slotName(entry))) {
+                    continue;
+                }
+                @Nullable Instant stamp = MindustryBackupNaming.timestamp(entry);
+                if (stamp == null) {
+                    try {
+                        stamp = Files.getLastModifiedTime(entry).toInstant();
+                    } catch (IOException ignored) {
+                        continue;
+                    }
+                }
+                if (best == null || bestStamp == null || stamp.isAfter(bestStamp)) {
+                    best = entry;
+                    bestStamp = stamp;
+                }
+            }
+        }
+        return best;
+    }
+
+    /// Streaming SHA-256 of one file.
+    ///
+    /// @param file file to hash
+    /// @return lowercase hex digest
+    /// @throws IOException when the file cannot be read
+    private static String sha256(Path file) throws IOException {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            try (InputStream in = new BufferedInputStream(Files.newInputStream(file))) {
+                byte[] buffer = new byte[64 * 1024];
+                while (true) {
+                    int read = in.read(buffer);
+                    if (read < 0) {
+                        break;
+                    }
+                    digest.update(buffer, 0, read);
+                }
+            }
+            byte[] hash = digest.digest();
+            StringBuilder sb = new StringBuilder(hash.length * 2);
+            for (byte b : hash) {
+                sb.append(Character.forDigit((b >> 4) & 0xF, 16));
+                sb.append(Character.forDigit(b & 0xF, 16));
+            }
+            return sb.toString();
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IOException("SHA-256 is unavailable", e);
+        }
     }
 
     /**
