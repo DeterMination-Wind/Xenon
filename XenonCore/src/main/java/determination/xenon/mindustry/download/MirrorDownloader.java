@@ -108,6 +108,12 @@ public final class MirrorDownloader {
     );
 
     private static final Duration PROBE_TIMEOUT = Duration.ofSeconds(8);
+
+    /// Window over which the direct-download stall watchdog measures throughput.
+    private static final Duration STALL_WINDOW = Duration.ofSeconds(30);
+
+    /// Bytes that must arrive inside one stall window.
+    private static final long STALL_MIN_BYTES = 4 * 1024;
     private static final long MAX_STARTUP_LATENCY_MS = 1500;
     private static final long SPEED_TEST_WINDOW_MS = 3000;
     private static final int KEEP_FASTEST = 2;
@@ -998,10 +1004,16 @@ public final class MirrorDownloader {
         }
         long total = resp.headers().firstValueAsLong("Content-Length")
                 .orElse(expectedSize > 0 ? expectedSize : -1);
+        AtomicLong transferred = new AtomicLong();
+        @Nullable TransferWatchdog watchdog = null;
         try (InputStream in = resp.body();
              OutputStream out = Files.newOutputStream(tmp,
                      StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING,
                      StandardOpenOption.WRITE)) {
+            watchdog = new TransferWatchdog(in, transferred::get, null,
+                    STALL_WINDOW, STALL_MIN_BYTES,
+                    () -> Logger.LOG.warning("MirrorDownloader: closing a stalled direct transfer for "
+                            + url));
             byte[] buf = new byte[64 * 1024];
             long read = 0;
             int n;
@@ -1010,12 +1022,31 @@ public final class MirrorDownloader {
                 FetchTask.recordDownloadedBytes(n);
                 out.write(buf, 0, n);
                 read += n;
+                transferred.addAndGet(n);
                 if (progress != null) {
                     progress.onProgress(read, total);
                 }
             }
             if (read == 0) {
                 throw new IOException("Empty response body from " + url);
+            }
+            // End gate: a mirror that closes the connection early must not be
+            // recorded as a successful download. The body length is known from
+            // Content-Length or the release-asset size in almost every case;
+            // only a chunked response without either stays unverifiable.
+            if (total > 0 && read != total) {
+                throw new IOException("Truncated download from " + url + ": got " + read
+                        + " of " + total + " bytes");
+            }
+        } catch (IOException e) {
+            if (watchdog != null && watchdog.stalled()) {
+                throw new IOException("Transfer stalled at " + transferred.get()
+                        + " bytes for " + url, e);
+            }
+            throw e;
+        } finally {
+            if (watchdog != null) {
+                watchdog.close();
             }
         }
     }

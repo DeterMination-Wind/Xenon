@@ -39,6 +39,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
 import java.util.Properties;
+import java.util.concurrent.atomic.AtomicLong;
 
 /// Resumable single-stream downloader.
 ///
@@ -70,7 +71,19 @@ public final class ResumableDownloader {
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(8);
     private static final Duration READ_TIMEOUT = Duration.ofMinutes(30);
 
+    /// Window over which the stall watchdog measures throughput.
+    private static final Duration STALL_WINDOW = Duration.ofSeconds(30);
+
+    /// Bytes that must arrive inside one window before it counts as progress.
+    ///
+    /// The launcher's slowest supported shape is 32 KiB/s, which delivers
+    /// roughly 960 KiB per window, so a below-4-KiB window means the mirror is
+    /// trickling or the socket is half-dead rather than merely slow.
+    private static final long STALL_MIN_BYTES = 4 * 1024;
+
     private final HttpClient http;
+    private final Duration stallWindow;
+    private final long stallMinBytes;
 
     /// Creates a downloader with the production HTTP client.
     public ResumableDownloader() {
@@ -84,7 +97,18 @@ public final class ResumableDownloader {
 
     /// Creates a downloader with an injected client (tests).
     ResumableDownloader(HttpClient http) {
+        this(http, STALL_WINDOW, STALL_MIN_BYTES);
+    }
+
+    /// Creates a downloader with an explicit stall window (tests).
+    ///
+    /// @param http          HTTP client
+    /// @param stallWindow   how long one throughput window lasts
+    /// @param stallMinBytes bytes that must arrive inside the window
+    ResumableDownloader(HttpClient http, Duration stallWindow, long stallMinBytes) {
         this.http = Objects.requireNonNull(http, "http");
+        this.stallWindow = Objects.requireNonNull(stallWindow, "stallWindow");
+        this.stallMinBytes = Math.max(1L, stallMinBytes);
     }
 
     /// Thrown when the transfer was cancelled by the user.
@@ -240,6 +264,13 @@ public final class ResumableDownloader {
     }
 
     /// Streams the response body into `part`, honouring pause/cancel.
+    ///
+    /// A watchdog closes the body when the transfer stops making progress: a
+    /// socket that delivers a few bytes and then hangs would otherwise park the
+    /// task until the OS gives up (minutes on a mobile hotspot), and a mirror
+    /// that trickles at a few hundred bytes per second would look "slow" rather
+    /// than broken. Closing the stream turns both into a retryable
+    /// [IOException], so the policy fails over to the next mirror.
     private long stream(HttpResponse<InputStream> response, Path part, long offset,
                         long total, @Nullable ProgressCallback progress,
                         @Nullable DownloadControl control, Path target) throws IOException {
@@ -257,42 +288,54 @@ public final class ResumableDownloader {
         // cancels. The bytes already read are still written, and the loop head
         // re-checks the control state on the next iteration.
         @Nullable DownloadThrottle.AwaitGate gate = control == null ? null : control.awaitGate();
+
+        AtomicLong transferred = new AtomicLong();
+        @Nullable TransferWatchdog watchdog = null;
         try (InputStream in = response.body();
              OutputStream out = Files.newOutputStream(part,
                      options.toArray(new StandardOpenOption[0]))) {
-            byte[] buffer = new byte[BUFFER_SIZE];
-            while (true) {
-                if (control != null) {
-                    if (control.isCancelled()) {
-                        throw new DownloadCancelledException("Cancelled downloading " + target);
-                    }
-                    if (control.isPaused()) {
-                        try {
-                            control.awaitResume();
-                        } catch (InterruptedException e) {
-                            Thread.currentThread().interrupt();
-                            throw new DownloadCancelledException("Interrupted downloading " + target);
+            watchdog = new TransferWatchdog(in, transferred::get,
+                    control == null ? null : control::isPaused, stallWindow, stallMinBytes,
+                    () -> Logger.LOG.warning("ResumableDownloader: closing a stalled transfer for "
+                            + target));
+            try {
+                byte[] buffer = new byte[BUFFER_SIZE];
+                while (true) {
+                    if (control != null) {
+                        if (control.isCancelled()) {
+                            throw new DownloadCancelledException("Cancelled downloading " + target);
+                        }
+                        if (control.isPaused()) {
+                            try {
+                                control.awaitResume();
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                                throw new DownloadCancelledException("Interrupted downloading " + target);
+                            }
                         }
                     }
+                    int read = in.read(buffer);
+                    if (read < 0) {
+                        break;
+                    }
+                    if (read == 0) {
+                        continue;
+                    }
+                    // Gate on the shared shaper before the chunk is written, so
+                    // the recorded speed reflects the shaped rate rather than the
+                    // socket's speed. The wait is short (one chunk at the target
+                    // rate) because the socket buffer absorbs the server's send.
+                    DownloadThrottle.admit(read, gate);
+                    out.write(buffer, 0, read);
+                    written += read;
+                    transferred.addAndGet(read);
+                    // Feed the launcher-wide speed counter so the task list shows
+                    // real throughput, exactly like the racing downloader does.
+                    FetchTask.recordDownloadedBytes(read);
+                    report(progress, offset + written, total);
                 }
-                int read = in.read(buffer);
-                if (read < 0) {
-                    break;
-                }
-                if (read == 0) {
-                    continue;
-                }
-                // Gate on the shared shaper before the chunk is written, so
-                // the recorded speed reflects the shaped rate rather than the
-                // socket's speed. The wait is short (one chunk at the target
-                // rate) because the socket buffer absorbs the server's send.
-                DownloadThrottle.admit(read, gate);
-                out.write(buffer, 0, read);
-                written += read;
-                // Feed the launcher-wide speed counter so the task list shows
-                // real throughput, exactly like the racing downloader does.
-                FetchTask.recordDownloadedBytes(read);
-                report(progress, offset + written, total);
+            } finally {
+                watchdog.close();
             }
         } catch (DownloadCancelledException e) {
             // Cancel means cleanup: remove the partial payload and metadata.
@@ -305,6 +348,10 @@ public final class ResumableDownloader {
             if (control != null && control.isCancelled()) {
                 discardPartialQuietly(target);
                 throw new DownloadCancelledException("Cancelled downloading " + target);
+            }
+            if (watchdog != null && watchdog.stalled()) {
+                throw new IOException("Transfer stalled at " + (offset + transferred.get())
+                        + " bytes for " + target, e);
             }
             throw e;
         }

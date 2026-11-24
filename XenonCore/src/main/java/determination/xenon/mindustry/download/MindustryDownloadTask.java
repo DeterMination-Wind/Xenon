@@ -39,7 +39,8 @@ import java.nio.file.Path;
 /// [MindustryDownloadPolicy] so they can be tested without a JavaFX toolkit;
 /// this task only adds the progress reporting and the pause/resume button.</p>
 @NotNullByDefault
-public final class MindustryDownloadTask extends Task<Void> {
+public final class MindustryDownloadTask extends Task<Void>
+        implements determination.xenon.task.ByteProgressTask {
 
     /// Task property key carrying the {@link DownloadControl} instance.
     public static final String CONTROL_PROPERTY = "xenon.download.control";
@@ -54,6 +55,10 @@ public final class MindustryDownloadTask extends Task<Void> {
 
     /// Pause/resume/cancel state shared with the progress dialog.
     private final DownloadControl control = new DownloadControl();
+
+    /// Last byte counts reported to the progress dialog, for the time estimate.
+    private volatile long transferredBytes;
+    private volatile long reportedTotalBytes;
 
     /**
      * @param sourceUrl    direct jar URL, or a platform zip URL when {@code archive} is true
@@ -116,6 +121,16 @@ public final class MindustryDownloadTask extends Task<Void> {
                 archive, fallbackUrl, expectedHash, control, this::updateDownloadProgress);
     }
 
+    @Override
+    public long transferredBytes() {
+        return transferredBytes;
+    }
+
+    @Override
+    public long totalBytes() {
+        return reportedTotalBytes > 0 ? reportedTotalBytes : expectedSize;
+    }
+
     private void updateDownloadProgress(long read, long total) {
         // Propagate HMCL's task cancellation into the download control so the
         // cancel contract (stop + remove partial files) also applies when the
@@ -123,6 +138,8 @@ public final class MindustryDownloadTask extends Task<Void> {
         if (isCancelled()) {
             control.cancel();
         }
+        transferredBytes = Math.max(0L, read);
+        reportedTotalBytes = Math.max(0L, total);
         // updateProgress requires read <= total > 0; bail if total is unknown.
         if (total > 0 && read >= 0) {
             long capped = Math.min(read, total);
