@@ -25,6 +25,8 @@ import determination.xenon.mindustry.uuid.UuidProfile;
 import determination.xenon.util.platform.SystemInfo;
 import org.jetbrains.annotations.Nullable;
 
+import static determination.xenon.util.logging.Logger.LOG;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -88,16 +90,41 @@ public final class MindustryLaunchService {
      * register a {@link MindustryVersion}. Caller can pre-fill any
      * fields it has better information for; everything blank is sniffed
      * from the file.
+     *
+     * <p>The jar's own {@code version.properties} and manifest are read
+     * before the copy: they are authoritative for the build id, build type
+     * and Java requirement, which the file name cannot be trusted for once a
+     * user renames the download. The file name is still used for fork
+     * identity (MindustryX / CN-ARC / Foo), which those builds do not record
+     * in {@code version.properties}.</p>
+     *
+     * @param repo     repository that owns the version root
+     * @param jar      jar to import; must be a readable zip/jar
+     * @param id       instance id used for the folder and the file name
+     * @param template optional pre-filled version; non-blank fields win over the metadata
+     * @return the registered version
+     * @throws IOException when the jar cannot be read or copied
      */
     public static MindustryVersion importLocalJar(XenonGameRepository repo,
                                                   Path jar,
                                                   String id,
-                                                  MindustryVersion template) throws IOException {
+                                                  @Nullable MindustryVersion template) throws IOException {
         if (id == null || id.isBlank()) {
             throw new IllegalArgumentException("version id required");
         }
         if (jar == null || !Files.isRegularFile(jar)) {
             throw new IllegalArgumentException("jar not found: " + jar);
+        }
+
+        MindustryJarMetadata metadata;
+        try {
+            metadata = MindustryJarMetadata.read(jar);
+        } catch (IOException e) {
+            throw new IOException("Cannot read " + jar.getFileName()
+                    + " as a jar file: " + e.getMessage(), e);
+        }
+        if (!metadata.isMindustryClient()) {
+            LOG.warning("Imported jar has no Mindustry main class or version.properties: " + jar);
         }
 
         Path versionRoot = repo.getVersionRoot(id);
@@ -108,12 +135,22 @@ public final class MindustryLaunchService {
         MindustryVersion v = template != null ? template : new MindustryVersion();
         v.setId(id);
         if (v.getName() == null || v.getName().isBlank()) v.setName(id);
-        if (v.getVariant() == VersionVariant.CUSTOM) v.setVariant(sniffVariant(jar));
-        if (v.getBuild() <= 0) v.setBuild(sniffBuildNumber(jar));
+        @Nullable VersionVariant hinted = metadata.variantHint();
+        if (v.getVariant() == VersionVariant.CUSTOM) {
+            v.setVariant(hinted != null ? hinted : sniffVariant(jar));
+        }
+        if (v.getBuild() <= 0) {
+            v.setBuild(metadata.build() != null ? metadata.build() : sniffBuildNumber(jar));
+        }
+        @Nullable String buildType = metadata.normalizedBuildType();
+        if (buildType != null && (v.getBuildType() == null || "custom".equals(v.getBuildType()))) {
+            v.setBuildType(buildType);
+        }
         if (v.getJarPath() == null || v.getJarPath().isBlank()) v.setJarPath(id + ".jar");
         if (v.getJavaReq() <= 0) v.setJavaReq(v.getBuild() > 0 && v.getBuild() < 140 ? 8 : 17);
 
         repo.save(v);
+        LOG.info("Imported " + metadata.describe() + " as " + id);
         return v;
     }
 
