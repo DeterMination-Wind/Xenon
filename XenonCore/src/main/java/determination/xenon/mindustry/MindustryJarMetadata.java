@@ -22,6 +22,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -93,10 +94,16 @@ public record MindustryJarMetadata(
         boolean hasProps = false;
         try (JarFile file = new JarFile(jar.toFile())) {
             @Nullable JarEntry entry = file.getJarEntry(VERSION_PROPERTIES);
-            if (entry != null && entry.getSize() <= MAX_PROPERTIES_BYTES) {
+            if (entry != null && (entry.getSize() < 0 || entry.getSize() <= MAX_PROPERTIES_BYTES)) {
                 try (InputStream in = file.getInputStream(entry)) {
-                    props.load(new java.io.InputStreamReader(in, StandardCharsets.UTF_8));
-                    hasProps = true;
+                    // Bound the read as well: a zip entry may report an unknown
+                    // size, and a crafted archive must not be able to inflate an
+                    // unbounded properties document into memory.
+                    byte[] bytes = in.readNBytes(MAX_PROPERTIES_BYTES + 1);
+                    if (bytes.length <= MAX_PROPERTIES_BYTES) {
+                        props.load(new StringReader(new String(bytes, StandardCharsets.UTF_8)));
+                        hasProps = true;
+                    }
                 }
             }
             @Nullable String main = mainClassOf(file);

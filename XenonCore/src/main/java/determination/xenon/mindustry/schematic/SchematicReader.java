@@ -74,6 +74,14 @@ public final class SchematicReader {
 
     private static final int BUFFER_SIZE = 8 * 1024;
 
+    /// Deepest nested config array this reader descends into.
+    ///
+    /// Config type 22 is a nested object array, so a hostile file can chain
+    /// arrays to drive the recursive skip arbitrarily deep and overflow the
+    /// stack. Real schematics nest one or two levels, so a small bound aborts
+    /// the preview instead of the process.
+    private static final int MAX_CONFIG_DEPTH = 16;
+
     private SchematicReader() {
         // utility class
     }
@@ -227,7 +235,7 @@ public final class SchematicReader {
                     if (version == 0) {
                         stream.readInt();
                     } else {
-                        skipConfig(stream);
+                        skipConfig(stream, 0);
                     }
                     stream.readByte();
                     int x = position & 0xFFFF;
@@ -250,8 +258,13 @@ public final class SchematicReader {
     /// preview is abandoned instead of desynchronising the stream.
     ///
     /// @param in compressed schematic stream positioned on a config object
-    /// @throws IOException when the object uses an unknown type or the stream ends
-    private static void skipConfig(DataInputStream in) throws IOException {
+    /// @param depth current nesting depth, `0` for a tile-level config
+    /// @throws IOException when the object uses an unknown type, nests deeper
+    ///     than [#MAX_CONFIG_DEPTH], or the stream ends
+    private static void skipConfig(DataInputStream in, int depth) throws IOException {
+        if (depth > MAX_CONFIG_DEPTH) {
+            throw new IOException("Nested .msch config deeper than " + MAX_CONFIG_DEPTH);
+        }
         int type = in.readUnsignedByte();
         switch (type) {
             case 0 -> { }
@@ -277,7 +290,7 @@ public final class SchematicReader {
                     throw new IOException("Invalid .msch config array length " + length);
                 }
                 for (int i = 0; i < length; i++) {
-                    skipConfig(in);
+                    skipConfig(in, depth + 1);
                 }
             }
             case 23 -> skipFully(in, 2);

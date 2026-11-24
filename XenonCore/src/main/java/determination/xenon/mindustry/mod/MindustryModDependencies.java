@@ -53,7 +53,7 @@ public final class MindustryModDependencies {
     ///
     /// @param mods mods to inspect; entries without an internal name are ignored
     /// @return one name list per loop, empty when the graph is acyclic
-    public static @Unmodifiable List<java.util.List<String>> findCycles(List<MindustryLocalMod> mods) {
+    public static @Unmodifiable List<List<String>> findCycles(List<MindustryLocalMod> mods) {
         Map<String, MindustryLocalMod> byName = new LinkedHashMap<>();
         for (MindustryLocalMod mod : mods) {
             String name = mod.getInternalName();
@@ -63,7 +63,7 @@ public final class MindustryModDependencies {
             byName.putIfAbsent(name.toLowerCase(Locale.ROOT), mod);
         }
 
-        List<java.util.List<String>> cycles = new ArrayList<>();
+        List<List<String>> cycles = new ArrayList<>();
         Set<String> reported = new LinkedHashSet<>();
         for (String start : byName.keySet()) {
             Deque<String> path = new ArrayDeque<>();
@@ -83,7 +83,7 @@ public final class MindustryModDependencies {
     /// @param out      cycle sink
     private static void walk(String current, Map<String, MindustryLocalMod> byName,
                              Deque<String> path, Set<String> pathSet,
-                             Set<String> reported, List<java.util.List<String>> out) {
+                             Set<String> reported, List<List<String>> out) {
         MindustryLocalMod mod = byName.get(current);
         if (mod == null) {
             return;

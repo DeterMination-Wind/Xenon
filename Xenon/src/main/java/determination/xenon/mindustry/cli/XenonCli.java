@@ -187,9 +187,10 @@ public final class XenonCli {
                 change data refuse to run while a Xenon launcher is running.
 
                 --export strips the identity entries of settings.bin (uuid,
-                usid-*, ip, servers, ban lists) so a shared .xenon archive does
-                not carry the exporter's server identity. --keep-personal keeps
-                them when the archive is meant for moving to another machine.
+                usid-*, ip, name, servers, ban lists) so a shared .xenon archive
+                does not carry the exporter's server identity. --keep-personal
+                keeps them when the archive is meant for moving to another
+                machine.
 
                 Setting keys: download.source, download.speed, github.token
                 Download sources: prefer-domestic, prefer-official, domestic-only, official-only
@@ -318,7 +319,7 @@ public final class XenonCli {
                     XenonModpackPacker.pack(repo, version, target,
                             XenonModpackPacker.ExportMonitor.NONE, !keepPersonal);
             System.out.println(target);
-            if (manifest.sanitized) {
+            if (manifest.sanitized && !manifest.removedSettingsKeys.isEmpty()) {
                 System.err.println("xenon: settings.bin exported without "
                         + manifest.removedSettingsKeys.size()
                         + " personal entr(y/ies); use --keep-personal to keep them");

@@ -146,6 +146,11 @@ public final class SaveBackupNotes {
         try (Writer writer = Files.newBufferedWriter(tmp, StandardCharsets.UTF_8)) {
             GSON.toJson(notes, MAP_TYPE, writer);
         }
-        Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
+        try {
+            Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.ATOMIC_MOVE);
+        } catch (java.nio.file.AtomicMoveNotSupportedException e) {
+            Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
+        }
     }
 }
