@@ -5,6 +5,7 @@
 ## 实例与版本
 
 - 支持原版、Bleeding-Edge、MindustryX、CN-ARC、Foo Client 等来源，也支持导入本地 jar、Steam 安装和外部安装目录。
+- 本地 jar 导入读取 jar 内 `version.properties` 与 `Main-Class`：版本号、构建号、构建类型来自 jar 本体，文件名不再参与判断 Java 需求（改过名的下载也能正确选 Java）。
 - 每个实例独立保存 Java 选择、JVM/游戏参数、工作目录、数据目录和 `version.json` 配置。
 - 实例复制：连同 `.data`、玩家 UUID、设置和游玩统计一起复制。
 - 实例迁移：从其他实例复制存档、Mod、蓝图、地图、`settings.bin` 和游玩统计，可选择是否覆盖同名文件。
@@ -18,6 +19,8 @@
 - 多镜像与自动回退：启动器作者镜像、Wayzer GitHub 镜像、MDT BBS 文件站、公共 GitHub 镜像。
 - 四档下载来源：优先国内 / 优先官方 / 仅国内 / 仅官方；与版本列表和变体入口联动。
 - 断点续传、暂停/继续、并发下载与镜像竞速。
+- 下载进度显示速率与剩余时间；连接只吐少量字节就挂住、或持续低于 4 KiB/s 超过 30 秒时主动断开并换源，不再假成功。
+- 直连镜像按 `Content-Length` / 资产大小做收尾校验，服务器提前断开产生的截断文件不会落盘。
 - 全局限速：不限速 / 1 / 2 / 5 MB/s / 自定义，下限 32 KB/s。
 - GitHub Token 与 GitHub CLI 认证，API 额度从 60 次/小时提升到 5000 次/小时。
 - 下载文件按源清单校验 SHA-256，失败自动重试或切换来源。
@@ -25,6 +28,7 @@
 ## Mod 与游戏内容
 
 - 社区 Mod 索引、GitHub Release 直装、搜索与依赖补齐。
+- 依赖成环检测：启动前在健康检查里指出「A → B → A」这类会让游戏直接崩溃的模组组合。
 - 社区 Mod 浏览页按所选实例的 `mods/` 显示「安装 / 更新 / 已安装」三态；可更新时提示「本地 → 远端」版本，已安装行禁用主按钮。
 - 批量启用/禁用/删除，Shift/Ctrl 连选。
 - 拖入文件或文件夹导入；双层压缩包自动拆包；同 internal name 的旧版本自动替换。
@@ -32,11 +36,14 @@
 - 源码监听：1.5 秒防抖，构建期间合并改动；构建成功后可选自动重启游戏。
 - 地图：从 [mindustry.top](https://mindustry.top) 浏览和安装。
 - 蓝图：`.msch` 导入导出、分享码导入、复制 base64。
+- 蓝图缩略图：直接解析 `.msch` 的方块字典与坐标，离线绘制近似配色的缩略图（按运输 / 液体 / 电力 / 生产 / 防御等类别着色），不需要游戏 jar，也不会把游戏类加载进启动器 JVM。
 - MDTBBS 资源页：浏览/搜索蓝图与地图，预览后安装；本地内容也可提交审核。
 
 ## 存档与云存档
 
 - 存档列表显示地图、版本、波次和修改时间；支持备份、导出 ZIP、删除。
+- 本地备份面板：列出 `saves/backups/`，可按存档名、时间与备注筛选，一键恢复（恢复前先备份当前文件）、写备注、删除。
+- 备份去重：与同存档最新备份内容一致时不再写新文件，自动备份不会用 20 份重复副本占满保留窗口。
 - 删除的实例与存档归档进入本地回收站，可恢复或永久删除。
 - 长会话退出后自动备份 `saves/`，阈值与保留数量按实例配置。
 - 云存档槽位、历史快照、固定/取消固定、重命名槽位、删除快照。
@@ -79,14 +86,14 @@
 
 ## 自动化与扩展
 
-- 无窗口 CLI：`--help`、`--version`、`--list`、`--list-backups <instance>`、`--launch <instance>`、`--export <instance> <file>`、`--get/--set`、`--import <jar>`、`--delete-version`、`--delete-backup`、`--restore-backup`、`--check-updates`。
+- 无窗口 CLI：`--help`、`--version`、`--list`、`--list-backups <instance>`、`--launch <instance>`、`--export <instance> <file> [--keep-personal]`、`--get/--set`、`--import <jar>`、`--delete-version`、`--delete-backup`、`--restore-backup`、`--check-updates`。
 - 实例引用容错：接受 id 或显示名，忽略大小写、连续/全角空格与可选的 `v` 前缀。
 - 破坏性命令必须带 `--yes`；启动器运行时以退出码 6 拒绝写入，避免运行中的启动器回写覆盖 CLI 的修改。
 - 退出码：0 成功、1 失败、2 用法错误、3 未找到、5 导出失败、6 启动器运行中、7 删除失败、8 导入失败、9 恢复失败、10 有更新、11 检查源不可达；`--launch` 透传游戏进程退出码。
 - `--set` 白名单：`download.source`、`download.speed`、`github.token`；未知键退出码 2。
 - 启动脚本导出：Windows `.bat` / POSIX `.sh`，包含 Java、JVM 参数、数据目录与工作目录。
 - 深链：`xenon://join?intent=`、`xenon://launch?instance=`、`xenon://open?instance=`。
-- `.xenon` 整实例打包，便于迁移或分享。
+- `.xenon` 整实例打包，便于迁移或分享；默认脱敏，导出时移除 `settings.bin` 里的 `uuid`、`usid-*`、`ip`、服务器收藏与封禁名单（CLI 用 `--keep-personal` 保留，换机自用时可原样打包）。
 - 单实例协议：重复启动会把深链转发给已运行的启动器；CLI 命令单独执行，不会被转发。
 
 ## 与竞品的比较
