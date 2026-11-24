@@ -89,10 +89,10 @@ public final class XenonModpackPacker {
     ///
     /// With `sanitize`, `settings.bin` is rewritten into the archive without
     /// the entries that identify the exporting player (`uuid`, `usid-*`, `ip`,
-    /// `servers`, ban lists). The live `settings.bin` is never modified: the
-    /// filtered copy is staged in a temporary file and only that copy is
-    /// zipped. The manifest records which keys were dropped so the recipient
-    /// can see exactly what was redacted.
+    /// `name`, `servers`, ban lists). The live `settings.bin` is never
+    /// modified: the filtered copy is staged in a temporary file and only that
+    /// copy is zipped. The manifest records which keys were dropped so the
+    /// recipient can see exactly what was redacted.
     ///
     /// @param repo     repository owning the version root
     /// @param version  instance to pack

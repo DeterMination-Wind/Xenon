@@ -93,7 +93,7 @@
 - `--set` 白名单：`download.source`、`download.speed`、`github.token`；未知键退出码 2。
 - 启动脚本导出：Windows `.bat` / POSIX `.sh`，包含 Java、JVM 参数、数据目录与工作目录。
 - 深链：`xenon://join?intent=`、`xenon://launch?instance=`、`xenon://open?instance=`。
-- `.xenon` 整实例打包，便于迁移或分享；默认脱敏，导出时移除 `settings.bin` 里的 `uuid`、`usid-*`、`ip`、服务器收藏与封禁名单（CLI 用 `--keep-personal` 保留，换机自用时可原样打包）。
+- `.xenon` 整实例打包，便于迁移或分享；默认脱敏，导出时移除 `settings.bin` 里的 `uuid`、`usid-*`、`ip`、昵称、服务器收藏与封禁名单（CLI 用 `--keep-personal` 保留，换机自用时可原样打包）。
 - 单实例协议：重复启动会把深链转发给已运行的启动器；CLI 命令单独执行，不会被转发。
 
 ## 与竞品的比较

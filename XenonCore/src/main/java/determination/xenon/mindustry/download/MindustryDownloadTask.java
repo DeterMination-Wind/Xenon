@@ -17,6 +17,7 @@
  */
 package determination.xenon.mindustry.download;
 
+import determination.xenon.task.ByteProgressTask;
 import determination.xenon.task.Task;
 import org.jetbrains.annotations.NotNullByDefault;
 import org.jetbrains.annotations.Nullable;
@@ -40,7 +41,7 @@ import java.nio.file.Path;
 /// this task only adds the progress reporting and the pause/resume button.</p>
 @NotNullByDefault
 public final class MindustryDownloadTask extends Task<Void>
-        implements determination.xenon.task.ByteProgressTask {
+        implements ByteProgressTask {
 
     /// Task property key carrying the {@link DownloadControl} instance.
     public static final String CONTROL_PROPERTY = "xenon.download.control";

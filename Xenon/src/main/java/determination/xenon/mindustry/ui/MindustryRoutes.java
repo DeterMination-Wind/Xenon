@@ -168,11 +168,10 @@ public final class MindustryRoutes {
                 }.setName(i18n("modpack.export"));
         Task<?> export = exportTask.whenComplete(Schedulers.javafx(), (manifest, exception) -> {
             if (exception == null) {
-                if (manifest != null && manifest.sanitized) {
+                Controllers.showToast(i18n("message.success") + ": " + output);
+                if (manifest != null && !manifest.removedSettingsKeys.isEmpty()) {
                     Controllers.showToast(i18n("modpack.export.sanitized",
                             manifest.removedSettingsKeys.size()));
-                } else {
-                    Controllers.showToast(i18n("message.success") + ": " + output);
                 }
             } else if (exception instanceof CancellationException) {
                 Controllers.showToast(i18n("message.cancelled"));

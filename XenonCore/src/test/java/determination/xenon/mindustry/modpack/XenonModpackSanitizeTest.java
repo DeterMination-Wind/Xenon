@@ -43,7 +43,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @NotNullByDefault
 public final class XenonModpackSanitizeTest {
 
-    /// The default export drops uuid / usid / ip / servers but keeps gameplay settings.
+    /// The default export drops uuid / usid / ip / servers / nickname but keeps
+    /// gameplay settings.
     @Test
     public void stripsPersonalSettingsByDefault(@TempDir Path tempDir) throws IOException {
         Fixture fixture = fixture(tempDir);
@@ -53,13 +54,14 @@ public final class XenonModpackSanitizeTest {
                         tempDir.resolve("out.xenon"));
 
         assertTrue(manifest.sanitized);
-        assertEquals(4, manifest.removedSettingsKeys.size());
+        assertEquals(5, manifest.removedSettingsKeys.size());
 
         Map<String, Object> exported = readExportedSettings(tempDir.resolve("out.xenon"));
         assertFalse(exported.containsKey("uuid"));
         assertFalse(exported.containsKey("usid-1.2.3.4"));
         assertFalse(exported.containsKey("ip"));
         assertFalse(exported.containsKey("servers"));
+        assertFalse(exported.containsKey("name"));
         assertEquals(70, exported.get("volume-music"));
         assertEquals("en", exported.get("locale"));
     }
@@ -91,6 +93,7 @@ public final class XenonModpackSanitizeTest {
         Map<String, Object> exported = readExportedSettings(tempDir.resolve("raw.xenon"));
         assertTrue(exported.containsKey("uuid"));
         assertTrue(exported.containsKey("usid-1.2.3.4"));
+        assertEquals("player-nick", exported.get("name"));
     }
 
     /// Builds an instance whose settings.bin mixes identity and gameplay keys.
@@ -116,6 +119,7 @@ public final class XenonModpackSanitizeTest {
         settings.put("usid-1.2.3.4", "server-identity");
         settings.put("ip", "127.0.0.1");
         settings.put("servers", "[{\"ip\":\"127.0.0.1\"}]");
+        settings.put("name", "player-nick");
         settings.put("volume-music", 70);
         settings.put("locale", "en");
         MindustrySettingsBin.writeFile(dataDir.resolve("settings.bin"), settings);

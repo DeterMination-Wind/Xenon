@@ -54,8 +54,8 @@ public final class SaveBackupDedupTest {
         assertTrue(second.skipped());
         assertEquals(first.file(), second.file());
         assertEquals(1, countBackups(service));
-        assertNull(second.file().getFileName().toString().contains(".xenon-tmp")
-                ? "temp file leaked" : null);
+        assertFalse(second.file().getFileName().toString().contains(".xenon-tmp"),
+                "temp file leaked");
     }
 
     /// Changed content still produces a new backup file.

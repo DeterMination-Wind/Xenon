@@ -109,6 +109,21 @@ public final class SchematicBlueprintTest {
         assertEquals(SchematicPreview.EMPTY_TILE, image.argb(16, 16));
     }
 
+    /// A schematic declaring an enormous size renders inside the requested edge
+    /// length instead of allocating a canvas from the untrusted header.
+    @Test
+    public void clampsOversizedSchematic(@TempDir Path tempDir) throws IOException {
+        Path msch = writeSchematic(tempDir, 4000, 4000, new String[]{"core"},
+                new int[][]{{2, 2, 0}});
+
+        SchematicBlueprint blueprint = SchematicReader.readBlueprint(msch);
+        SchematicPreview.Image image = SchematicPreview.render(blueprint, 64);
+
+        assertEquals(64, image.width());
+        assertEquals(64, image.height());
+        assertEquals(SchematicPreview.colourOf("core"), image.argb(2, 2));
+    }
+
     /// Writes a schematic with one tile per `{x, y, blockIndex}` entry and no configs.
     ///
     /// @param dir       temporary folder
@@ -119,7 +134,7 @@ public final class SchematicBlueprintTest {
     /// @return path of the written file
     private static Path writeSchematic(Path dir, int width, int height, String[] blocks,
                                        int[][] tiles) throws IOException {
-        return write(dir, width, height, blocks, tiles, false);
+        return write(dir, width, height, blocks, tiles);
     }
 
     /// Writes a schematic whose tiles carry configs (string, int and boolean).
@@ -173,7 +188,7 @@ public final class SchematicBlueprintTest {
 
     /// Writes a schematic with the shared header/tag/dictionary layout.
     private static Path write(Path dir, int width, int height, String[] blocks,
-                              int[][] tiles, boolean unused) throws IOException {
+                              int[][] tiles) throws IOException {
         Path file = dir.resolve("test.msch");
         try (OutputStream raw = Files.newOutputStream(file);
              DataOutputStream out = new DataOutputStream(raw)) {

@@ -41,6 +41,8 @@ import java.util.Map;
 /// * `usid-*` — Mindustry's per-server identity hash;
 /// * `ip` — the last server address;
 /// * `servers` — the saved-server JSON list;
+/// * `name` / `name-forced` — the player's nickname, which the launcher itself
+///   writes into settings.bin before launch;
 /// * `bans` / `banned-ips` — local ban lists mirrored into settings by some
 ///   builds.
 ///
@@ -89,7 +91,8 @@ public record SanitizedSettings(Map<String, Object> values, List<String> removed
             return true;
         }
         return switch (k) {
-            case "uuid", "ip", "servers", "bans", "banned-ips", "bannedips" -> true;
+            case "uuid", "ip", "servers", "bans", "banned-ips", "bannedips",
+                    "name", "name-forced" -> true;
             default -> false;
         };
     }

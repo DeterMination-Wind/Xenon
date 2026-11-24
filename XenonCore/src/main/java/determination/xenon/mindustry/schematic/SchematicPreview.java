@@ -84,9 +84,14 @@ public final class SchematicPreview {
     /// @return rendered image, never `null`
     public static Image render(SchematicBlueprint blueprint, int maxSize) {
         Objects.requireNonNull(blueprint, "blueprint");
-        int width = Math.max(1, blueprint.width());
-        int height = Math.max(1, blueprint.height());
         int limit = Math.max(8, maxSize);
+        // The declared size comes from the file header (a signed short) and is
+        // not trusted: a malformed or hostile .msch may claim 32000×32000, and
+        // rendering that canvas would need gigabytes. Crop to the requested
+        // edge length instead; the existing per-tile bounds check drops the
+        // rest of the footprint.
+        int width = Math.max(1, Math.min(blueprint.width(), limit));
+        int height = Math.max(1, Math.min(blueprint.height(), limit));
         int scale = Math.max(1, Math.min(limit / Math.max(width, height), 16));
         int imageWidth = width * scale;
         int imageHeight = height * scale;

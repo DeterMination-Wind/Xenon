@@ -277,12 +277,17 @@ public final class MindustrySaveListPane extends BorderPane {
                 try (var stream = java.nio.file.Files.list(savesDir)) {
                     for (Path save : stream.filter(path -> path.getFileName().toString()
                             .toLowerCase(Locale.ROOT).endsWith(".msav")).toList()) {
-                        SaveBackupService.BackupResult result =
-                                backupService.backupWithResult(SaveFileReader.readHeaderLenient(save));
-                        if (result.skipped()) {
-                            skipped++;
-                        } else {
-                            written++;
+                        try {
+                            SaveBackupService.BackupResult result =
+                                    backupService.backupWithResult(SaveFileReader.readHeaderLenient(save));
+                            if (result.skipped()) {
+                                skipped++;
+                            } else {
+                                written++;
+                            }
+                        } catch (IOException unreadable) {
+                            // One corrupt or locked save must not stop the batch.
+                            LOG.warning("Skipping unreadable save " + save.getFileName(), unreadable);
                         }
                     }
                 }
@@ -306,12 +311,16 @@ public final class MindustrySaveListPane extends BorderPane {
         Schedulers.io().execute(() -> {
             try {
                 Path target = savesDir.resolve(backup.slotName() + SaveBackupService.MSAV_EXT);
+                boolean safetyCopy = false;
                 if (java.nio.file.Files.isRegularFile(target)) {
-                    backupService.backup(SaveFileReader.readHeaderLenient(target));
+                    safetyCopy = backupBeforeRestore(target);
                 }
                 backupService.restore(backup.file(), target);
+                boolean copied = safetyCopy;
                 Platform.runLater(() -> {
-                    Controllers.showToast(i18n("xenon.mindustry.backup.restored",
+                    Controllers.showToast(i18n(copied
+                            ? "xenon.mindustry.backup.restored"
+                            : "xenon.mindustry.backup.restored.nobackup",
                             backup.fileName()));
                     reloadBackups();
                 });
@@ -319,6 +328,23 @@ public final class MindustrySaveListPane extends BorderPane {
                 Platform.runLater(() -> showError(ex));
             }
         });
+    }
+
+    /// Copies the live file of a slot aside before a restore overwrites it.
+    ///
+    /// A corrupted save is the most likely reason to restore, so an unreadable
+    /// header only skips the safety copy instead of blocking the restore.
+    ///
+    /// @param target live save that is about to be overwritten
+    /// @return `true` when the safety copy was written
+    private boolean backupBeforeRestore(Path target) {
+        try {
+            backupService.backup(SaveFileReader.readHeaderLenient(target));
+            return true;
+        } catch (IOException ex) {
+            LOG.warning("Cannot back up the current save before restoring " + target, ex);
+            return false;
+        }
     }
 
     /// Edits the note of one backup.

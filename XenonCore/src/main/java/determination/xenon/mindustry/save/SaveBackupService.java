@@ -222,7 +222,8 @@ public final class SaveBackupService {
         }
 
         Path tmp = target.resolveSibling(target.getFileName() + ".xenon-tmp");
-        Files.copy(src, tmp, StandardCopyOption.COPY_ATTRIBUTES);
+        Files.copy(src, tmp, StandardCopyOption.COPY_ATTRIBUTES,
+                StandardCopyOption.REPLACE_EXISTING);
         try {
             Files.move(tmp, target, StandardCopyOption.ATOMIC_MOVE);
         } catch (java.nio.file.AtomicMoveNotSupportedException e) {
@@ -329,7 +330,9 @@ public final class SaveBackupService {
                         continue;
                     }
                 }
-                if (best == null || bestStamp == null || stamp.isAfter(bestStamp)) {
+                if (best == null || bestStamp == null || stamp.isAfter(bestStamp)
+                        || (stamp.equals(bestStamp)
+                                && collisionCounter(entry) > collisionCounter(best))) {
                     best = entry;
                     bestStamp = stamp;
                 }
