@@ -48,6 +48,7 @@ import determination.xenon.ui.SVG;
 import determination.xenon.ui.construct.MessageDialogPane;
 import determination.xenon.ui.construct.PageAware;
 import determination.xenon.ui.construct.RipplerContainer;
+import determination.xenon.ui.construct.StableTextWidth;
 import determination.xenon.ui.construct.TwoLineListItem;
 import determination.xenon.util.TaskCancellationAction;
 import javafx.animation.PauseTransition;
@@ -1223,6 +1224,14 @@ public final class MindustryModBrowserPane extends BorderPane implements PageAwa
                 MindustryRemoteMod m = getItem();
                 if (m != null) install(m);
             });
+
+            // Install / Update / Installed have different widths; pinning the
+            // button to the widest one keeps the action cluster (and therefore
+            // the row's title area) still while the state changes.
+            StableTextWidth.reserve(installBtn, List.of(
+                    i18n("xenon.mindustry.mod.browser.install"),
+                    i18n("xenon.mindustry.mod.browser.state.update"),
+                    i18n("xenon.mindustry.mod.browser.state.installed")));
 
             HBox actions = new HBox(8, openRepo, historyBtn, installBtn);
             actions.setAlignment(Pos.CENTER_RIGHT);

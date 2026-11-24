@@ -20,7 +20,10 @@ package determination.xenon.mindustry.ui;
 import com.jfoenix.controls.JFXButton;
 import com.jfoenix.controls.JFXListView;
 import com.jfoenix.controls.JFXTextField;
+import determination.xenon.mindustry.schematic.SchematicBlueprint;
 import determination.xenon.mindustry.schematic.SchematicManager;
+import determination.xenon.mindustry.schematic.SchematicPreview;
+import determination.xenon.mindustry.schematic.SchematicReader;
 import determination.xenon.mindustry.schematic.SchematicSummary;
 import determination.xenon.task.Schedulers;
 import determination.xenon.ui.Controllers;
@@ -34,6 +37,9 @@ import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
+import javafx.scene.image.ImageView;
+import javafx.scene.image.PixelFormat;
+import javafx.scene.image.WritableImage;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
 import javafx.scene.layout.BorderPane;
@@ -49,6 +55,7 @@ import org.jetbrains.annotations.Unmodifiable;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -77,6 +84,12 @@ public final class MindustrySchematicListPane extends BorderPane {
 
     /// Last fully scanned schematic list before search filtering.
     private @Unmodifiable List<SchematicSummary> allItems = List.of();
+
+    /// Rendered thumbnails keyed by schematic file, rebuilt with each scan.
+    private final Map<Path, WritableImage> previews = new HashMap<>();
+
+    /// Thumbnail edge length in pixels.
+    private static final int PREVIEW_SIZE = 44;
 
     /// Creates a schematic pane for one Mindustry data directory.
     public MindustrySchematicListPane(Path dataDir) {
@@ -126,13 +139,50 @@ public final class MindustrySchematicListPane extends BorderPane {
         Schedulers.io().execute(() -> {
             try {
                 List<SchematicSummary> items = manager.list();
-                Platform.runLater(() -> populate(items));
+                Map<Path, WritableImage> rendered = renderPreviews(items);
+                Platform.runLater(() -> {
+                    previews.clear();
+                    previews.putAll(rendered);
+                    populate(items);
+                });
             } catch (IOException ex) {
                 LOG.warning("Failed to scan schematics", ex);
                 Platform.runLater(() -> status.setText(
                         i18n("xenon.mindustry.schematic.failed") + " " + ex.getMessage()));
             }
         });
+    }
+
+    /// Renders thumbnails for the scanned schematics.
+    ///
+    /// Parsing is the expensive half (inflate + tile walk), so it runs on the IO
+    /// thread with the scan. A schematic that cannot be parsed keeps the generic
+    /// icon instead of failing the whole list.
+    ///
+    /// @param items scanned schematics
+    /// @return rendered images keyed by file
+    private Map<Path, WritableImage> renderPreviews(List<SchematicSummary> items) {
+        Map<Path, WritableImage> rendered = new HashMap<>();
+        for (SchematicSummary item : items) {
+            try {
+                SchematicBlueprint blueprint = SchematicReader.readBlueprint(item.file());
+                rendered.put(item.file(), toFxImage(SchematicPreview.render(blueprint, PREVIEW_SIZE)));
+            } catch (IOException | RuntimeException ex) {
+                LOG.debug("No thumbnail for " + item.file().getFileName() + ": " + ex.getMessage());
+            }
+        }
+        return rendered;
+    }
+
+    /// Converts a rendered ARGB buffer into a JavaFX image.
+    ///
+    /// @param image rendered preview
+    /// @return JavaFX image ready for an [ImageView]
+    private static WritableImage toFxImage(SchematicPreview.Image image) {
+        WritableImage fx = new WritableImage(image.width(), image.height());
+        fx.getPixelWriter().setPixels(0, 0, image.width(), image.height(),
+                PixelFormat.getIntArgbInstance(), image.pixels(), 0, image.width());
+        return fx;
     }
 
     /// Stores a completed scan and applies the current search filter.
@@ -161,7 +211,19 @@ public final class MindustrySchematicListPane extends BorderPane {
         AdvancedListItem item = new AdvancedListItem();
         item.setMinWidth(0);
         item.setMaxWidth(Double.MAX_VALUE);
-        item.setLeftIcon(SVG.SCHEMA);
+        @Nullable WritableImage thumbnail = previews.get(s.file());
+        if (thumbnail != null) {
+            ImageView view = new ImageView(thumbnail);
+            view.setFitWidth(PREVIEW_SIZE);
+            view.setFitHeight(PREVIEW_SIZE);
+            view.setSmooth(false);
+            view.setMouseTransparent(true);
+            javafx.scene.layout.BorderPane.setMargin(view, new Insets(0, 8, 0, 0));
+            javafx.scene.layout.BorderPane.setAlignment(view, Pos.CENTER);
+            item.setLeftGraphic(view);
+        } else {
+            item.setLeftIcon(SVG.SCHEMA);
+        }
         String name = s.name().isEmpty() ? s.file().getFileName().toString() : s.name();
         item.setTitle(name + "  ·  " + s.width() + "×" + s.height());
         item.setSubtitle(s.description().isEmpty() ? s.file().getFileName().toString() : s.description());
