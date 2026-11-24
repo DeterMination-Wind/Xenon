@@ -167,7 +167,7 @@ public final class XenonCli {
                   xenon --list
                   xenon --list-backups <instance>
                   xenon --launch <instance>
-                  xenon --export <instance> <output.zip>
+                  xenon --export <instance> <output.zip> [--keep-personal]
                   xenon --get <key>
                   xenon --set <key> <value>
                   xenon --import <jar> [--as <id>] [--name <display name>] [--variant <variant>]
@@ -185,6 +185,11 @@ public final class XenonCli {
 
                 --yes may appear anywhere on the command line. Commands that
                 change data refuse to run while a Xenon launcher is running.
+
+                --export strips the identity entries of settings.bin (uuid,
+                usid-*, ip, servers, ban lists) so a shared .xenon archive does
+                not carry the exporter's server identity. --keep-personal keeps
+                them when the archive is meant for moving to another machine.
 
                 Setting keys: download.source, download.speed, github.token
                 Download sources: prefer-domestic, prefer-official, domestic-only, official-only
@@ -285,6 +290,9 @@ public final class XenonCli {
 
     /// Exports one instance as a Xenon modpack.
     ///
+    /// Personal identity entries are stripped from `settings.bin` unless
+    /// `--keep-personal` is present.
+    ///
     /// @param args command arguments; `args[1]` is the instance and
     ///     `args[2]` the output file
     /// @return [`#OK`], [`#NOT_FOUND`], [`#USAGE`] or [`#EXPORT_FAILED`]
@@ -293,6 +301,12 @@ public final class XenonCli {
             System.err.println("xenon: --export needs an instance and an output file");
             return USAGE;
         }
+        boolean keepPersonal = false;
+        for (String arg : args) {
+            if ("--keep-personal".equals(arg)) {
+                keepPersonal = true;
+            }
+        }
         try {
             XenonGameRepository repo = repository();
             MindustryVersion version = find(repo, args[1]);
@@ -300,8 +314,15 @@ public final class XenonCli {
                 return notFound(args[1]);
             }
             Path target = Path.of(args[2]).toAbsolutePath().normalize();
-            XenonModpackPacker.pack(repo, version, target);
+            XenonModpackPacker.XenonModpackManifest manifest =
+                    XenonModpackPacker.pack(repo, version, target,
+                            XenonModpackPacker.ExportMonitor.NONE, !keepPersonal);
             System.out.println(target);
+            if (manifest.sanitized) {
+                System.err.println("xenon: settings.bin exported without "
+                        + manifest.removedSettingsKeys.size()
+                        + " personal entr(y/ies); use --keep-personal to keep them");
+            }
             return OK;
         } catch (Exception e) {
             System.err.println("xenon: export failed: " + messageOf(e));
