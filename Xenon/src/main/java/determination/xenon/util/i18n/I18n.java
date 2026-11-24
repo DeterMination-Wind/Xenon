@@ -74,6 +74,23 @@ public final class I18n {
         return getTranslator().formatSpeed(bytes);
     }
 
+    /// Formats a remaining-time estimate for download progress lines.
+    ///
+    /// Hours are only shown once they are reached, so a typical download reads
+    /// `3:20` instead of `0:03:20`.
+    ///
+    /// @param seconds seconds remaining; negative values are treated as zero
+    /// @return `m:ss` or `h:mm:ss`
+    public static String formatDuration(long seconds) {
+        long total = Math.max(0L, seconds);
+        long hours = total / 3600L;
+        long minutes = (total % 3600L) / 60L;
+        long secs = total % 60L;
+        return hours > 0
+                ? String.format(java.util.Locale.ROOT, "%d:%02d:%02d", hours, minutes, secs)
+                : String.format(java.util.Locale.ROOT, "%d:%02d", minutes, secs);
+    }
+
     /// Find the builtin localized resource with given name and suffix.
     ///
     /// For example, if the current locale is `zh-CN`, when calling `getBuiltinResource("assets.lang.foo", "json")`,

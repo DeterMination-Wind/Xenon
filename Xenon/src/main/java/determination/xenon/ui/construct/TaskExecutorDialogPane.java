@@ -77,6 +77,14 @@ public class TaskExecutorDialogPane extends BorderPane {
         bottom.setPadding(new Insets(0, 8, 8, 8));
         {
             lblProgress = new Label();
+            // The progress line alternates between "1.2 MiB/s" and
+            // "1.2 MiB/s · 0:32", and the dialog sizes to its content: pin the
+            // label to the widest shape so the window does not jitter.
+            StableTextWidth.reserve(lblProgress, java.util.List.of(
+                    I18n.formatSpeed(999),
+                    I18n.formatSpeed(1024L * 1024L * 999L),
+                    i18n("download.progress.eta",
+                            I18n.formatSpeed(1024L * 1024L * 999L), "9:59:59")));
             bottom.setLeft(lblProgress);
 
             // The pause button only appears for tasks that publish a download
@@ -104,11 +112,39 @@ public class TaskExecutorDialogPane extends BorderPane {
         });
 
         speedEventHandler = FetchTask.SPEED_EVENT.registerWeak(speedEvent -> {
-            String message = I18n.formatSpeed(speedEvent.getSpeed());
+            String message = describeProgress(speedEvent.getSpeed());
             Platform.runLater(() -> lblProgress.setText(message));
         });
 
         onEscPressed(this, btnCancel::fire);
+    }
+
+    /// Builds the progress line: speed, plus the remaining time when the
+    /// running task knows its total size.
+    ///
+    /// The estimate is recomputed on every speed tick instead of using an
+    /// EWMA: the launcher-wide speed counter is already smoothed, and a stale
+    /// estimate is worse than a slightly jumpy one.
+    ///
+    /// @param bytesPerSecond current launcher-wide download speed
+    /// @return text for the progress label
+    private String describeProgress(long bytesPerSecond) {
+        String speed = I18n.formatSpeed(bytesPerSecond);
+        if (bytesPerSecond <= 0 || executor == null) {
+            return speed;
+        }
+        var task = executor.getFirstTask();
+        if (!(task instanceof determination.xenon.task.ByteProgressTask bytes)) {
+            return speed;
+        }
+        long total = bytes.totalBytes();
+        long done = bytes.transferredBytes();
+        if (total <= 0 || done >= total) {
+            return speed;
+        }
+        long remainingSeconds = (total - done + bytesPerSecond - 1) / bytesPerSecond;
+        return i18n("download.progress.eta", speed,
+                I18n.formatDuration(remainingSeconds));
     }
 
     public void setExecutor(TaskExecutor executor) {
