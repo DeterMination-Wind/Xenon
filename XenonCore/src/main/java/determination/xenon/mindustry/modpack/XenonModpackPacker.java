@@ -22,6 +22,9 @@ import com.google.gson.GsonBuilder;
 import determination.xenon.mindustry.MindustryVersion;
 import determination.xenon.mindustry.VersionVariant;
 import determination.xenon.mindustry.XenonGameRepository;
+import determination.xenon.mindustry.uuid.MindustrySettingsBin;
+import determination.xenon.mindustry.uuid.SanitizedSettings;
+import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -79,6 +82,30 @@ public final class XenonModpackPacker {
                                             MindustryVersion version,
                                             Path zipFile,
                                             ExportMonitor monitor) throws IOException {
+        return pack(repo, version, zipFile, monitor, true);
+    }
+
+    /// Packs one instance into a `.xenon` archive.
+    ///
+    /// With `sanitize`, `settings.bin` is rewritten into the archive without
+    /// the entries that identify the exporting player (`uuid`, `usid-*`, `ip`,
+    /// `servers`, ban lists). The live `settings.bin` is never modified: the
+    /// filtered copy is staged in a temporary file and only that copy is
+    /// zipped. The manifest records which keys were dropped so the recipient
+    /// can see exactly what was redacted.
+    ///
+    /// @param repo     repository owning the version root
+    /// @param version  instance to pack
+    /// @param zipFile  destination archive, overwritten
+    /// @param monitor  progress / cancellation sink
+    /// @param sanitize whether to strip personal identity from `settings.bin`
+    /// @return the manifest written into the archive
+    /// @throws IOException when the jar is missing or a file cannot be read/written
+    public static XenonModpackManifest pack(XenonGameRepository repo,
+                                            MindustryVersion version,
+                                            Path zipFile,
+                                            ExportMonitor monitor,
+                                            boolean sanitize) throws IOException {
         Path versionRoot = repo.getVersionRoot(version);
         Path dataDir = version.resolveDataDir(versionRoot);
 
@@ -88,6 +115,7 @@ public final class XenonModpackPacker {
         manifest.variant = version.getVariant();
         manifest.minBuild = version.getBuild();
         manifest.exportedAt = Instant.now().toString();
+        manifest.sanitized = sanitize;
 
         List<PendingEntry> entries = new ArrayList<>();
         Path jar = version.resolveJar(versionRoot);
@@ -110,8 +138,31 @@ public final class XenonModpackPacker {
         }
 
         Path settings = dataDir.resolve("settings.bin");
+        @Nullable Path stagedSettings = null;
         if (Files.isRegularFile(settings)) {
-            entries.add(new PendingEntry(settings, "settings.bin", Files.size(settings)));
+            @Nullable Path exported = settings;
+            if (sanitize) {
+                try {
+                    LinkedHashMap<String, Object> values = MindustrySettingsBin.read(dataDir).values();
+                    SanitizedSettings filtered = SanitizedSettings.filter(values);
+                    if (filtered.changed()) {
+                        stagedSettings = Files.createTempFile("xenon-settings", ".bin");
+                        MindustrySettingsBin.writeFile(stagedSettings, filtered.values());
+                        manifest.removedSettingsKeys.addAll(filtered.removedKeys());
+                        exported = stagedSettings;
+                        LOG.info("Exporting settings.bin without "
+                                + filtered.removedKeys().size() + " personal entr(y/ies)");
+                    }
+                } catch (IOException e) {
+                    // A settings file we cannot parse must not leak, but it
+                    // also must not block the export: omit it and say so.
+                    LOG.warning("Skipping unreadable settings.bin in export: " + e.getMessage());
+                    exported = null;
+                }
+            }
+            if (exported != null) {
+                entries.add(new PendingEntry(exported, "settings.bin", Files.size(exported)));
+            }
         }
 
         long totalBytes = entries.stream().mapToLong(PendingEntry::size).sum();
@@ -140,6 +191,14 @@ public final class XenonModpackPacker {
                 LOG.warning("Failed to delete cancelled Xenon Modpack export " + zipFile, deleteEx);
             }
             throw ex;
+        } finally {
+            if (stagedSettings != null) {
+                try {
+                    Files.deleteIfExists(stagedSettings);
+                } catch (IOException ignored) {
+                    // A leftover temp file is harmless; the archive is already written.
+                }
+            }
         }
 
         LOG.info("Xenon Modpack written: " + zipFile + " (" + manifest.files.size() + " entries)");
@@ -218,6 +277,10 @@ public final class XenonModpackPacker {
         public String exportedAt;
         public final List<Entry> files = new ArrayList<>();
         public final Map<String, String> settings = new LinkedHashMap<>();
+        /// Whether personal identity was stripped from {@code settings.bin}.
+        public boolean sanitized = true;
+        /// Settings keys dropped by the sanitizer, for recipient transparency.
+        public final List<String> removedSettingsKeys = new ArrayList<>();
 
         public static final class Entry {
             public String path;

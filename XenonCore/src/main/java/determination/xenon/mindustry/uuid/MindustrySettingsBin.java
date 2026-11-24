@@ -237,6 +237,25 @@ public final class MindustrySettingsBin {
         syncBackup(dataDir, file);
     }
 
+    /// Writes one entry set to an arbitrary file, without touching a data directory.
+    ///
+    /// Used to materialise a sanitized `settings.bin` for `.xenon` export: the
+    /// archive must carry a valid settings file, but the live one must not be
+    /// modified and no backup chain may be created next to it.
+    ///
+    /// @param file   destination file, overwritten atomically where supported
+    /// @param values complete entry set to persist
+    /// @throws IOException when the parent folder is not writable or a value
+    ///     uses an unsupported type
+    public static void writeFile(Path file, Map<String, Object> values) throws IOException {
+        if (file == null || values == null) return;
+        @Nullable Path parent = file.getParent();
+        if (parent != null) {
+            Files.createDirectories(parent);
+        }
+        writeAtomically(file, values);
+    }
+
     /**
      * Read every entry from {@code <dataDir>/settings.bin}. Plain Arc
      * settings and Arc's optional zlib-compressed settings are both

@@ -140,35 +140,40 @@ public final class MindustryRoutes {
                 ? selected
                 : selected.resolveSibling(selected.getFileName().toString() + ".xenon");
 
-        Task<Path> exportTask = new Task<Path>() {
-            @Override
-            public void execute() throws Exception {
-                XenonModpackPacker.pack(MindustryImportFlow.repositoryForVersion(version), version, output,
-                        new XenonModpackPacker.ExportMonitor() {
-                            private long lastWritten;
+        Task<XenonModpackPacker.XenonModpackManifest> exportTask =
+                new Task<XenonModpackPacker.XenonModpackManifest>() {
+                    private long lastWritten;
 
-                            @Override
-                            public void update(long writtenBytes, long totalBytes) {
-                                updateProgress(writtenBytes, totalBytes);
-                                FetchTask.recordDownloadedBytes(writtenBytes - lastWritten);
-                                lastWritten = writtenBytes;
-                            }
+                    @Override
+                    public void execute() throws Exception {
+                        java.util.function.BooleanSupplier cancelled = this::isCancelled;
+                        XenonModpackPacker.ExportMonitor monitor =
+                                new XenonModpackPacker.ExportMonitor() {
+                                    @Override
+                                    public void update(long writtenBytes, long totalBytes) {
+                                        updateProgress(writtenBytes, totalBytes);
+                                        FetchTask.recordDownloadedBytes(writtenBytes - lastWritten);
+                                        lastWritten = writtenBytes;
+                                    }
 
-                            @Override
-                            public boolean isCancelled() {
-                                return thisTaskIsCancelled();
-                            }
-                        });
-                setResult(output);
-            }
-
-            private boolean thisTaskIsCancelled() {
-                return isCancelled();
-            }
-        }.setName(i18n("modpack.export"));
-        Task<?> export = exportTask.whenComplete(Schedulers.javafx(), (written, exception) -> {
+                                    @Override
+                                    public boolean isCancelled() {
+                                        return cancelled.getAsBoolean();
+                                    }
+                                };
+                        setResult(XenonModpackPacker.pack(
+                                MindustryImportFlow.repositoryForVersion(version),
+                                version, output, monitor, true));
+                    }
+                }.setName(i18n("modpack.export"));
+        Task<?> export = exportTask.whenComplete(Schedulers.javafx(), (manifest, exception) -> {
             if (exception == null) {
-                Controllers.showToast(i18n("message.success") + ": " + written);
+                if (manifest != null && manifest.sanitized) {
+                    Controllers.showToast(i18n("modpack.export.sanitized",
+                            manifest.removedSettingsKeys.size()));
+                } else {
+                    Controllers.showToast(i18n("message.success") + ": " + output);
+                }
             } else if (exception instanceof CancellationException) {
                 Controllers.showToast(i18n("message.cancelled"));
             } else {
