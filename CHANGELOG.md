@@ -4,6 +4,19 @@ All notable changes to Xenon will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- Importing a local jar reads the jar's own `version.properties` and `Main-Class`: the build number, build type and Java requirement now come from the file, so a renamed download still launches with the right runtime. A jar that is not a readable archive is rejected with an explicit message instead of being copied and failing at launch.
+- The save tab gained a local backup list under the archives: every `saves/backups/` file with its slot, time, size and note, a filter over save/time/note, one-click restore (the live file is backed up first), note editing and delete. "Back up all saves" runs manually and reports how many files were skipped because they were unchanged.
+- `.xenon` exports strip the exporter's identity by default: `uuid`, `usid-*`, `ip`, the saved-server list and ban lists are removed from the packaged `settings.bin`, the manifest records which keys were dropped, and the CLI accepts `--keep-personal` for moving an instance between machines.
+- The health report detects mod dependency loops (`A → B → A`), which Mindustry otherwise reports as a generic crash.
+- Schematic rows show an offline thumbnail rendered from the file's own block dictionary (approximate colours by block category), with no game jar involved.
+- Download progress shows the remaining time next to the speed, and a stalled transfer is aborted and retried on another mirror.
+
+### Fixed
+- Automatic save backups no longer copy a save that has not changed since its newest backup; the retention window is no longer consumed by duplicate files.
+- A direct mirror download that ends early is rejected by a `Content-Length` / asset-size gate instead of being accepted as complete.
+- The install button and the task dialog's progress label keep a fixed width, so their neighbours no longer shift while the text changes.
+
 ## [2.2.1] — 2026-11-16
 
 ### Fixed
