@@ -23,7 +23,7 @@ Xenon manages 5 Mindustry-desktop client variants — Vanilla, Bleeding-Edge, Mi
 - **5 client variants** — Vanilla / Bleeding-Edge / MindustryX / CN-ARC / Foo Client, side by side
 - **Steam Mindustry integration** — auto-discovers Windows Steam installs (incl. custom library folders)
 - **mindustry.top map browser** — browse and install maps from the [mindustry.top](https://mindustry.top) repository
-- **PostHog telemetry** — optional anonymous process-usage and crash statistics
+- **PostHog telemetry** — optional process-usage and crash statistics; player and install UUIDs are hashed locally before upload
 - **Log viewer** — "Logs" sidebar entry; crash-exit dialogs open the instance's `last_log.txt`
 - **Mod management** — wizard-based community mod installation per instance
 - **UUID manager** — bind nicknames to UUIDs, injected at launch
