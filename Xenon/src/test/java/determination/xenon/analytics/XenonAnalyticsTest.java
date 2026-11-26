@@ -43,6 +43,18 @@ public final class XenonAnalyticsTest {
         assertEquals("x86", XenonAnalytics.normalizeCpuArch("i386"));
     }
 
+    /// Raw player/install identifiers are replaced by a stable local SHA-256 digest.
+    @Test
+    public void hashesAnalyticsIdentifiers() {
+        String expected = "sha256:b28f21b0bdbd3fab882a57f606ca6cc3a3d066f66cecc31af2c65c96748e7bad";
+        assertEquals(expected, XenonAnalytics.hashAnalyticsId("fz1DETuNXJI="));
+        assertEquals(expected, XenonAnalytics.hashAnalyticsId(expected),
+                "an already hashed id must not be hashed twice");
+        assertEquals("", XenonAnalytics.hashAnalyticsId(""));
+        assertTrue(XenonAnalytics.hashAnalyticsId("A").startsWith(XenonAnalytics.HASHED_ID_PREFIX));
+        assertFalse(XenonAnalytics.hashAnalyticsId("A").contains("A"));
+    }
+
     /// The session timer becomes due on the ten-minute boundary and reports only deltas.
     @Test
     public void sessionTimerReportsTenMinuteDeltas() {

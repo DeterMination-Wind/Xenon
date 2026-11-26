@@ -38,6 +38,9 @@ import org.jetbrains.annotations.Nullable;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -287,6 +290,38 @@ public final class XenonAnalytics {
         }
     }
 
+    /// Prefix marking a distinct id that is already a local SHA-256 digest.
+    static final String HASHED_ID_PREFIX = "sha256:";
+
+    /// Hashes a raw identifier with SHA-256 so PostHog never receives the original UUID.
+    ///
+    /// <p>The digest is unsalted and deterministic across every product sharing the
+    /// project, so an old raw UUID and its later hashed form can be linked during
+    /// migration. Idempotent: a value already carrying {@link #HASHED_ID_PREFIX}
+    /// passes through unchanged.</p>
+    ///
+    /// @param value the raw identifier, already trimmed by the caller
+    /// @return {@code sha256:<64 lowercase hex>}, or the input when it is already hashed
+    static String hashAnalyticsId(String value) {
+        if (value.isEmpty() || value.startsWith(HASHED_ID_PREFIX)) {
+            return value;
+        }
+        byte[] digest;
+        try {
+            digest = MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8));
+        } catch (NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("SHA-256 is unavailable", ex);
+        }
+        StringBuilder out = new StringBuilder(HASHED_ID_PREFIX.length() + digest.length * 2);
+        out.append(HASHED_ID_PREFIX);
+        for (byte b : digest) {
+            int v = b & 0xFF;
+            out.append(Character.forDigit(v >>> 4, 16));
+            out.append(Character.forDigit(v & 0x0F, 16));
+        }
+        return out.toString();
+    }
+
     /// Hardcoded PostHog API key used when no external source provides one.
     /// CI workflow does not set XENON_POSTHOG_API_KEY / POSTHOG_API_KEY,
     /// so without this fallback analytics would be dead on all builds.
@@ -428,9 +463,9 @@ public final class XenonAnalytics {
         try {
             UuidProfile profile = CurrentPlayerProfile.current();
             if (profile != null && !StringUtils.isBlank(profile.uuid)) {
-                String uuid = profile.uuid.trim();
+                String playerId = hashAnalyticsId(profile.uuid.trim());
                 String nickname = StringUtils.isBlank(profile.nickname) ? null : profile.nickname.trim();
-                return new PlayerIdentity(uuid, uuid, uuid, nickname, installId, "player_profile");
+                return new PlayerIdentity(playerId, playerId, playerId, nickname, installId, "player_profile");
             }
         } catch (Throwable ex) {
             LOG.warning("[Xenon/PostHog] failed to resolve selected player profile", ex);
@@ -443,11 +478,16 @@ public final class XenonAnalytics {
             GlobalConfig config = ConfigHolder.globalConfig();
             String existing = config.getAnalyticsInstallId();
             if (!StringUtils.isBlank(existing)) {
-                return existing.trim();
+                String hashed = hashAnalyticsId(existing.trim());
+                // Older builds stored the raw UUID; rewrite it so the config stops holding one.
+                if (!hashed.equals(existing)) {
+                    config.setAnalyticsInstallId(hashed);
+                }
+                return hashed;
             }
-            String generated = UUID.randomUUID().toString();
-            config.setAnalyticsInstallId(generated);
-            return generated;
+            String hashed = hashAnalyticsId(UUID.randomUUID().toString());
+            config.setAnalyticsInstallId(hashed);
+            return hashed;
         } catch (IllegalStateException ex) {
             return "anonymous";
         }
